@@ -1,5 +1,6 @@
 //! Thread-owned Windows trigger and cancellation command source.
 
+use core::ffi::c_void;
 use std::{marker::PhantomData, ptr::null_mut, rc::Rc};
 
 use cliptype_platform::{
@@ -9,10 +10,17 @@ use cliptype_platform::{
 use windows_sys::Win32::{
     Foundation::GetLastError,
     System::Threading::GetCurrentThreadId,
-    UI::WindowsAndMessaging::{
-        GetMessageW, MSG, PeekMessageW, PostThreadMessageW, RegisterHotKey, UnregisterHotKey,
-    },
+    UI::WindowsAndMessaging::{GetMessageW, MSG, PeekMessageW, PostThreadMessageW},
 };
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    #[link_name = "RegisterHotKey"]
+    fn register_hot_key(hwnd: *mut c_void, id: i32, modifiers: u32, key: u32) -> i32;
+
+    #[link_name = "UnregisterHotKey"]
+    fn unregister_hot_key(hwnd: *mut c_void, id: i32) -> i32;
+}
 
 const TRIGGER_ID: i32 = 0x4354_01;
 const CANCEL_ID: i32 = 0x4354_02;
@@ -126,9 +134,9 @@ impl WindowsCommandSource {
         // SAFETY: these ids were registered with a null HWND on this same owner
         // thread. Both calls are attempted so one failure cannot skip cleanup of
         // the other registration.
-        let trigger_removed = unsafe { UnregisterHotKey(null_mut(), TRIGGER_ID) } != 0;
+        let trigger_removed = unsafe { unregister_hot_key(null_mut(), TRIGGER_ID) } != 0;
         // SAFETY: same ownership invariant as the trigger registration.
-        let cancel_removed = unsafe { UnregisterHotKey(null_mut(), CANCEL_ID) } != 0;
+        let cancel_removed = unsafe { unregister_hot_key(null_mut(), CANCEL_ID) } != 0;
         self.registered = false;
 
         if trigger_removed && cancel_removed {
@@ -160,30 +168,14 @@ impl CommandEventSource for WindowsCommandSource {
         // SAFETY: null HWND creates thread-owned registrations. The ids are
         // process-local constants, the modifiers are explicit, and F11/F12 are
         // valid virtual-key values.
-        if unsafe {
-            RegisterHotKey(
-                null_mut(),
-                TRIGGER_ID,
-                DEVELOPMENT_MODIFIERS,
-                VK_F12,
-            )
-        } == 0
-        {
+        if unsafe { register_hot_key(null_mut(), TRIGGER_ID, DEVELOPMENT_MODIFIERS, VK_F12) } == 0 {
             return Err(registration_error());
         }
 
         // SAFETY: same invariant as the trigger registration.
-        if unsafe {
-            RegisterHotKey(
-                null_mut(),
-                CANCEL_ID,
-                DEVELOPMENT_MODIFIERS,
-                VK_F11,
-            )
-        } == 0
-        {
+        if unsafe { register_hot_key(null_mut(), CANCEL_ID, DEVELOPMENT_MODIFIERS, VK_F11) } == 0 {
             // SAFETY: the trigger registration succeeded on this owner thread.
-            let _ = unsafe { UnregisterHotKey(null_mut(), TRIGGER_ID) };
+            let _ = unsafe { unregister_hot_key(null_mut(), TRIGGER_ID) };
             return Err(registration_error());
         }
 
