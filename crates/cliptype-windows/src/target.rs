@@ -17,7 +17,7 @@ use windows_sys::Win32::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
     },
     UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, IsWindow, GUITHREADINFO,
+        GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, IsWindow,
     },
 };
 
@@ -36,11 +36,7 @@ impl TargetPort for WindowsTarget {
         capture_target()
     }
 
-    fn compare(
-        &self,
-        expected: &TargetEvidence,
-        observed: &TargetEvidence,
-    ) -> TargetComparison {
+    fn compare(&self, expected: &TargetEvidence, observed: &TargetEvidence) -> TargetComparison {
         let (Some(expected_token), Some(observed_token)) = (
             expected.token::<WindowsTargetToken>(),
             observed.token::<WindowsTargetToken>(),
@@ -231,7 +227,7 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
     let _ = unsafe {
         GetTokenInformation(
             token.get(),
-            TokenIntegrityLevel as i32,
+            TokenIntegrityLevel,
             null_mut(),
             0,
             &raw mut required,
@@ -249,7 +245,7 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
     if unsafe {
         GetTokenInformation(
             token.get(),
-            TokenIntegrityLevel as i32,
+            TokenIntegrityLevel,
             storage.as_mut_ptr().cast(),
             required,
             &raw mut required,
