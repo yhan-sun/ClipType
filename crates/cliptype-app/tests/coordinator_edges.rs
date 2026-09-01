@@ -13,9 +13,9 @@ use cliptype_core::{
 };
 use cliptype_platform::{
     ClipboardError, ClipboardPort, DispatchResult, KeyboardCapabilities, KeyboardError,
-    KeyboardPort, ModifierMask, ModifierObservation, ModifierPort, NativeDispatchCount, NativeError,
-    NativeErrorKind, TargetCaptureError, TargetComparison, TargetEvidence, TargetMetadata,
-    TargetPort,
+    KeyboardPort, ModifierMask, ModifierObservation, ModifierPort, NativeDispatchCount,
+    NativeError, NativeErrorKind, TargetCaptureError, TargetComparison, TargetEvidence,
+    TargetMetadata, TargetPort,
 };
 
 #[derive(Clone)]
@@ -294,10 +294,7 @@ fn held_modifier_times_out_without_releasing_user_keys() {
         ScriptedClipboard::new("text", []),
         ScriptedTarget::stable(1),
         ScriptedKeyboard::complete(),
-        ScriptedModifiers::new(
-            [],
-            ModifierObservation::Held(ModifierMask::CONTROL),
-        ),
+        ScriptedModifiers::new([], ModifierObservation::Held(ModifierMask::CONTROL)),
         config(2),
     );
 
@@ -312,10 +309,7 @@ fn held_modifier_times_out_without_releasing_user_keys() {
 
 #[test]
 fn cancellation_interrupts_clipboard_retry_waits() {
-    let clipboard = ScriptedClipboard::new(
-        "text",
-        std::iter::repeat_n(ClipboardError::Busy, 20),
-    );
+    let clipboard = ScriptedClipboard::new("text", std::iter::repeat_n(ClipboardError::Busy, 20));
     let coordinator = coordinator(
         clipboard.clone(),
         ScriptedTarget::stable(1),
@@ -414,9 +408,7 @@ fn target_change_between_batches_stops_later_dispatch() {
     assert_eq!(keyboard.calls(), 1);
     assert_eq!(
         coordinator.status().completion,
-        Some(SessionCompletion::Finished(
-            TerminalOutcome::TargetChanged
-        ))
+        Some(SessionCompletion::Finished(TerminalOutcome::TargetChanged))
     );
 }
 
@@ -508,10 +500,7 @@ fn blocked_unknown_and_known_integrity_restriction_remain_distinct() {
     let blocked = ScriptedKeyboard::new(
         [DispatchResult::NoneAccepted {
             requested: NativeEventCount::new(2),
-            native: Some(NativeError::new(
-                NativeErrorKind::BlockedCauseUnknown,
-                None,
-            )),
+            native: Some(NativeError::new(NativeErrorKind::BlockedCauseUnknown, None)),
         }],
         available_capabilities(),
     );
@@ -531,11 +520,7 @@ fn blocked_unknown_and_known_integrity_restriction_remain_distinct() {
         ))
     );
 
-    let restricted_target = ScriptedTarget::new(
-        [Ok(1)],
-        Ok(1),
-        IntegrityRelation::KnownRestricted,
-    );
+    let restricted_target = ScriptedTarget::new([Ok(1)], Ok(1), IntegrityRelation::KnownRestricted);
     let restricted_keyboard = ScriptedKeyboard::complete();
     let restricted_coordinator = coordinator(
         ScriptedClipboard::new("a", []),
