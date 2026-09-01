@@ -1,4 +1,16 @@
-//! Application orchestration boundary for ClipType.
+//! Native-neutral application orchestration for ClipType.
 //!
-//! P1-01 intentionally provides no coordinator, session state, or product
-//! behavior. This crate will consume frozen core and platform contracts.
+//! The coordinator owns one live bounded session, cancellation, port ordering,
+//! retry budgets, and content-free status. Platform message loops and native API
+//! calls remain outside this package.
+
+#![forbid(unsafe_code)]
+
+mod cancellation;
+mod coordinator;
+
+pub use cancellation::CancellationFlag;
+pub use coordinator::{
+    CancelResult, Coordinator, SessionCompletion, ShutdownResult, StatusSnapshot, TriggerResult,
+    WaitResult,
+};
