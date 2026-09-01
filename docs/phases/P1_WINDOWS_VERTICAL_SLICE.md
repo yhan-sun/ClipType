@@ -1,90 +1,88 @@
 # P1 Windows Vertical Slice Execution Plan
 
 **Status:** Current implementation phase  
-**Tracking issue:** [#1](../../issues/1)  
-**Native discovery gate:** [#13](../../issues/13)  
-**Governance gate:** [#14](../../issues/14)
+**Tracking:** #1  
+**Native discovery gate:** #13  
+**License/governance gate:** #14
 
-This document turns the high-level P1 roadmap into an executable delivery plan. Product behavior remains normative in the top-level documents under `docs/`; this file owns P1 sequencing, integration checkpoints, issue boundaries, and evidence required to leave the phase.
+This document owns P1 sequencing, task boundaries, integration checkpoints, merge order, and exit evidence. Product, architecture, security, and compatibility semantics remain normative in the top-level documents under `docs/`.
 
-## 1. P1 outcome
+## 1. Required P1 outcome
 
-P1 must prove one complete, safe Windows path:
+P1 proves one complete Windows path:
 
 ```text
-explicit global hotkey
-  -> reserve the single session slot
+explicit global trigger
+  -> atomically reserve one session
   -> capture destination evidence immediately
-  -> wait for trigger modifiers to be released
-  -> read current CF_UNICODETEXT
-  -> normalize/validate text
+  -> wait for trigger modifiers to become safe
+  -> read bounded current CF_UNICODETEXT
+  -> normalize and validate text
   -> create immutable keyboard plan
   -> revalidate destination
   -> dispatch bounded SendInput batches
-  -> recheck cancellation, focus evidence, and modifier safety
-  -> publish a content-free result
+  -> check cancel, target evidence, and modifiers between batches
+  -> publish a content-free terminal result
   -> release the session slot
 ```
 
-The output is a development-quality Windows executable and reproducible evidence. P1 is not a public beta or polished Windows product.
+The output is a development-quality executable plus reproducible evidence. It is not a public beta, productized Windows UI, installer, or release.
 
-## 2. Re-analysis: changes from the original decomposition
+## 2. Why the original P1 plan was changed
 
-The first issue set was directionally correct but had four execution risks.
+### 2.1 Native evidence must precede contract freeze
 
-### 2.1 Do not freeze ports before native evidence
+Win32 message-loop ownership, Unicode/line-break behavior, modifier state, focus evidence, clipboard contention, `SendInput` progress, and UIPI diagnostics constrain the shared contracts. Therefore #13 runs after workspace bootstrap and before #3.
 
-Win32 message-loop ownership, `SendInput` progress, Unicode/newline behavior, foreground evidence, modifier contamination, and UIPI diagnostics constrain the contracts. Therefore [P1-S01 #13](../../issues/13) runs after workspace bootstrap and before P1-02 contract freeze.
+### 2.2 Pure policy and live orchestration must not overlap
 
-### 2.2 Separate pure policy from runtime orchestration
+- #4 owns pure text normalization, plan construction, and transition/outcome rules.
+- #9 owns the live session slot, worker, ports, cancellation token, retries, target checks, and cleanup.
 
-- **P1-03** owns pure plan/text/state-transition policy only.
-- **P1-08** owns the live session coordinator, concurrency, ports, cancellation token, focus rechecks, and lifecycle.
+There is one live state machine, hosted by the application coordinator and driven by pure policy.
 
-P1-03 must not create a second orchestration layer, and P1-08 must not reimplement policy in callbacks.
+### 2.3 The Win32 message loop must remain responsive
 
-### 2.3 Keep the Win32 event loop responsive
+The hotkey registration/message-loop owner only translates native events into application commands. Clipboard contention and text injection execute through the bounded worker/coordinator path. A full async runtime is not introduced unless #13 demonstrates a concrete need.
 
-A hotkey is delivered through the owning thread's message queue. Injection must not block that queue. P1 uses a responsive message-loop owner plus a bounded worker/session coordinator; a full async runtime is not introduced unless the native spike proves a concrete need.
+### 2.4 Compatibility must describe available evidence, not idealized focus
 
-### 2.4 Make support claims match actual evidence
+Windows can often compare foreground window, process/thread, and native focused-window evidence. It may not distinguish two logical fields inside one render host. P1 promises bounded revalidation against available evidence, not universal exact-caret identity.
 
-Windows focus evidence cannot automatically be equated with an exact logical text field. P1 can detect top-level window/thread/focused-native-window changes where exposed, but some applications place many logical fields inside one render host. Compatibility wording must report the actual guarantee.
-
-## 3. Fixed P1 scope
+## 3. Scope
 
 ### In scope
 
-- a minimal Rust workspace and CI baseline;
-- a Windows-only vertical slice;
-- current plain Unicode clipboard text read at trigger time;
-- one global trigger plus an explicit cancellation path;
-- target/focus evidence and fail-safe revalidation;
-- Unicode-oriented native keyboard injection;
-- ASCII, CJK, combining marks, supplementary Unicode, multiline, and explicit Tab/control handling;
+- minimal Rust workspace and CI baseline;
+- Windows-only implementation crates;
+- current plain Unicode clipboard read at trigger time;
+- one explicit global trigger and cancellation command;
+- target/focus/integrity evidence;
+- Unicode-oriented keyboard injection;
+- ASCII, CJK, combining marks, supplementary Unicode, line breaks, Tab, and unsupported-control behavior;
+- configured payload limit;
 - one active session maximum;
-- bounded dispatch/cancellation/focus checkpoints;
-- typed, content-free status and errors;
-- controlled E2E harness and representative target evidence;
-- independent architecture/security/privacy gate review.
+- bounded clipboard retry, modifier wait, dispatch batches, and safety checkpoints;
+- content-free typed diagnostics/status;
+- controlled E2E harness and representative-target observations;
+- independent architecture/security/privacy/evidence review.
 
 ### Out of scope
 
-- clipboard listener/history;
-- clipboard-paste backend and restore transaction;
-- automatic backend selection;
+- clipboard listener, continuous capture, history, cache, write, paste, or restoration;
+- `auto` backend selection and thresholds;
 - polished tray/settings UI;
-- installer, auto-start, signing, or release distribution;
+- installer, auto-start, signing, update system, or release distribution;
 - macOS, X11, or Wayland crates/stubs;
 - app profiles;
 - low-level global keyboard hooks;
-- exact-caret guarantees through UI Automation;
-- retrying partial or unknown synthetic input;
-- bypassing Windows security boundaries.
+- UI Automation-based exact-caret tracking;
+- retries after partial or unknown synthetic input;
+- automatic elevation or security-boundary bypass.
 
-## 4. P1 repository and dependency graph
+## 4. P1 crate graph
 
-Only these implementation packages are created:
+Create only:
 
 ```text
 crates/cliptype-core
@@ -94,7 +92,7 @@ crates/cliptype-windows
 apps/cliptype
 ```
 
-Dependency direction is a diamond, not a linear chain:
+Required dependency direction:
 
 ```text
                   cliptype-core
@@ -109,286 +107,243 @@ Dependency direction is a diamond, not a linear chain:
                apps/cliptype
 ```
 
-Normative edges:
+- `cliptype-core`: sensitive value types, normalization, plans, pure policy.
+- `cliptype-platform`: native-neutral ports, capabilities, target/security evidence, results.
+- `cliptype-app`: application use cases and live one-session coordinator.
+- `cliptype-windows`: Win32 mechanisms behind safe contracts; no dependency on `cliptype-app`.
+- `apps/cliptype`: composition root and Windows host.
 
-- `cliptype-core`: platform-independent values and pure policy; no Win32 imports.
-- `cliptype-platform -> cliptype-core`: ports, capability/evidence contracts, native-neutral results.
-- `cliptype-app -> cliptype-core + cliptype-platform`: use cases and live session coordination.
-- `cliptype-windows -> cliptype-core + cliptype-platform`: safe Windows implementations; it does not depend on `cliptype-app`.
-- `apps/cliptype -> cliptype-app + cliptype-windows`: composition root and Windows message-loop host.
+Do not add generic utility, UI-framework, helper-process, or future-platform crates in P1.
 
-No generic `utils`, cross-platform placeholder, GUI-framework, or helper-process crate is created in P1.
-
-## 5. Runtime ownership model
-
-P1-S01 must validate the final details, but the intended ownership is:
+## 5. Runtime ownership
 
 ```text
 Windows message-loop owner
-  - owns RegisterHotKey / UnregisterHotKey
-  - receives trigger, cancel, and shutdown events
-  - never performs long text dispatch
-  - calls a narrow application command surface
+  - owns hotkey registration/unregistration and native command delivery
+  - remains responsive
+  - forwards typed trigger/cancel/shutdown commands
                 |
                 v
-Application session coordinator
-  - atomically reserves one session slot
-  - captures target evidence immediately for a trigger
-  - creates cancellation token / status channel
-  - starts one injection worker
+Application coordinator
+  - atomically reserves one session
+  - captures destination immediately
+  - creates cancellation/status state
+  - starts one bounded worker
                 |
                 v
 Injection worker
-  - waits for trigger modifiers to settle within a bound
-  - reads clipboard with bounded contention handling
-  - plans and dispatches bounded batches
-  - checks cancellation/focus/modifier state between batches
-  - reports typed terminal result
+  - waits for safe modifier state
+  - performs bounded clipboard retry
+  - validates/plans text
+  - revalidates destination
+  - dispatches one bounded native batch at a time
+  - checks cancel/target/modifiers at every boundary
                 |
                 v
-Message-loop/status surface
-  - remains responsive
-  - renders content-free development status
+Content-free status surface
 ```
 
-### Required concurrency properties
+Required properties:
 
-1. The session slot is reserved before worker creation, so two rapid triggers cannot create two sessions.
-2. The hotkey/message-loop owner remains responsive while injection is active.
-3. Cancellation reaches the active token without waiting for the injection worker to finish.
-4. Every native dispatch batch is bounded; an entire unbounded payload is never one uncancellable operation.
-5. Session state returns to idle on every contained terminal path.
-6. Platform-thread affinity is explicit and tested.
+1. The session slot is reserved before worker creation.
+2. Two rapid triggers cannot create two workers.
+3. Cancellation is signalable without waiting for worker completion.
+4. The message-loop owner never runs the whole injection operation.
+5. Every wait/retry/native dispatch has a bound.
+6. Every contained terminal path releases session state and native resources.
 
 ## 6. Trigger-to-dispatch ordering
 
-Destination evidence is captured before potentially contended clipboard acquisition. This preserves the target intended at trigger time.
+1. Receive explicit trigger.
+2. Reserve session slot or return `busy`.
+3. Capture initial target evidence immediately.
+4. Create cancellation/status state and start the worker.
+5. Wait for trigger modifiers to settle within a bound.
+6. Acquire current clipboard text with bounded externally visible retry.
+7. Enforce native and configured payload bounds.
+8. Normalize/validate semantic text.
+9. Obtain capability/integrity evidence and create immutable plan.
+10. Revalidate the original target before first dispatch.
+11. Before each batch, check cancellation, target evidence, and modifier safety.
+12. Dispatch exactly one bounded semantic batch.
+13. Stop on cancel, target/evidence change, modifier conflict, partial/unknown progress, or failure.
+14. Publish a content-free result and release the session slot.
 
-Required order:
-
-1. receive explicit trigger;
-2. reserve session slot or return `busy`;
-3. capture initial target evidence immediately;
-4. start worker;
-5. wait for trigger modifiers to be released within a bounded timeout;
-6. acquire current clipboard text using bounded retry on transient busy state;
-7. validate and normalize text;
-8. acquire capability/integrity evidence;
-9. create immutable plan;
-10. recapture target and abort if evidence changed or became unsafe;
-11. dispatch one bounded batch;
-12. before every following batch, check cancellation, target evidence, and conflicting modifier state;
-13. classify complete/partial/cancelled/target-changed/blocked/native failure;
-14. publish content-free status and release the session slot.
-
-The application must never recapture a new destination after a change and continue there merely to finish the payload.
+The coordinator never adopts a newly focused target to finish an operation.
 
 ## 7. Text and native dispatch contract
 
-P1 should model validated text as semantic atoms rather than exposing Win32 event arrays to core policy. The exact names are implementation choices, but the semantics must distinguish:
+Core policy operates on semantic elements:
 
 - printable Unicode scalar;
 - normalized line break;
-- Tab when enabled by P1 policy;
+- Tab when allowed;
 - rejected unsupported control character.
 
 Requirements:
 
-- preserve Unicode scalar order and combining marks;
-- convert CRLF and lone CR/LF according to one documented normalization policy;
-- do not silently convert arbitrary controls into key commands;
-- translate semantic atoms to Win32 events only inside `cliptype-windows`;
-- supplementary characters may require multiple UTF-16 units but remain one semantic input element at the core boundary;
-- a partial native event count may not map to a trustworthy Unicode-text prefix, so the result may be `partial progress unknown` rather than inventing an exact typed prefix;
-- partial/unknown dispatch is never automatically retried.
+- preserve scalar order and combining marks;
+- use one documented CRLF/CR/LF normalization policy;
+- keep Win32 `INPUT` arrays and UTF-16 event construction inside `cliptype-windows`;
+- treat a supplementary scalar as one semantic element even when native translation uses multiple UTF-16 units;
+- do not infer an exact typed text prefix when a partial native event count may split a key pair or UTF-16 sequence;
+- never automatically retry partial or progress-unknown dispatch.
 
-Newline/Tab behavior must be validated by target category in P1-S01 and P1-10. A multiline payload may be interpreted as commands by terminals; terminal testing must use benign controlled fixtures and must not be described as universally safe.
+Terminal-like targets may assign operational meaning to emitted line breaks. E2E fixtures must be benign and compatibility wording must state this limitation.
 
-## 8. Target evidence and focus guarantee
+## 8. Target evidence guarantee
 
-A Windows target fingerprint should use only non-content evidence, expected to include the strongest practical combination of:
+The Windows adapter uses the strongest practical non-content evidence, expected to include:
 
-- foreground top-level window identity;
-- owning process and GUI thread identity;
-- active/focused native window identity when available;
-- optional integrity relation needed for security-boundary reporting.
+- foreground top-level window;
+- owning process and GUI thread;
+- active/focused native window where available;
+- optional integrity relationship for security reporting.
 
-Window titles, focused text, and accessibility-tree contents are excluded.
+It excludes focused text, selection contents, accessibility-tree contents, and window titles by default.
 
-### Fail-safe rules
+Fail-safe rules:
 
-- a known target change aborts before the next batch;
+- known target change aborts before the next batch;
 - target disappearance aborts;
-- under strict P1 policy, evidence that becomes unavailable/ambiguous after dispatch begins aborts rather than continuing blindly;
-- transient native activation races are classified explicitly;
-- same-render-host logical field changes may be undetectable and must be recorded as a compatibility limitation.
-
-P1 therefore promises **bounded revalidation against available Windows window/thread focus evidence**, not proof that the exact logical caret never moved inside one render host.
+- under strict P1 policy, evidence becoming unavailable or ambiguous after dispatch starts aborts;
+- target handles are not trusted without the contract-required identity context;
+- render-host-limited logical-field changes are recorded as compatibility limitations.
 
 ## 9. Modifier safety
 
-The trigger's Ctrl/Alt/Shift/Win keys may still be physically down when the hotkey event arrives. Existing physical key state can interfere with synthetic input.
-
-P1 rules:
-
-- never release the user's physical modifier keys;
-- use a bounded pre-dispatch modifier-release gate;
-- fail with a typed modifier-conflict/timeout result if the state does not become safe;
-- inspect conflicting modifier state before subsequent batches where the chosen mechanism requires it;
-- use `MOD_NOREPEAT` for the development trigger where supported;
-- do not add a global keylogger-style hook merely to improve this behavior.
+- use explicit trigger/cancel combinations with no-repeat behavior where supported;
+- wait for trigger modifiers to be physically released within a bounded timeout;
+- return a typed conflict/timeout if the state remains unsafe;
+- recheck conflicting modifier state between batches where required;
+- never release arbitrary physical user keys;
+- do not add a broad global hook for this purpose.
 
 ## 10. UIPI and blocked-input reporting
 
-P1 distinguishes evidence from diagnosis:
-
-- if integrity comparison reliably proves the target is higher integrity, report a security-boundary restriction before dispatch;
-- if the relationship is unknown and `SendInput` inserts no events, report a blocked/native-unknown result with a possible elevated-target remediation hint;
-- do not label every zero-return as definitely caused by UIPI;
-- never elevate automatically or bypass UIPI.
+- known evidence that the target is higher integrity produces a security-boundary outcome before dispatch;
+- zero accepted native events without sufficient evidence produces a blocked/native-cause-unknown outcome;
+- do not label every zero result as definitively UIPI;
+- do not elevate automatically or bypass the boundary.
 
 ## 11. Work waves and merge order
 
-### Wave 0 — governance and foundation
+### Wave 0 — foundation and governance
 
-- [#14 P1-G01](../../issues/14): license/contribution decision. May proceed in parallel but must close before the first production-code PR merges.
-- [#2 P1-01](../../issues/2): workspace, dependency graph, pinned toolchain policy, baseline CI.
+- #2 — workspace, crate graph, toolchain, lockfile policy, baseline CI.
+- #14 — project license/contribution boundary; may run in parallel but blocks the first production-code merge.
 
 ### Wave 1 — native discovery
 
-- [#13 P1-S01](../../issues/13): interactive Windows mechanism and runtime spike.
+- #13 — interactive Windows mechanism/runtime spike.
 
-P1-02 may not freeze contracts until the spike handoff is reviewed.
+Do not freeze #3 until #13 evidence is reviewed.
 
 ### Wave 2 — contract freeze
 
-- [#3 P1-02](../../issues/3): native-neutral contracts informed by P1-S01.
+- #3 — native-neutral P1 contracts informed by #13.
 
-The merged P1-02 commit becomes the common base for parallel implementation PRs.
+The merged #3 commit becomes the common base for Wave 3 branches.
 
 ### Wave 3 — parallel pure policy and adapters
 
-- [#4 P1-03](../../issues/4): pure text/plan/state-transition policy.
-- [#5 P1-04](../../issues/5): Windows current Unicode clipboard read.
-- [#6 P1-05](../../issues/6): Windows target/focus and integrity evidence.
-- [#7 P1-06](../../issues/7): bounded Windows Unicode `SendInput` backend.
-- [#8 P1-07](../../issues/8): trigger/cancel event source and message-loop lifecycle.
+- #4 — pure normalization, planning, transition policy.
+- #5 — bounded current Unicode clipboard acquisition.
+- #6 — target/focus/integrity evidence.
+- #7 — bounded Unicode `SendInput` dispatch and modifier observations.
+- #8 — trigger/cancel hotkey event source and lifecycle.
 
-These tasks may proceed in parallel only from the same accepted P1-02 contract base. Agents must not independently fork shared contracts. Contract pressure returns to P1-02 through a focused change/review.
+Shared contract pressure returns to a focused #3 correction. Adapter agents must not fork contracts independently.
 
-### Wave 4 — runtime integration
+### Wave 4 — integration
 
-- [#9 P1-08](../../issues/9): live session coordinator and fake-port integration tests.
-- [#10 P1-09](../../issues/10): Windows composition root, message loop, worker hosting, and minimal development status.
+- #9 — live one-session coordinator and fake-port safety tests.
+- #10 — executable composition, responsive message loop/worker, development status.
 
-P1-09 does not require a tray. A console/development surface is preferred over introducing product UI complexity.
+A tray is optional and not a P1 acceptance condition.
 
-### Wave 5 — evidence and gate review
+### Wave 5 — evidence and independent gate
 
-- [#11 P1-10](../../issues/11): controlled E2E harness, interactive matrix, privacy sentinel scan, compatibility evidence.
-- [#12 P1-11](../../issues/12): independent architecture/security/privacy gate review.
+- #11 — controlled E2E, privacy sentinel, compatibility evidence.
+- #12 — independent architecture, safety, privacy, governance, and evidence review.
 
-### Critical path
+Critical path:
 
 ```text
-P1-01 -> P1-S01 -> P1-02
-                    |
-                    +-> longest of P1-03..P1-07
-                                      |
-                                      v
-                                   P1-08
-                                      |
-                                      v
-                                   P1-09
-                                      |
-                                      v
-                                   P1-10
-                                      |
-                                      v
-                                   P1-11
+#2 -> #13 -> #3 -> longest of #4..#8 -> #9 -> #10 -> #11 -> #12
 ```
 
-P1-G01 is a parallel governance gate but blocks merging production implementation.
+#14 is a parallel governance gate that must close before production implementation merges.
 
-## 12. Issue responsibility boundaries
+## 12. Task ownership table
 
 | Task | Owns | Must not own |
 |---|---|---|
-| P1-01 | workspace, crate graph, toolchain/build/CI baseline | product behavior or Win32 mechanisms |
-| P1-S01 | empirical native evidence and recommendations | production adapters |
-| P1-02 | traits/value types/results/capabilities | runtime loop or Windows handles in public policy |
-| P1-03 | normalization, planning, pure transition reducer | threads, channels, live ports, Win32 |
-| P1-04 | clipboard acquisition mechanism | history/listener/write/restore |
-| P1-05 | target/focus/integrity evidence | focused text, refocusing, UI Automation |
-| P1-06 | semantic-atom to bounded native input dispatch | session orchestration, retries, policy |
-| P1-07 | hotkey registration/event/lifecycle | injection policy or arbitrary key capture |
-| P1-08 | one-session runtime coordinator | Windows message pump presentation |
-| P1-09 | composition root and responsive host | polished UI/installer/settings |
-| P1-10 | evidence, fixtures, compatibility report | hiding failures by changing product behavior |
-| P1-11 | independent gate findings | feature implementation bundled into review |
+| #2 | workspace, graph, toolchain, baseline CI | product/native behavior |
+| #13 | empirical Windows evidence | production adapters |
+| #3 | native-neutral contracts | runtime loop or public Win32 handles |
+| #4 | normalization, plan, pure transitions | threads, ports, Win32 |
+| #5 | one bounded clipboard acquisition | listener/history/write/restore/retry loop |
+| #6 | target/focus/integrity evidence | focused content, refocus, universal caret claim |
+| #7 | one bounded native input dispatch | session loop, retries, focus policy |
+| #8 | hotkey registration and typed events | clipboard/input/session policy |
+| #9 | live session worker/coordinator | Win32 message-pump presentation |
+| #10 | composition root and responsive host | productized UI/installer |
+| #11 | fixtures/evidence/compatibility report | hiding failures by changing behavior |
+| #12 | independent findings/recommendation | feature implementation bundled into review |
+| #14 | license/contribution decision | implementation/release authorization |
 
-## 13. Risk-level alignment
+## 13. Risk alignment
 
-Use the repository risk taxonomy consistently:
+- R1: #2, #3, #4 unless architecture scope expands.
+- R2: #13, #5, #6, #7, #8, #9, #10; #7 additionally requires focused security review.
+- R3: any newly introduced privilege, persistence, network/crash upload, IPC authorization, or broad input hook; these are outside current P1 without review.
+- R4: #14 governance decision, #11 support evidence recommendation, #12 and #1 phase gates.
 
-- P1-01, P1-02, P1-03: R1 unless an architecture decision expands scope.
-- P1-S01, P1-04, P1-05, P1-06, P1-07, P1-08, P1-09: R2 native/integration; P1-06 additionally requires focused security review.
-- Any new persistence, crash-memory upload, privileged process, IPC authorization, or broad input hook: R3 and outside the current plan without review.
-- P1-G01, P1-10 compatibility recommendation, and P1-11 phase/support gate: R4.
+Use the repository risk taxonomy; add specialist review rather than inventing a risk meaning.
 
-Safety-critical does not mean inventing a different risk number; add the required reviewer while preserving the taxonomy.
+## 14. Agent and PR protocol
 
-## 14. PR and Agent execution protocol
-
-1. One task packet normally produces one focused PR.
-2. Every PR names the issue and uses `Closes #N` only when all acceptance criteria are met.
-3. Each PR records:
-   - base/head commit;
-   - source-of-truth docs read;
-   - files/subsystems changed;
-   - contract/API changes;
-   - exact checks run;
-   - interactive Windows evidence, if any;
-   - unverified paths;
-   - privacy/security self-review;
-   - intentionally deferred work.
-4. Parallel Wave 3 PRs branch from the same merged P1-02 base.
-5. Stacked PRs are avoided unless dependencies are explicit and the base PR is linked.
-6. No agent merges, force-pushes shared work, tags, publishes, or declares P1 complete without explicit maintainer authority.
-7. P1-11 should be reviewed by an agent/person independent of the primary P1 implementation path where practical.
+1. One task packet normally maps to one focused PR.
+2. Every PR names the issue, phase/wave, risk, base/head commit, and source-of-truth documents read.
+3. `Closes #N` is used only when all acceptance criteria are met.
+4. Wave 3 PRs branch from the same merged #3 commit.
+5. Stacked PRs require explicit dependency/base links.
+6. Reports distinguish executed checks, interactive evidence, expected-by-contract behavior, and unverified paths.
+7. Every native PR documents APIs, ownership, buffer/count/encoding invariants, thread requirements, cleanup, and safe-wrapper guarantees.
+8. No agent merges, force-pushes shared work, tags, publishes, releases, elevates privilege, or broadens support claims without explicit maintainer authority.
+9. #12 should be independent of the main #7/#9/#10 implementation path where practical.
 
 ## 15. Verification strategy
 
 ### Automated baseline
 
-P1-01 establishes CI that can evolve with implementation:
-
-- formatting check;
-- clippy/lint policy;
-- deterministic core/app tests;
-- Windows workspace build/test;
-- non-Windows verification that platform-neutral crates remain platform-neutral;
-- dependency lockfile and dependency/license inspection appropriate to the selected license policy.
+- formatting and lint;
+- deterministic core/application tests;
+- Windows workspace build/tests;
+- non-Windows checks for platform-neutral crates;
+- lockfile/dependency/license/security inspection appropriate to #14.
 
 ### Interactive Windows evidence
 
-Native input behavior must be tested in a real interactive desktop session. Headless CI is compile/unit evidence, not proof of global hotkeys, foreground focus, or `SendInput` delivery.
+Headless CI is not proof of global hotkeys, foreground evidence, or native input. #13 and #11 execute on a recorded interactive desktop.
 
-### Required safety evidence
+Required evidence includes:
 
-- two rapid triggers cannot create two sessions;
-- message loop still receives cancel while worker injects;
-- cancel stops future batches within a measured bound established from P1-S01;
-- top-level target switch stops future batches;
-- target closure stops future batches;
-- modifier conflict is handled without releasing physical keys;
-- partial/unknown native result is not retried;
-- session always returns to idle;
-- high-integrity behavior is reported without false certainty.
+- one worker under rapid/double trigger;
+- message-loop responsiveness during long input;
+- cancellation received and later batches stopped within a measured bound;
+- target change/closure stops later batches;
+- modifier settle/conflict without releasing physical keys;
+- payload-limit and clipboard-contention behavior;
+- partial/progress-unknown path with no retry;
+- accurate known-integrity versus blocked-unknown results;
+- terminal state returns to idle;
+- shutdown/restart cleanup.
 
 ### Privacy sentinel
 
-P1-10 uses a distinctive synthetic fixture and searches logs/test artifacts. The fixture must appear only in explicitly controlled target/assertion buffers, never in ordinary logs, errors, status snapshots, or persistent diagnostics.
+A distinctive generated fixture may appear only in controlled target/assertion buffers. Search ordinary logs, status snapshots, persistent test artifacts, and generated crash/debug output for text samples, prefixes/suffixes, hashes/fingerprints, focused contents, and window titles.
 
 ## 16. Representative target matrix
 
@@ -398,74 +353,64 @@ Minimum categories:
 - Chromium-family text field;
 - VS Code/editor field;
 - Windows Terminal or equivalent terminal input;
-- elevated/high-integrity target for expected restriction evidence.
+- elevated/high-integrity target.
 
-Rules:
-
-- compatibility is recorded per tested application/version/environment;
-- one success does not establish universal support;
-- terminal multiline tests use benign, controlled input and explicitly acknowledge command interpretation risk;
-- same-window logical field switching is tested where practical and limitations are recorded.
+Record exact Windows/application versions, fixture class, evidence level, result, and limitation. One success is an observation, not universal support.
 
 ## 17. P1 exit gate
 
-P1 may be recommended complete only when:
-
 ### Architecture/build
 
-- [ ] P1-G01 is resolved before production implementation merges;
-- [ ] only P1 package boundaries exist;
-- [ ] crate dependency direction matches Section 4;
-- [ ] platform-neutral crates compile/test without Win32 leakage;
-- [ ] Windows workspace checks pass on the recorded toolchain;
-- [ ] no unnecessary async/UI/helper framework was introduced.
+- [ ] #14 resolved before production implementation merge.
+- [ ] only P1 packages exist and dependency direction is correct.
+- [ ] platform-neutral crates have no Win32 leakage.
+- [ ] required format/lint/check/test jobs pass on recorded toolchains.
+- [ ] no unjustified async/UI/helper framework.
 
 ### Functional
 
-- [ ] global trigger reaches the application command surface;
-- [ ] destination is captured at trigger time;
-- [ ] current `CF_UNICODETEXT` is acquired safely;
-- [ ] ASCII, CJK, combining, supplementary Unicode, newline, and Tab/control policy have evidence;
-- [ ] bounded `SendInput` batches reach controlled and representative targets;
+- [ ] explicit global trigger reaches the application coordinator.
+- [ ] destination is captured at trigger time.
+- [ ] bounded current Unicode clipboard text is acquired.
+- [ ] Unicode, line-break, Tab, control, and payload-limit behavior is evidenced.
+- [ ] bounded native batches reach controlled and representative targets.
 - [ ] hotkey conflict and shutdown lifecycle are surfaced.
 
 ### Safety
 
-- [ ] one active session is enforced atomically;
-- [ ] message loop remains responsive during injection;
-- [ ] trigger modifiers are not allowed to contaminate first dispatch;
-- [ ] cancellation and focus checks are bounded and measured;
-- [ ] known target change prevents subsequent batches;
-- [ ] partial/unknown dispatch is never retried;
-- [ ] UIPI is not bypassed or falsely diagnosed;
-- [ ] exact focus-evidence limitations are documented.
+- [ ] one session/worker under races.
+- [ ] message loop remains responsive.
+- [ ] trigger modifiers cannot contaminate first dispatch.
+- [ ] cancel/target/modifier checkpoints have recorded bounds.
+- [ ] target change, disappearance, or strict evidence loss stops later batches.
+- [ ] partial/unknown dispatch is not retried.
+- [ ] session returns to idle on all contained terminal paths.
+- [ ] UIPI is neither bypassed nor falsely diagnosed.
+- [ ] focus-evidence limitations are documented.
 
 ### Privacy/evidence
 
-- [ ] clipboard/injected plaintext is absent from ordinary logs and persistent artifacts;
-- [ ] clipboard contents are not persisted as history/cache;
-- [ ] P1-10 records CI, interactive, and manual evidence separately;
-- [ ] compatibility statements are evidence-backed;
-- [ ] P1-11 returns `PASS` or `PASS WITH NON-BLOCKING FOLLOW-UPS`;
-- [ ] remaining work is classified as P2 or a visible blocker.
+- [ ] no clipboard/injected plaintext in ordinary logs or persistent artifacts.
+- [ ] no P1 listener/history/write/restore path.
+- [ ] CI, controlled E2E, and representative observations are separated.
+- [ ] compatibility wording is evidence-backed.
+- [ ] #12 returns `PASS` or `PASS WITH NON-BLOCKING FOLLOW-UPS`.
+- [ ] remaining work is classified as P2 or linked blockers.
 
-Closing issues alone does not authorize a tag, release, or public compatibility promise.
+Completing the gate does not authorize a tag, release, or broad support promise.
 
-## 18. Expected P1 handoff
+## 18. Final P1 handoff
 
-The final phase handoff contains:
+Report:
 
-1. exact reviewed commit SHA;
-2. completed issues/PRs and merge order;
-3. Windows edition/version/build/architecture/session;
-4. Rust toolchain and dependency summary;
-5. crate graph;
-6. runtime thread/message-loop diagram;
-7. automated commands and results;
-8. interactive E2E matrix;
-9. measured cancellation/focus checkpoint behavior;
-10. privacy sentinel method/result;
-11. unsafe/FFI inventory;
-12. known compatibility limitations;
-13. P1-11 recommendation;
-14. P2 entry recommendation.
+1. exact reviewed commit and PR merge order;
+2. Windows/Rust/dependency environment;
+3. crate graph and runtime ownership diagram;
+4. automated commands/results;
+5. interactive controlled and representative-target matrix;
+6. batch, cancellation, focus, modifier, clipboard, and payload bounds;
+7. privacy sentinel result;
+8. unsafe/FFI inventory;
+9. known limitations and open blockers;
+10. #12 recommendation;
+11. recommendation on entering P2.
