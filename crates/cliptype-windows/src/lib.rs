@@ -6,9 +6,13 @@
 #[cfg(windows)]
 mod clipboard;
 #[cfg(windows)]
+mod keyboard;
+#[cfg(windows)]
 mod target;
 
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
+#[cfg(windows)]
+pub use keyboard::WindowsKeyboard;
 #[cfg(windows)]
 pub use target::WindowsTarget;
