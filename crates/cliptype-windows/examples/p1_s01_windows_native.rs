@@ -130,19 +130,14 @@ mod windows_probe {
         let worker = thread::spawn(move || {
             thread::sleep(Duration::from_millis(25));
             let posted = unsafe { post_thread_message_w(owner_thread, PROBE_MESSAGE, 0, 0) };
-            (posted != 0).then_some(()).ok_or_else(|| {
-                "worker could not signal the message-loop owner".to_string()
-            })
+            (posted != 0)
+                .then_some(())
+                .ok_or_else(|| "worker could not signal the message-loop owner".to_string())
         });
 
         let mut message: Message = unsafe { zeroed() };
         let received = unsafe {
-            get_message_w(
-                &mut message,
-                null_mut(),
-                PROBE_MESSAGE,
-                PROBE_MESSAGE,
-            )
+            get_message_w(&mut message, null_mut(), PROBE_MESSAGE, PROBE_MESSAGE)
         };
 
         let unregistered = unsafe { unregister_hot_key(null_mut(), HOTKEY_ID) };
