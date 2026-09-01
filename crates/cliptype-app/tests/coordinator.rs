@@ -92,7 +92,12 @@ struct TargetState {
 
 impl FakeTarget {
     fn stable(token: u64, trace: Trace) -> Self {
-        Self::sequence([Ok(token)], token, IntegrityRelation::KnownNotRestricted, trace)
+        Self::sequence(
+            [Ok(token)],
+            token,
+            IntegrityRelation::KnownNotRestricted,
+            trace,
+        )
     }
 
     fn sequence(
@@ -163,10 +168,7 @@ impl FakeModifier {
     }
 
     fn held() -> Self {
-        Self::sequence(
-            [],
-            ModifierObservation::Held(ModifierMask::CONTROL),
-        )
+        Self::sequence([], ModifierObservation::Held(ModifierMask::CONTROL))
     }
 
     fn sequence(
@@ -207,10 +209,7 @@ impl FakeKeyboard {
         Self::with_results([], trace)
     }
 
-    fn with_results(
-        results: impl IntoIterator<Item = DispatchResult>,
-        trace: Trace,
-    ) -> Self {
+    fn with_results(results: impl IntoIterator<Item = DispatchResult>, trace: Trace) -> Self {
         Self {
             state: Arc::new(Mutex::new(KeyboardState {
                 output: String::new(),
@@ -255,9 +254,12 @@ impl KeyboardPort for FakeKeyboard {
             }
         }
 
-        Ok(state.results.pop_front().unwrap_or(DispatchResult::Complete {
-            events: NativeEventCount::new(1),
-        }))
+        Ok(state
+            .results
+            .pop_front()
+            .unwrap_or(DispatchResult::Complete {
+                events: NativeEventCount::new(1),
+            }))
     }
 }
 
@@ -446,9 +448,7 @@ fn target_change_before_first_dispatch_aborts_without_input() {
     assert_eq!(keyboard.calls(), 0);
     assert_eq!(
         coordinator.status().completion,
-        Some(SessionCompletion::Finished(
-            TerminalOutcome::TargetChanged
-        ))
+        Some(SessionCompletion::Finished(TerminalOutcome::TargetChanged))
     );
 }
 
@@ -459,10 +459,7 @@ fn partial_native_result_stops_without_retry() {
         requested: NativeEventCount::new(4),
         accepted: NativeEventCount::new(2),
     };
-    let keyboard = FakeKeyboard::with_results(
-        [DispatchResult::Partial { counts }],
-        trace.clone(),
-    );
+    let keyboard = FakeKeyboard::with_results([DispatchResult::Partial { counts }], trace.clone());
     let coordinator = Coordinator::new(
         FakeClipboard::new("abcd", 0, trace.clone()),
         FakeTarget::stable(1, trace),

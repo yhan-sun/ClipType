@@ -370,10 +370,9 @@ struct SessionContext {
 }
 
 fn worker_entry(mut context: SessionContext, shared: Arc<SharedRuntime>) {
-    let completion = catch_unwind(AssertUnwindSafe(|| run_session(&mut context)))
-        .unwrap_or(SessionCompletion::Finished(
-            TerminalOutcome::InternalInvariant,
-        ));
+    let completion = catch_unwind(AssertUnwindSafe(|| run_session(&mut context))).unwrap_or(
+        SessionCompletion::Finished(TerminalOutcome::InternalInvariant),
+    );
     shared.finish(completion);
 }
 
@@ -402,11 +401,7 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
         return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
     }
 
-    let plan = match build_keyboard_plan(
-        text,
-        context.config,
-        plan_capabilities(capabilities),
-    ) {
+    let plan = match build_keyboard_plan(text, context.config, plan_capabilities(capabilities)) {
         Ok(plan) => plan,
         Err(error) => return SessionCompletion::PreparationFailed(map_plan_error(error)),
     };
@@ -419,9 +414,7 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
         .integrity_relation(&context.original_target)
         == IntegrityRelation::KnownRestricted
     {
-        return SessionCompletion::PreparationFailed(
-            PreparationFailure::KnownSecurityRestriction,
-        );
+        return SessionCompletion::PreparationFailed(PreparationFailure::KnownSecurityRestriction);
     }
     if advance(&mut context.flow, FlowEvent::PlanReady).is_err() {
         return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
@@ -585,9 +578,9 @@ fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionC
                 }
             }
             Err(error) => {
-                return Err(SessionCompletion::PreparationFailed(
-                    map_clipboard_error(error),
-                ));
+                return Err(SessionCompletion::PreparationFailed(map_clipboard_error(
+                    error,
+                )));
             }
         }
     }
@@ -600,8 +593,7 @@ fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionC
 const fn clipboard_error_is_retryable(error: ClipboardError) -> bool {
     matches!(
         error,
-        ClipboardError::Busy
-            | ClipboardError::Native(cliptype_platform::NativeError { .. })
+        ClipboardError::Busy | ClipboardError::Native(cliptype_platform::NativeError { .. })
     ) && match error {
         ClipboardError::Busy => true,
         ClipboardError::Native(native) => {
@@ -631,8 +623,7 @@ const fn map_plan_error(error: PlanError) -> PreparationFailure {
             PreparationFailure::PayloadTooLarge
         }
         PlanError::Normalization(
-            NormalizationError::UnsupportedControl { .. }
-            | NormalizationError::TabRejected { .. },
+            NormalizationError::UnsupportedControl { .. } | NormalizationError::TabRejected { .. },
         )
         | PlanError::CapabilityUnavailable(_) => PreparationFailure::UnsupportedCapability,
         PlanError::CapabilityDegraded(_) => PreparationFailure::DegradedCapabilityRejected,
@@ -649,10 +640,7 @@ const fn map_keyboard_error(error: KeyboardError) -> TerminalOutcome {
     }
 }
 
-fn verify_target(
-    ports: &SessionPorts,
-    original: &TargetEvidence,
-) -> Result<(), TerminalOutcome> {
+fn verify_target(ports: &SessionPorts, original: &TargetEvidence) -> Result<(), TerminalOutcome> {
     let observed = match ports.target.capture() {
         Ok(observed) => observed,
         Err(TargetCaptureError::Disappeared) => return Err(TerminalOutcome::TargetDisappeared),
@@ -665,9 +653,7 @@ fn verify_target(
         TargetComparison::Same => Ok(()),
         TargetComparison::Changed => Err(TerminalOutcome::TargetChanged),
         TargetComparison::Disappeared => Err(TerminalOutcome::TargetDisappeared),
-        TargetComparison::UnavailableOrAmbiguous => {
-            Err(TerminalOutcome::TargetEvidenceUnavailable)
-        }
+        TargetComparison::UnavailableOrAmbiguous => Err(TerminalOutcome::TargetEvidenceUnavailable),
     }
 }
 
