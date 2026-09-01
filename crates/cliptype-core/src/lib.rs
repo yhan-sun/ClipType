@@ -1,4 +1,4 @@
-//! Platform-independent domain values and pure P1 contracts for ClipType.
+//! Platform-independent domain values and pure P1 policy for ClipType.
 //!
 //! This crate contains no operating-system API types. Clipboard text is
 //! sensitive by default, native work is bounded, and uncertain platform
@@ -9,8 +9,11 @@
 mod cancellation;
 mod config;
 mod limits;
+mod normalization;
 mod outcome;
+mod plan;
 mod sensitive;
+mod state;
 mod text;
 
 pub use cancellation::CancellationProbe;
@@ -21,9 +24,17 @@ pub use limits::{
     BoundError, BoundKind, ByteCount, DispatchBatchLimit, NativeByteLimit, NativeEventCount,
     RetryAttemptLimit, SemanticElementCount, SemanticElementLimit, Utf16UnitCount,
 };
+pub use normalization::{NormalizationError, NormalizedText, normalize_text};
 pub use outcome::{
     CapabilityState, EvidenceStrength, IntegrityRelation, PreparationFailure, RetryDisposition,
     SessionPhase, TerminalOutcome,
 };
+pub use plan::{
+    CapabilityRequirement, KeyboardPlan, PlanCapabilities, PlanError, build_keyboard_plan,
+};
 pub use sensitive::SensitiveText;
+pub use state::{
+    DispatchDecision, DispatchObservation, FlowEvent, FlowState, NoInputReason, PreparationStage,
+    TransitionError, TriggerDecision, classify_dispatch, decide_trigger, transition,
+};
 pub use text::{TextAtom, TextBatch, TextBatchError};
