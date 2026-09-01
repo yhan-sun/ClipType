@@ -2,7 +2,7 @@
 
 Roadmap phases are **gates**, not dates. A later phase does not start merely because time passed; the current phase must meet exit criteria or have an explicit maintainer waiver documented in the relevant PR/ADR.
 
-## P0 — Documentation Foundation (current)
+## P0 — Documentation Foundation (complete)
 
 ### Deliverables
 - product scope/non-goals;
@@ -16,43 +16,69 @@ Roadmap phases are **gates**, not dates. A later phase does not start merely bec
 - agent/contribution rules.
 
 ### Exit criteria
-- all foundational docs committed;
-- contradictions resolved;
+- foundational docs committed;
+- contradictions resolved sufficiently to enter implementation discovery;
 - initial ADRs accepted;
-- implementation scope for P1 is unambiguous.
+- P1 scope and authority order defined.
 
-**No production implementation belongs in P0.**
+P0 completed when the documentation foundation and initial ADR set were committed. Later evidence may still refine documents through normal ADR/document change rules.
 
-## P1 — Windows Vertical Slice
+## P1 — Windows Vertical Slice (current)
 
-Goal: prove the entire product loop on one platform with minimal UI.
+Goal: prove the entire product loop on one platform with minimal presentation and strong safety evidence.
+
+Detailed sequencing, issue boundaries, concurrency model, and gate evidence are defined in [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md).
+
+### Entry sequence
+
+P1 does not jump directly from docs to production adapters:
+
+1. establish the minimal Rust workspace and CI baseline;
+2. run a bounded interactive Windows native-mechanism/runtime spike;
+3. freeze native-neutral P1 contracts from evidence;
+4. implement pure policy and Windows adapters in parallel from the same contract base;
+5. integrate the live session coordinator and Windows host;
+6. execute interactive E2E/privacy/compatibility evidence;
+7. complete an independent gate review.
+
+The project license/contribution boundary must be decided before the first production implementation PR is merged.
 
 ### In scope
 - Rust workspace/core boundaries actually needed for Windows;
-- read current Unicode clipboard text;
-- global trigger;
-- capture foreground target identity;
+- read current Unicode clipboard text at trigger time;
+- global trigger and explicit cancellation path;
+- capture foreground/keyboard-focus evidence without reading content;
 - keyboard injection through native Windows API;
-- Unicode/multiline behavior;
+- Unicode/multiline/Tab/control-character behavior;
 - one active session;
-- cancellation;
-- focus guard;
+- responsive Win32 message loop plus bounded injection worker;
+- modifier-release safety;
+- cancellation and focus guard between bounded native batches;
 - structured content-free diagnostics;
-- minimal tray/status surface or development trigger needed to exercise the flow;
-- deterministic core tests and Windows integration tests.
+- minimal development status surface;
+- deterministic core tests and Windows integration/E2E evidence.
 
 ### Out of scope
 - macOS/Linux code stubs;
-- clipboard-paste auto optimization unless required to validate architecture;
+- clipboard listener/history;
+- clipboard-paste backend and automatic threshold selection;
 - app profiles;
-- polished installer.
+- polished tray/settings UI;
+- installer, auto-start, signing, or public release;
+- exact logical-field/caret guarantees through UI Automation;
+- low-level global keyboard hooks;
+- automatic privilege elevation or UIPI bypass.
 
 ### Exit criteria
-- repeatable end-to-end typing into representative Windows targets;
-- no clipboard plaintext in logs;
-- UIPI limitation handled explicitly;
-- cancel/focus-change tests pass;
-- architecture matches docs or ADRs update it.
+- repeatable end-to-end typing into controlled and representative Windows targets;
+- message loop remains responsive while injection is active;
+- one-session, modifier-release, cancellation, focus-change, partial-dispatch, and cleanup behavior is evidenced;
+- no clipboard plaintext in ordinary logs or persistent artifacts;
+- UIPI limitation is handled without bypass or false certainty;
+- exact focus-evidence limitations are documented;
+- compatibility claims come from recorded evidence;
+- architecture matches docs or ADRs update it;
+- independent P1 review returns pass or pass with non-blocking follow-ups.
 
 ## P2 — Windows Productization
 
@@ -61,7 +87,7 @@ Goal: prove the entire product loop on one platform with minimal UI.
 - auto planner and benchmark-derived threshold;
 - polished tray/settings and permission/error UX;
 - startup-at-login option;
-- target compatibility matrix;
+- expanded target compatibility matrix;
 - packaging/installer;
 - CI hardening and release artifacts;
 - crash/diagnostic privacy review.
