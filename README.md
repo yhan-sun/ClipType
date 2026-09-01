@@ -72,4 +72,6 @@ P1 begins with workspace bootstrap, a bounded interactive Windows native-mechani
 
 ## License
 
-License selection is a P1 governance gate tracked in [#14](https://github.com/yhan-sun/ClipType/issues/14). Until that decision is complete, do not copy source code from reference projects or represent the repository as granting rights that have not been declared.
+ClipType is licensed under either the [Apache License, Version 2.0](LICENSE-APACHE) or the [MIT License](LICENSE-MIT), at your option. The SPDX expression is `MIT OR Apache-2.0`.
+
+Intentional contributions accepted into this repository are licensed under the same terms. ClipType currently requires neither a CLA nor DCO sign-off. See [`docs/DEPENDENCY_POLICY.md`](docs/DEPENDENCY_POLICY.md) for dependency, reference-code, and attribution rules.

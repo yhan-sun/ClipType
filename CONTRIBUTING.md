@@ -56,6 +56,14 @@ Use `.github/PULL_REQUEST_TEMPLATE.md`.
 
 Do not silently change an accepted architectural decision. Add a new ADR in `docs/adr/`, mark the old ADR superseded when appropriate, and update dependent documents.
 
-## License and reference code
+## Contribution license
 
-The repository license is not selected yet. Until it is selected, do not copy code from reference projects. Studying architecture, APIs, public behavior, and documentation is allowed; code reuse requires explicit license review.
+ClipType is dual-licensed under `MIT OR Apache-2.0`. Unless explicitly stated otherwise, any intentional contribution submitted for inclusion and accepted into the repository is licensed under the same terms (inbound equals outbound).
+
+No Contributor License Agreement or Developer Certificate of Origin sign-off is currently required. This does not remove the contributor's responsibility to have the right to submit the contribution.
+
+## Third-party and reference code
+
+Do not copy source, tests, generated artifacts, documentation text, images, or other copyrightable material from reference projects without an explicit provenance, compatibility, and attribution review. Architecture and public behavior may be studied; implementation should prefer official platform documentation and original code.
+
+Before adding a dependency or vendored component, follow [`docs/DEPENDENCY_POLICY.md`](docs/DEPENDENCY_POLICY.md). Missing, custom, copyleft, source-available, or distribution-sensitive terms require explicit maintainer review.
