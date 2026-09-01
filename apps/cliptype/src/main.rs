@@ -27,8 +27,8 @@ mod windows_host {
 
     use cliptype_app::{Coordinator, ShutdownResult, StatusSnapshot};
     use cliptype_windows::{
-        CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsClipboard, WindowsCommandEvent,
-        WindowsCommandSignal, WindowsCommandSource, WindowsKeyboard, WindowsTarget,
+        CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsClipboard, WindowsCommandEvent, WindowsCommandSignal,
+        WindowsCommandSource, WindowsKeyboard, WindowsTarget,
     };
 
     const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(25);
