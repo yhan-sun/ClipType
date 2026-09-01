@@ -1,0 +1,39 @@
+name: P1 Windows Host Smoke
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p1-windows-host-smoke.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p1-windows-host-smoke.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  hosted-runner-smoke:
+    name: Register, start, private shutdown, unregister
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Build development host
+        run: cargo build --locked -p cliptype
+      - name: Start and stop through the private command queue
+        shell: pwsh
+        run: '"shutdown" | cargo run --locked --quiet -p cliptype'
