@@ -2,181 +2,172 @@
 
 ## Purpose
 
-The injection engine converts one explicit user trigger plus a clipboard snapshot into a bounded, cancellable attempt to deliver text to the focused target.
+The injection system converts one explicit user trigger plus current clipboard text into a bounded, cancellable attempt to deliver text to the destination intended at trigger time.
 
-## Supported modes
+The design separates:
 
-### `keyboard`
-Emit synthetic text/keyboard events through the platform keyboard backend.
+- **pure policy**: validation, normalization, planning, state-transition and retry decisions;
+- **live coordination**: session slot, native ports, worker lifecycle, cancellation/focus checks, and final cleanup.
 
-Use when:
-- normal paste is unavailable or undesirable;
-- target environment handles synthetic input better than clipboard transfer;
-- payload size and backend capabilities make per-event injection reasonable.
+There must not be two competing live state machines in core and app.
 
-### `clipboard`
-Temporarily place the desired text on the system clipboard, issue the platform paste chord/action, then restore the prior clipboard when safe and configured.
+## Modes
 
-Use when:
-- large payloads make per-event injection slow;
-- the target supports normal paste reliably;
-- clipboard write/restore is available.
+- `keyboard`: native synthetic text/key events. P1 implements this path.
+- `clipboard`: temporary clipboard write, paste, and safe restore. P2 scope.
+- `auto`: capability/target/size-based selection. P2 scope; no threshold is frozen before benchmarks.
 
-### `auto`
-The planner selects an eligible mode based on capabilities, target profile, payload properties, and configurable thresholds.
+## Trigger order
 
-The conceptual design follows a proven pattern used by text expansion tools: separate simulated-input and clipboard backends, with automatic selection for long text. The exact ClipType policy is independently specified here and MUST be tested rather than copied from another project.
+Destination evidence is captured before potentially contended clipboard work:
 
-## Planner inputs
+1. receive explicit trigger;
+2. atomically reserve the one-session slot or return busy;
+3. capture initial target evidence immediately;
+4. start the bounded worker lifecycle;
+5. wait for trigger modifiers to settle safely;
+6. acquire current clipboard text;
+7. validate/normalize text and capabilities;
+8. create an immutable plan;
+9. revalidate target before first dispatch;
+10. dispatch bounded batches with safety checks;
+11. publish a content-free result and release the session slot.
 
-An `InjectionPlan` is derived from:
+## Planner
 
-- requested mode;
-- payload length and content classes (Unicode/newlines/control characters);
-- platform/backend capabilities;
-- target application identity/profile when available;
-- clipboard write/restore availability;
-- configured keyboard interval/chunk size;
-- permission state;
-- safety policy.
+Inputs include requested mode, validated text properties, capabilities, target evidence, batch/interval settings, permission/integrity evidence, focus policy, modifier policy, and checkpoint policy.
 
-## Planner output
-
-Conceptual fields:
+Conceptual output:
 
 ```text
-backend: keyboard | clipboard
-focus_policy: strict | supported-best-effort
+backend
+focus_policy
+max_batch_atoms
+checkpoint_policy
 keyboard_interval
-chunk_size
-restore_clipboard
-paste_chord/platform action
-capability assumptions
+modifier_policy
+newline_policy
+tab_policy
+capability_assumptions
 ```
 
-The plan is immutable for an active session. If assumptions become false, abort or fail; do not silently switch mechanisms mid-stream unless a future ADR explicitly defines safe recovery.
+A plan is immutable during a session. If an assumption becomes false, fail safely rather than silently switching behavior.
 
-## Default auto policy
+## P1 text model
 
-Initial implementation should start simple and data-driven:
+P1 validates clipboard text into semantic atoms before native translation:
 
-- prefer keyboard mode for short payloads when Unicode/text injection is supported;
-- prefer clipboard mode above a conservative length threshold when safe clipboard write/restore and paste are supported;
-- allow explicit `keyboard`/`clipboard` override;
-- target-specific profiles may override thresholds only after compatibility evidence exists.
+- printable Unicode scalar;
+- normalized line break;
+- Tab when allowed;
+- rejected unsupported control character.
 
-The exact numeric default threshold is not frozen in documentation before benchmarks. It is a configuration default, not an architectural constant.
+Requirements:
 
-## State machine
+- preserve Unicode scalar order and combining marks;
+- use one documented CRLF/CR/LF normalization rule;
+- reject unsupported controls explicitly;
+- keep Win32 event arrays out of core policy;
+- represent supplementary Unicode as one semantic element even when the adapter emits multiple UTF-16 units;
+- never invent exact text progress from native event counts when that mapping is uncertain.
+
+## Pure transition model
+
+Core may express deterministic transitions such as:
 
 ```text
-Idle
-  | trigger
-  v
-AcquireClipboard
-  | text available
-  v
-CaptureTarget
-  v
-Plan
-  | eligible
-  v
-Injecting ------------------+
-  |                         |
-  | cancel                  | target/capability failure
-  v                         v
-Cancelling                Failed
-  |
-  v
-Cleanup/Restore
-  |
-  +---- success ----------> Completed
-  +---- cleanup failure --> FailedWithCleanupError
-  |
-  v
-Idle
+Idle -> CaptureTarget -> Preparing -> ReadyToDispatch -> Injecting
+                                                     -> Cancelling/Aborting
+                                                     -> Failed
+terminal state -> Finalize -> Idle
 ```
 
-Failures in acquisition/planning return to Idle after emitting non-sensitive status.
+Core decides valid transitions and outcome policy. The application layer owns the live instance, ports, worker, channels, cancellation token, and cleanup.
+
+## Single-session rule
+
+At most one active session exists. Reservation happens before worker creation. A second trigger returns `busy`; it is not queued and does not implicitly cancel the active session.
 
 ## Focus guard
 
-Before injection, capture a stable target identity using the strongest safe evidence the platform exposes.
+Initial target evidence is captured at trigger time. Before first dispatch and before every following batch:
 
-During multi-chunk injection:
-- re-check target identity at bounded intervals;
-- abort if the target materially changes under `strict` policy;
-- never continue typing into a newly focused application merely to finish the payload.
+- recapture/compare available target evidence;
+- stop on known change or target disappearance;
+- under strict P1 policy, stop if evidence becomes unavailable or ambiguous after dispatch starts;
+- never refocus an old target or adopt a new target to finish the payload.
 
-Where a platform cannot provide a reliable global target identity, mark the capability degraded and document the actual guarantee.
+The guarantee is limited by platform evidence. Several logical fields may share one native render-host focus identity, so compatibility documentation must not claim exact-caret identity without evidence.
 
 ## Cancellation
 
-Cancellation is a first-class control path, not an error afterthought.
+- the Windows message loop remains responsive during injection;
+- cancellation signals the active token without waiting for the worker;
+- the keyboard path checks cancellation between bounded native batches;
+- no new batch begins after cancellation is observed;
+- session cleanup/release still runs;
+- the practical latency bound is selected from native-spike evidence and measured in P1 E2E tests.
 
-Requirements:
-- UI/hotkey cancellation request is accepted while injection is active;
-- keyboard backend checks cancellation between bounded event groups;
-- clipboard backend avoids issuing paste if cancellation arrives before paste dispatch;
-- cleanup/clipboard restoration still runs after cancellation where safe;
-- cancellation latency gets a testable upper bound once backend timing is implemented.
+An unbounded whole-payload dispatch violates this contract.
 
-## Modifier contamination
+## Modifier safety
 
-Synthetic input can be affected by physical modifiers already pressed by the user. Each platform backend MUST define how it detects/handles modifier state.
+Physical hotkey modifiers may still be down when the trigger arrives.
 
-The engine MUST NOT blindly release arbitrary physical user keys. Strategies may include delaying, rejecting while conflicting modifiers are down, or using Unicode/text event facilities that minimize layout/modifier dependence.
+P1 must:
 
-## Unicode
+- never release the user's physical modifier keys;
+- wait for trigger modifiers to be released within a bounded timeout;
+- return a typed conflict/timeout result if a safe state is not reached;
+- recheck conflicting modifier state at later batch boundaries when backend semantics require it;
+- avoid introducing a broad global keyboard hook for this purpose.
 
-Text semantics, not US-keyboard scancode emulation, are the primary requirement.
+## Unicode, line breaks, and Tab
 
-Backends SHOULD use native Unicode/text injection facilities where available. When a backend can only express physical keys/keymaps, its Unicode limitations must be surfaced in capabilities and compatibility docs.
+Text semantics, not a US keyboard layout, are primary. The Windows adapter translates semantic atoms to Unicode-oriented native events and uses explicit special-key handling only where evidence requires it.
 
-## Newlines and control characters
+Line break and Tab behavior must be tested by target category. Targets such as terminals may assign operational meaning to Enter; tests therefore use benign controlled fixtures and documentation does not present arbitrary multiline terminal typing as universally risk-free.
 
-The planner/backend MUST explicitly map:
-- LF/CRLF normalization;
-- Tab;
-- supported printable Unicode;
-- unsupported control characters.
+## Bounded dispatch result
 
-No backend should accidentally convert arbitrary control bytes into commands.
+For one semantic batch, the adapter reports:
 
-## Clipboard-paste transaction
+- complete;
+- no native events accepted;
+- partial native acceptance;
+- progress unknown when native event counts cannot be mapped safely to a text prefix.
 
-Conceptual transaction:
+Partial or unknown results are never automatically retried. Results and diagnostics contain categories/counts only, never clipboard plaintext.
 
-1. snapshot prior clipboard ownership/content needed for restoration;
-2. mark an internal self-write generation/token;
-3. write desired text;
-4. verify write when the platform supports a reliable check;
-5. verify focus guard;
-6. issue paste action;
-7. wait only as required for ownership/consumer timing;
-8. restore prior clipboard if configured and still safe to do so;
-9. suppress/identify ClipType's own clipboard-change notifications.
+## UIPI and blocked input
 
-Race rule: if another external actor changes the clipboard during the transaction, ClipType MUST NOT overwrite the newer external clipboard merely to restore an old snapshot. Restoration requires ownership/generation evidence.
+Known evidence and diagnosis remain separate:
 
-## Partial injection
+- when target-integrity evidence reliably proves a restricted relationship, report a security-boundary result before dispatch;
+- when evidence is unknown and native insertion accepts no events, report blocked/native-cause-unknown rather than asserting one cause;
+- ClipType does not change its privilege automatically to overcome the restriction.
 
-A keyboard backend may fail after typing a prefix. The result MUST distinguish `partial` from `none` and `complete` when knowable. ClipType must not auto-retry a partial injection because that could duplicate text.
+## Clipboard acquisition in P1
 
-## Retries
+P1 reads current plain text at trigger time. It does not continuously capture clipboard content and does not require a listener or history.
 
-Automatic retries are conservative:
+Transient clipboard-busy handling is bounded. During preparation, cancellation and the originally captured target remain relevant; contention must not create an indefinite wait.
+
+## Future clipboard transaction
+
+Clipboard-paste mode later requires snapshot, self-write identification, temporary write, focus check, paste, safe conditional restore, and own-event suppression. A newer external clipboard value must never be overwritten merely to restore an old snapshot.
+
+## Retry policy
+
 - clipboard acquisition may retry bounded transient busy failures;
-- synthetic input dispatch may not retry an unknown/partial result as if idempotent;
-- permission or security-boundary failures do not retry blindly.
+- synthetic input does not retry partial/unknown results as though idempotent;
+- permission, target-change, modifier, and security-boundary outcomes do not retry blindly;
+- a second trigger does not create a hidden queue.
 
-## Performance
+## Content-free outcomes
 
-Correctness and cancellation dominate raw typing speed. Benchmarks should measure:
-- chars/sec by backend/platform;
-- CPU while injecting;
-- cancellation latency;
-- planner overhead;
-- clipboard transaction latency.
+The live coordinator returns to idle after contained terminal paths and exposes only statuses such as completed, busy, cancelled, target changed/evidence unavailable, modifier conflict, empty/non-text clipboard, unsupported input, known restriction, blocked cause unknown, partial progress unknown, or native/internal failure.
 
-Performance tuning must not weaken focus or restoration safety.
+## Performance and responsiveness
+
+Measure native batch duration, text throughput, cancellation latency, focus-check cadence, message-loop responsiveness, clipboard acquisition latency, CPU, and memory. Performance work must not weaken target, modifier, cancellation, privacy, or partial-result guarantees.
