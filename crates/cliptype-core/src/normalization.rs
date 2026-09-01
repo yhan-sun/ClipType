@@ -2,7 +2,9 @@
 
 use std::fmt;
 
-use crate::{P1Config, SemanticElementCount, SemanticElementLimit, SensitiveText, TabPolicy, TextAtom};
+use crate::{
+    P1Config, SemanticElementCount, SemanticElementLimit, SensitiveText, TabPolicy, TextAtom,
+};
 
 /// Content-free normalization failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +20,10 @@ impl fmt::Display for NormalizationError {
         match self {
             Self::Empty => formatter.write_str("clipboard text is empty"),
             Self::UnsupportedControl { scalar_index } => {
-                write!(formatter, "unsupported control at scalar index {scalar_index}")
+                write!(
+                    formatter,
+                    "unsupported control at scalar index {scalar_index}"
+                )
             }
             Self::TabRejected { scalar_index } => {
                 write!(formatter, "tab rejected at scalar index {scalar_index}")
@@ -33,6 +38,7 @@ impl fmt::Display for NormalizationError {
 impl std::error::Error for NormalizationError {}
 
 /// Owned normalized semantic text with a redacted diagnostic representation.
+#[derive(PartialEq, Eq)]
 pub struct NormalizedText {
     atoms: Vec<TextAtom>,
 }
@@ -166,7 +172,14 @@ mod tests {
 
     #[test]
     fn tab_policy_is_explicit() {
-        assert_eq!(normalize("a\tb"), Ok(vec![TextAtom::scalar('a'), TextAtom::Tab, TextAtom::scalar('b')]));
+        assert_eq!(
+            normalize("a\tb"),
+            Ok(vec![
+                TextAtom::scalar('a'),
+                TextAtom::Tab,
+                TextAtom::scalar('b')
+            ])
+        );
 
         let config = P1Config {
             tab_policy: TabPolicy::Reject,

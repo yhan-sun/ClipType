@@ -50,7 +50,11 @@ pub struct TransitionError {
 
 impl fmt::Display for TransitionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "invalid transition from {:?} on {:?}", self.state, self.event)
+        write!(
+            formatter,
+            "invalid transition from {:?} on {:?}",
+            self.state, self.event
+        )
     }
 }
 
@@ -83,14 +87,12 @@ pub fn transition(state: FlowState, event: FlowEvent) -> Result<FlowState, Trans
         (FlowState::Idle, FlowEvent::TriggerAccepted) => {
             Ok(FlowState::Preparing(PreparationStage::CaptureTarget))
         }
-        (
-            FlowState::Preparing(PreparationStage::CaptureTarget),
-            FlowEvent::TargetCaptured,
-        ) => Ok(FlowState::Preparing(PreparationStage::WaitForModifiers)),
-        (
-            FlowState::Preparing(PreparationStage::WaitForModifiers),
-            FlowEvent::ModifiersSettled,
-        ) => Ok(FlowState::Preparing(PreparationStage::AcquireClipboard)),
+        (FlowState::Preparing(PreparationStage::CaptureTarget), FlowEvent::TargetCaptured) => {
+            Ok(FlowState::Preparing(PreparationStage::WaitForModifiers))
+        }
+        (FlowState::Preparing(PreparationStage::WaitForModifiers), FlowEvent::ModifiersSettled) => {
+            Ok(FlowState::Preparing(PreparationStage::AcquireClipboard))
+        }
         (
             FlowState::Preparing(PreparationStage::AcquireClipboard),
             FlowEvent::ClipboardAcquired,
@@ -102,10 +104,9 @@ pub fn transition(state: FlowState, event: FlowEvent) -> Result<FlowState, Trans
         (FlowState::Injecting, FlowEvent::AllBatchesComplete) => {
             Ok(FlowState::Finalizing(TerminalOutcome::Completed))
         }
-        (
-            FlowState::Preparing(_) | FlowState::Injecting,
-            FlowEvent::CancelRequested,
-        ) => Ok(FlowState::Cancelling),
+        (FlowState::Preparing(_) | FlowState::Injecting, FlowEvent::CancelRequested) => {
+            Ok(FlowState::Cancelling)
+        }
         (FlowState::Cancelling, FlowEvent::CancelRequested) => Ok(FlowState::Cancelling),
         (FlowState::Cancelling, FlowEvent::CancellationObserved) => {
             Ok(FlowState::Finalizing(TerminalOutcome::Cancelled))

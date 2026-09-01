@@ -35,10 +35,15 @@ pub enum PlanError {
 impl fmt::Display for PlanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidConfiguration(error) => write!(formatter, "invalid P1 configuration: {error}"),
+            Self::InvalidConfiguration(error) => {
+                write!(formatter, "invalid P1 configuration: {error}")
+            }
             Self::Normalization(error) => write!(formatter, "text normalization failed: {error}"),
             Self::CapabilityUnavailable(requirement) => {
-                write!(formatter, "required capability unavailable: {requirement:?}")
+                write!(
+                    formatter,
+                    "required capability unavailable: {requirement:?}"
+                )
             }
             Self::CapabilityDegraded(requirement) => {
                 write!(formatter, "degraded capability rejected: {requirement:?}")
@@ -98,7 +103,10 @@ pub fn build_keyboard_plan(
     let normalized = normalize_text(text, config).map_err(PlanError::Normalization)?;
 
     if normalized.contains_scalar() {
-        require_available(capabilities.unicode_text, CapabilityRequirement::UnicodeText)?;
+        require_available(
+            capabilities.unicode_text,
+            CapabilityRequirement::UnicodeText,
+        )?;
     }
     if normalized.contains_line_break() {
         require_available(capabilities.line_break, CapabilityRequirement::LineBreak)?;
@@ -131,9 +139,7 @@ fn require_available(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CapabilityRequirement, PlanCapabilities, PlanError, build_keyboard_plan,
-    };
+    use super::{CapabilityRequirement, PlanCapabilities, PlanError, build_keyboard_plan};
     use crate::{CapabilityState, P1Config, SensitiveText};
 
     fn available() -> PlanCapabilities {
@@ -153,7 +159,7 @@ mod tests {
             available(),
         )
         .expect("capabilities support fixture");
-        let lengths: Vec<_> = plan.batch_slices().map(<[crate::TextAtom]>::len).collect();
+        let lengths: Vec<_> = plan.batch_slices().map(|batch| batch.len()).collect();
 
         assert_eq!(lengths, vec![8, 2]);
         assert_eq!(plan.text().len(), 10);
