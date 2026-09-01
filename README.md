@@ -4,7 +4,7 @@
 
 ClipType is a privacy-first, cross-platform desktop utility that reads text from the system clipboard and injects it into the currently focused application using native OS input facilities.
 
-**Project status:** documentation and architecture design. No production implementation has started yet.
+**Project status:** P0 documentation foundation is complete. P1 Windows Vertical Slice is the current implementation phase; no production implementation has been merged yet.
 
 ## Goals
 
@@ -26,9 +26,11 @@ ClipType is a privacy-first, cross-platform desktop utility that reads text from
 
 ## Documentation
 
-The repository is intentionally documentation-first. Start with [`docs/README.md`](docs/README.md) once the documentation foundation commit lands.
+The repository is documentation-first. Start with [`docs/README.md`](docs/README.md).
 
-Key documents will cover product scope, architecture, platform backends, injection semantics, security/privacy, compatibility, testing, releases, roadmap, ADRs, and AI-agent contribution rules.
+Current implementation sequencing is defined in [`docs/phases/P1_WINDOWS_VERTICAL_SLICE.md`](docs/phases/P1_WINDOWS_VERTICAL_SLICE.md). The phase tracking issue is [#1](https://github.com/yhan-sun/ClipType/issues/1).
+
+Key documents cover product scope, architecture, platform backends, injection semantics, security/privacy, compatibility, testing, releases, roadmap, ADRs, and AI-agent contribution rules.
 
 ## Architecture direction
 
@@ -38,7 +40,7 @@ The planned architecture is a Rust core with native platform adapters:
 Clipboard / Hotkey / Focus Events
              |
              v
-       Application Engine
+       Application Service
              |
        Injection Planner
              |
@@ -53,8 +55,10 @@ UI and packaging are deliberately kept outside the core domain. Platform-specifi
 
 ## Development policy
 
-No implementation should begin until the documentation foundation and initial architecture decisions are reviewed. Changes that alter a documented architectural decision must add or supersede an ADR rather than silently changing behavior.
+Implementation follows roadmap phase gates and the repository [`AGENTS.md`](AGENTS.md) contract. Changes that alter a documented architectural decision must add or supersede an ADR rather than silently changing behavior.
+
+P1 begins with workspace bootstrap, a bounded interactive Windows native-mechanism spike, then contract freeze and parallel adapter work. Do not skip directly to a production `SendInput` implementation before the runtime/thread/focus assumptions are evidenced.
 
 ## License
 
-License selection is intentionally deferred until the first implementation milestone. Do not copy source code from reference projects unless the selected license and attribution requirements have been reviewed.
+License selection is a P1 governance gate tracked in [#14](https://github.com/yhan-sun/ClipType/issues/14). Until that decision is complete, do not copy source code from reference projects or represent the repository as granting rights that have not been declared.
