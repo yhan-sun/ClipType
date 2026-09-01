@@ -2,9 +2,7 @@
 
 use std::mem::size_of;
 
-use cliptype_core::{
-    CapabilityState, NativeEventCount, TextAtom, TextBatch,
-};
+use cliptype_core::{CapabilityState, NativeEventCount, TextAtom, TextBatch};
 use cliptype_platform::{
     DispatchResult, KeyboardCapabilities, KeyboardError, KeyboardPort, ModifierMask,
     ModifierObservation, ModifierPort, NativeDispatchCount, NativeError, NativeErrorKind,
@@ -13,8 +11,8 @@ use windows_sys::Win32::{
     Foundation::GetLastError,
     UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN,
-        VK_SHIFT, VK_TAB,
+        KEYEVENTF_UNICODE, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN, VK_SHIFT,
+        VK_TAB,
     },
 };
 
@@ -46,19 +44,13 @@ impl KeyboardPort for WindowsKeyboard {
         let encoded = encode_batch(batch)?;
         let requested = NativeEventCount::try_from(encoded.inputs.len())
             .map_err(|_| KeyboardError::InvalidBatch)?;
-        let input_size = i32::try_from(size_of::<INPUT>())
-            .map_err(|_| KeyboardError::InvalidBatch)?;
+        let input_size =
+            i32::try_from(size_of::<INPUT>()).map_err(|_| KeyboardError::InvalidBatch)?;
 
         // SAFETY: `encoded.inputs` is initialized and remains alive for the
         // whole call, `requested` exactly matches its length, and `input_size`
         // is the ABI size of one `INPUT` value.
-        let accepted = unsafe {
-            SendInput(
-                requested.get(),
-                encoded.inputs.as_ptr(),
-                input_size,
-            )
-        };
+        let accepted = unsafe { SendInput(requested.get(), encoded.inputs.as_ptr(), input_size) };
 
         let zero_reason = if accepted == 0 {
             // `SendInput` does not identify UIPI as the cause of a zero result.
@@ -131,9 +123,8 @@ fn encode_batch(batch: TextBatch<'_>) -> Result<EncodedBatch, KeyboardError> {
             TextAtom::Tab => push_virtual_key(&mut inputs, VK_TAB),
         }
 
-        semantic_boundaries.push(
-            u32::try_from(inputs.len()).map_err(|_| KeyboardError::InvalidBatch)?,
-        );
+        semantic_boundaries
+            .push(u32::try_from(inputs.len()).map_err(|_| KeyboardError::InvalidBatch)?);
     }
 
     if inputs.is_empty() {
@@ -150,11 +141,7 @@ fn push_scalar(inputs: &mut Vec<INPUT>, value: char) {
     let mut storage = [0_u16; 2];
     for unit in value.encode_utf16(&mut storage).iter().copied() {
         inputs.push(keyboard_input(0, unit, KEYEVENTF_UNICODE));
-        inputs.push(keyboard_input(
-            0,
-            unit,
-            KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-        ));
+        inputs.push(keyboard_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
     }
 }
 
