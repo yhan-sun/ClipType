@@ -2,123 +2,203 @@
 
 ## Objectives
 
-Testing must prove not only that text appears, but that ClipType preserves safety invariants under cancellation, focus changes, clipboard races, Unicode, permissions, and platform restrictions.
+Testing must prove not only that text appears, but that ClipType preserves safety invariants under cancellation, target changes, modifier state, clipboard contention, Unicode, permissions, and platform restrictions.
+
+P1-specific sequencing and gate evidence are defined in [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md).
 
 ## Test layers
 
-### 1. Core unit tests
+### 1. Pure core unit tests
+
 Fast, deterministic, platform-independent tests for:
-- planner mode selection;
-- capability gating;
-- state-machine transitions;
-- cancellation;
-- focus-change decisions;
+
+- text validation/normalization;
+- planner mode/capability decisions;
+- pure state-transition rules;
+- busy/cancellation/focus-change decisions;
 - retry/idempotency rules;
 - configuration validation;
 - error categorization;
-- clipboard restoration decision logic using fake generations.
+- future clipboard-restoration decision logic using fake generations.
 
-Core policy should be testable with fake ports and no GUI/OS APIs.
+Pure core tests do not create threads, GUI loops, or OS handles.
 
-### 2. Adapter contract tests
+### 2. Application coordinator tests
+
+Use fake ports/event sources to test the live orchestration contract:
+
+- atomic one-session reservation;
+- initial target capture before clipboard acquisition;
+- preparation/cancel races;
+- worker lifecycle and terminal state reset;
+- cancellation/focus/modifier checks between batches;
+- partial result not retried;
+- content-free status publication.
+
+### 3. Adapter contract tests
+
 Each platform adapter is tested against semantic contracts:
-- current text read;
-- temporary write;
-- event injection result semantics;
-- target identity stability;
-- permission/capability detection;
-- teardown/resource cleanup.
 
-### 3. Platform integration tests
-Run on actual OS runners/machines where synthetic input is possible. CI limitations must be documented; a headless runner success is not automatically equivalent to desktop-session success.
+- current text read and resource cleanup;
+- bounded event dispatch result semantics;
+- target-evidence stability/change/unknown states;
+- hotkey registration/conflict/teardown;
+- permission/integrity/capability evidence;
+- modifier-state behavior;
+- native error translation.
 
-### 4. End-to-end tests
-A controlled target application/text field verifies delivered text and records only fixture text, never user clipboard data.
+### 4. Platform integration tests
+
+Run on actual OS runners/machines where native behavior can be exercised. CI limitations must be documented; a headless runner success is not equivalent to an interactive desktop test.
+
+### 5. End-to-end tests
+
+A controlled target application verifies delivered fixture text and behavioral outcomes. It may store only generated fixture data needed for assertions, never arbitrary user clipboard history.
+
+## P1 native discovery tests
+
+Before P1 contracts freeze, the Windows spike must record:
+
+- message-loop owner/thread affinity;
+- cancellation delivery while a worker is active;
+- hotkey no-repeat and trigger-modifier release behavior;
+- Unicode, supplementary Unicode, newline, and Tab behavior by target category;
+- native partial/zero-result semantics;
+- target evidence and same-render-host limitations;
+- clipboard contention behavior;
+- UIPI evidence/diagnostic limits.
 
 ## Required text fixtures
 
-Use generated/non-sensitive fixtures covering:
+Use generated, non-sensitive fixtures covering:
+
 - ASCII;
 - spaces/punctuation;
-- LF and CRLF multiline;
-- tabs;
+- LF, CRLF, and lone CR according to normalization policy;
+- Tab when supported;
 - CJK;
 - emoji/supplementary Unicode;
 - combining marks;
-- long text;
-- unsupported control characters with expected rejection/normalization.
+- long text that spans many dispatch batches;
+- unsupported controls with expected rejection.
 
-## Required behavioral cases
+## Required P1 behavioral cases
 
-### Keyboard mode
+### Keyboard path
+
 - complete short injection;
-- long injection;
-- cancel during injection;
-- focus switch mid-injection;
-- physical modifier held at trigger time;
-- target closes mid-injection;
-- partial native dispatch error.
+- long multi-batch injection;
+- cancellation before first dispatch;
+- cancellation between batches;
+- top-level target switch mid-injection;
+- target closure/disappearance;
+- evidence unavailable/ambiguous under strict policy;
+- trigger modifier still held;
+- conflicting modifier introduced between batches where detectable;
+- partial native dispatch;
+- zero/blocked result with known and unknown integrity evidence;
+- second trigger while active returns busy;
+- message loop still processes cancel/status/shutdown while worker runs.
 
-### Clipboard mode
-- successful temporary write/paste/restore;
-- external clipboard changes before restore;
-- cancellation before paste;
-- cancellation after paste but before cleanup;
-- clipboard busy/ownership failure;
-- own clipboard event suppression;
-- restore failure surfaced without overwriting external data.
+### Clipboard acquisition
 
-### Permissions
-- permission granted;
-- permission denied;
-- permission revoked while app runs where platform exposes this;
-- Windows high-integrity target restriction;
-- Wayland missing protocol/device permission.
+- ASCII and Unicode current text;
+- empty clipboard;
+- non-text clipboard;
+- transient busy/contended clipboard within retry budget;
+- contention exceeding retry budget;
+- malformed/unusable data handled without panic;
+- all native locks/handles closed on success and failure;
+- no listener/history/persistence introduced in P1.
+
+### Hotkey/lifecycle
+
+- global trigger from unrelated foreground applications;
+- registration conflict;
+- key hold with no-repeat semantics;
+- cancel command during active injection;
+- normal shutdown/unregister;
+- restart without stale registration;
+- rapid double trigger race.
+
+### Focus evidence
+
+- repeated capture of unchanged target;
+- switch between top-level windows/applications;
+- target closes between checks;
+- transient activation change;
+- switch between controls/fields inside one application where observable;
+- explicitly record cases where the native render host does not expose a logical-field change.
+
+### Future clipboard mode
+
+When P2 adds clipboard paste, test temporary write/paste/conditional restore, external clipboard races, own-event suppression, and cleanup failures. These are not P1 implementation requirements.
 
 ## Compatibility matrix
 
-For every release candidate, record capability tests by:
-- OS version;
-- architecture;
-- desktop environment/session/compositor where relevant;
+For every candidate support claim, record:
+
+- OS edition/version/build and architecture;
+- interactive session type;
 - backend selected;
-- representative target app category.
+- application name/version/category;
+- text fixture class;
+- observed result and limitations;
+- whether evidence came from CI, controlled E2E, or manual representative testing.
 
-Update `COMPATIBILITY.md` only from evidence.
+Update `COMPATIBILITY.md` only from evidence. A successful basic edit control does not imply all Windows applications are supported.
 
-## CI stages (future)
+## P1 CI baseline
 
-Expected gates as implementation arrives:
+P1 should establish, then evolve:
 
-1. formatting/lint;
-2. unit tests all platforms where cross-compilation permits;
-3. platform compile checks;
-4. platform integration suites;
-5. dependency/license/security scanning;
-6. packaging smoke tests;
-7. release-only signing/notarization verification.
+1. formatting check;
+2. clippy/lint policy;
+3. deterministic core/app tests;
+4. Windows workspace build/test;
+5. non-Windows build/test of platform-neutral crates to detect Win32 leakage;
+6. dependency lockfile and license/security inspection appropriate to project policy.
 
-## Performance tests
+Native desktop input evidence remains interactive even when compilation/unit tests run in CI.
 
-Benchmarks track, not gate prematurely:
-- startup time;
-- idle CPU/memory;
-- chars/sec keyboard backend;
-- clipboard transaction latency;
-- cancellation latency;
-- large-payload memory use.
+## Responsiveness and performance
 
-A performance optimization is rejected if it weakens cancellation/focus/clipboard-race guarantees.
+Measure rather than assume:
 
-## Privacy testing
+- startup and idle footprint;
+- message-loop responsiveness while injecting;
+- semantic atoms/chars per second;
+- native batch duration;
+- cancellation request to last-dispatch latency;
+- focus-check cadence;
+- clipboard acquisition/retry latency;
+- long-fixture memory use.
 
-Tests and review should search logs/artifacts for known fixture plaintext and verify it does not appear outside explicitly controlled target/test buffers.
+P1-S01 recommends initial bounds; P1-10 records measured behavior. A performance optimization is rejected if it weakens cancellation, target, modifier, or privacy guarantees.
 
-## Release evidence
+## Privacy sentinel testing
 
-A release candidate has a versioned test report or CI evidence sufficient to reproduce:
-- commit SHA;
-- required checks;
+Use a distinctive generated marker and search ordinary logs, status snapshots, test artifacts, and crash/debug output produced by the test. The marker may appear only in explicitly controlled target/assertion buffers.
+
+Also review for:
+
+- content prefixes/suffixes;
+- persistent clipboard fingerprints/hashes;
+- window titles/focused-field content;
+- accidental test fixture persistence outside the harness.
+
+## Evidence report
+
+A phase/release candidate report records:
+
+- exact commit SHA;
+- toolchain/dependency summary;
+- commands/checks actually run;
 - platform environments;
+- controlled E2E results;
+- representative target results;
+- measured responsiveness bounds;
+- privacy sentinel result;
 - known skipped/unverified cases;
-- compatibility claim changes.
+- compatibility claim changes;
+- linked blockers and final gate recommendation.
