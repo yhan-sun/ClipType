@@ -53,6 +53,17 @@ Windows Adapter    macOS Adapter   Linux Adapters
 
 UI and packaging are deliberately kept outside the core domain. Platform-specific APIs are hidden behind explicit ports so core behavior can be tested independently.
 
+## Rust workspace baseline
+
+P1 creates exactly five packages: `cliptype-core`, `cliptype-platform`,
+`cliptype-app`, `cliptype-windows`, and the `apps/cliptype` composition root.
+The authoritative toolchain is pinned in `rust-toolchain.toml`.
+
+`Cargo.lock` is committed because this workspace builds an application. Update it
+only as part of a deliberate dependency change, and use `--locked` in CI.
+P1-S01 disposable Windows mechanism experiments belong under
+`crates/cliptype-windows/examples/`; their evidence belongs in `docs/research/`.
+
 ## Development policy
 
 Implementation follows roadmap phase gates and the repository [`AGENTS.md`](AGENTS.md) contract. Changes that alter a documented architectural decision must add or supersede an ADR rather than silently changing behavior.

@@ -1,0 +1,65 @@
+name: Rust CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  native-neutral:
+    name: Native-neutral crates (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Record Rust host
+        run: rustc --version --verbose
+      - name: Check native-neutral crates
+        run: cargo check --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app
+      - name: Test native-neutral crates
+        run: cargo test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+      - name: Lint native-neutral crates
+        run: cargo clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+
+  windows-workspace:
+    name: Windows workspace
+    runs-on: windows-2025
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Record Rust host
+        run: rustc --version --verbose
+      - name: Inspect workspace metadata
+        run: cargo metadata --locked --format-version 1 --no-deps
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --locked
+      - name: Test workspace
+        run: cargo test --workspace --locked
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

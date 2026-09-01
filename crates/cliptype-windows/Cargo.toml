@@ -1,0 +1,15 @@
+[package]
+name = "cliptype-windows"
+description = "Windows platform adapter boundary for ClipType."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cliptype-core.workspace = true
+cliptype-platform.workspace = true
+
+[lints]
+workspace = true
