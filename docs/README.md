@@ -11,17 +11,18 @@ This directory is the design source of truth for ClipType. P0 established the ar
 5. [`PLATFORMS.md`](PLATFORMS.md) — Windows/macOS/X11/Wayland backend strategy.
 6. [`COMPATIBILITY.md`](COMPATIBILITY.md) — capability matrix and support vocabulary.
 7. [`SECURITY_PRIVACY.md`](SECURITY_PRIVACY.md) — threat model and non-negotiable data rules.
-8. [`CONFIGURATION.md`](CONFIGURATION.md) — planned configuration model and stable semantics.
-9. [`TESTING.md`](TESTING.md) — test pyramid, platform matrix, release gates.
-10. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
-11. [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md) — current P1 sequencing, issue boundaries, runtime model, PR order, and phase evidence.
-12. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
-13. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, state machine, risk levels, handoffs, and multi-agent rules.
-14. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
-15. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
-16. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
-17. [`adr/`](adr/) — immutable architecture decision records.
-18. [`research/`](research/) — bounded research/spike evidence; research does not override accepted architecture without an ADR/document update.
+8. [`DEPENDENCY_POLICY.md`](DEPENDENCY_POLICY.md) — project/contribution licensing, dependency review, copied-code, and attribution rules.
+9. [`CONFIGURATION.md`](CONFIGURATION.md) — planned configuration model and stable semantics.
+10. [`TESTING.md`](TESTING.md) — test pyramid, platform matrix, release gates.
+11. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
+12. [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md) — current P1 sequencing, issue boundaries, runtime model, PR order, and phase evidence.
+13. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
+14. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, state machine, risk levels, handoffs, and multi-agent rules.
+15. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
+16. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
+17. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
+18. [`adr/`](adr/) — immutable architecture decision records.
+19. [`research/`](research/) — bounded research/spike evidence; research does not override accepted architecture without an ADR/document update.
 
 Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contract for AI agents. `AGENT_DESIGN.md` explains the detailed operating model behind it.
 
@@ -36,6 +37,7 @@ Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contr
 - OS-specific mechanisms: `PLATFORMS.md`.
 - Support claims: `COMPATIBILITY.md`.
 - Privacy/security: `SECURITY_PRIVACY.md` overrides convenience/performance goals.
+- Dependency/contribution licensing and third-party provenance: `DEPENDENCY_POLICY.md`.
 - Phase scope: `ROADMAP.md`.
 - Current P1 sequencing/integration gates: `phases/P1_WINDOWS_VERTICAL_SLICE.md`.
 - Agent execution rules: repository `AGENTS.md`; detailed role/workflow design: `AGENT_DESIGN.md`.
@@ -45,7 +47,7 @@ Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contr
 
 ## Documentation change policy
 
-Public behavior, permissions, compatibility, architecture, persistence, injection semantics, or release gates MUST be documented in the same PR that changes them.
+Public behavior, permissions, compatibility, architecture, persistence, injection semantics, dependency/contribution licensing, or release gates MUST be documented in the same PR that changes them.
 
 Accepted ADRs are historical records. Do not edit their decision into a different decision; add a superseding ADR.
 
