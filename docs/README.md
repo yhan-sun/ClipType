@@ -14,10 +14,14 @@ This directory is the design source of truth for ClipType. The repository intent
 8. [`CONFIGURATION.md`](CONFIGURATION.md) — planned configuration model and stable semantics.
 9. [`TESTING.md`](TESTING.md) — test pyramid, platform matrix, release gates.
 10. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
-11. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
-12. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
-13. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
-14. [`adr/`](adr/) — immutable architecture decision records.
+11. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
+12. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, state machine, risk levels, handoffs, and multi-agent rules.
+13. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
+14. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
+15. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
+16. [`adr/`](adr/) — immutable architecture decision records.
+
+Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contract for AI agents. `AGENT_DESIGN.md` explains the detailed operating model behind it.
 
 ## Normative language
 
@@ -31,6 +35,8 @@ This directory is the design source of truth for ClipType. The repository intent
 - Support claims: `COMPATIBILITY.md`.
 - Privacy/security: `SECURITY_PRIVACY.md` overrides convenience/performance goals.
 - Schedule/scope: `ROADMAP.md`.
+- Agent execution rules: repository `AGENTS.md`; detailed role/workflow design: `AGENT_DESIGN.md`.
+- Development lifecycle: `DEVELOPMENT_WORKFLOW.md`.
 - Architecture decisions: accepted ADRs override older descriptive text; dependent docs should then be updated.
 
 ## Documentation change policy
