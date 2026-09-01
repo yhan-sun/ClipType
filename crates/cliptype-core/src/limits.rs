@@ -124,10 +124,12 @@ impl TryFrom<usize> for NativeEventCount {
     type Error = BoundError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        u32::try_from(value).map(Self).map_err(|_| BoundError::ExceedsPlatformU32 {
-            kind: BoundKind::NativeEvents,
-            value,
-        })
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| BoundError::ExceedsPlatformU32 {
+                kind: BoundKind::NativeEvents,
+                value,
+            })
     }
 }
 
@@ -170,7 +172,10 @@ mod tests {
 
     #[test]
     fn native_event_conversion_is_checked() {
-        assert_eq!(NativeEventCount::try_from(3_usize).map(NativeEventCount::get), Ok(3));
+        assert_eq!(
+            NativeEventCount::try_from(3_usize).map(NativeEventCount::get),
+            Ok(3)
+        );
 
         if usize::BITS > u32::BITS {
             let too_large = (u32::MAX as usize) + 1;

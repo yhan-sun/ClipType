@@ -2,9 +2,7 @@
 
 use std::{fmt, time::Duration};
 
-use crate::{
-    DispatchBatchLimit, NativeByteLimit, RetryAttemptLimit, SemanticElementLimit,
-};
+use crate::{DispatchBatchLimit, NativeByteLimit, RetryAttemptLimit, SemanticElementLimit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPolicy {
@@ -62,10 +60,7 @@ pub struct RetryBudget {
 }
 
 impl RetryBudget {
-    pub fn new(
-        attempts: RetryAttemptLimit,
-        total_window: Duration,
-    ) -> Result<Self, ConfigError> {
+    pub fn new(attempts: RetryAttemptLimit, total_window: Duration) -> Result<Self, ConfigError> {
         if total_window.is_zero() {
             return Err(ConfigError::ZeroDuration(ConfigField::ClipboardRetryWindow));
         }
@@ -99,7 +94,9 @@ impl P1Config {
             return Err(ConfigError::BatchExceedsPayload);
         }
         if self.modifier_settle_timeout.is_zero() {
-            return Err(ConfigError::ZeroDuration(ConfigField::ModifierSettleTimeout));
+            return Err(ConfigError::ZeroDuration(
+                ConfigField::ModifierSettleTimeout,
+            ));
         }
         if self.modifier_poll_interval.is_zero() {
             return Err(ConfigError::ZeroDuration(ConfigField::ModifierPollInterval));
@@ -111,7 +108,10 @@ impl P1Config {
             return Err(ConfigError::ZeroDuration(ConfigField::WorkerShutdownGrace));
         }
 
-        RetryBudget::new(self.clipboard_retry.attempts, self.clipboard_retry.total_window)?;
+        RetryBudget::new(
+            self.clipboard_retry.attempts,
+            self.clipboard_retry.total_window,
+        )?;
         Ok(self)
     }
 }

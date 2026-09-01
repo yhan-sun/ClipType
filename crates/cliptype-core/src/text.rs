@@ -54,10 +54,7 @@ pub struct TextBatch<'a> {
 }
 
 impl<'a> TextBatch<'a> {
-    pub fn new(
-        atoms: &'a [TextAtom],
-        limit: DispatchBatchLimit,
-    ) -> Result<Self, TextBatchError> {
+    pub fn new(atoms: &'a [TextAtom], limit: DispatchBatchLimit) -> Result<Self, TextBatchError> {
         if atoms.is_empty() {
             return Err(TextBatchError::Empty);
         }

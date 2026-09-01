@@ -2,9 +2,7 @@
 
 use std::{fmt, ops::BitOr};
 
-use cliptype_core::{
-    CapabilityState, NativeEventCount, RetryDisposition, TextBatch,
-};
+use cliptype_core::{CapabilityState, NativeEventCount, RetryDisposition, TextBatch};
 
 use crate::NativeError;
 

@@ -84,11 +84,7 @@ pub enum TargetComparison {
 pub trait TargetPort: Send + Sync {
     fn capture(&self) -> Result<TargetEvidence, TargetCaptureError>;
 
-    fn compare(
-        &self,
-        expected: &TargetEvidence,
-        observed: &TargetEvidence,
-    ) -> TargetComparison;
+    fn compare(&self, expected: &TargetEvidence, observed: &TargetEvidence) -> TargetComparison;
 
     fn integrity_relation(&self, target: &TargetEvidence) -> IntegrityRelation;
 }
