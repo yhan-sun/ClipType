@@ -1,4 +1,10 @@
-//! Windows platform adapter boundary for ClipType.
+//! Windows platform adapters for ClipType.
 //!
-//! P1-01 intentionally contains no Win32 imports or native behavior. Future
-//! Windows bindings must be target-scoped and remain behind safe contracts.
+//! Native APIs and unsafe code remain private to this crate. Public adapters
+//! expose the native-neutral contracts from `cliptype-platform`.
+
+#[cfg(windows)]
+mod clipboard;
+
+#[cfg(windows)]
+pub use clipboard::WindowsClipboard;
