@@ -77,10 +77,11 @@ pub const fn decide_trigger(state: FlowState) -> TriggerDecision {
 }
 
 pub fn transition(state: FlowState, event: FlowEvent) -> Result<FlowState, TransitionError> {
-    if let FlowEvent::Abort(outcome) = event {
-        if state.is_active() && outcome != TerminalOutcome::Completed {
-            return Ok(FlowState::Finalizing(outcome));
-        }
+    if let FlowEvent::Abort(outcome) = event
+        && state.is_active()
+        && outcome != TerminalOutcome::Completed
+    {
+        return Ok(FlowState::Finalizing(outcome));
     }
 
     match (state, event) {
