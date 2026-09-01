@@ -86,7 +86,7 @@ fn validate_allocation_size(
             limit: hard_limit,
         });
     }
-    if byte_size < size_of::<u16>() || byte_size % size_of::<u16>() != 0 {
+    if byte_size < size_of::<u16>() || !byte_size.is_multiple_of(size_of::<u16>()) {
         return Err(ClipboardError::Malformed);
     }
     if byte_size > isize::MAX as usize {
