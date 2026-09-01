@@ -9,12 +9,16 @@ mod clipboard;
 #[allow(clippy::unusual_byte_groupings)]
 mod command;
 #[cfg(windows)]
+mod command_host;
+#[cfg(windows)]
 mod keyboard;
 #[cfg(windows)]
 mod target;
 
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
+#[cfg(windows)]
+pub use cliptype_platform::CommandEvent as WindowsCommandEvent;
 #[cfg(windows)]
 pub use command::{CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCommandSource};
 #[cfg(windows)]
