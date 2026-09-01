@@ -1,0 +1,71 @@
+name: P1-10 Bindings Fix
+
+on:
+  push:
+    branches:
+      - test/p1-10-controlled-windows-e2e
+
+permissions:
+  contents: write
+
+jobs:
+  patch-format-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: test/p1-10-controlled-windows-e2e
+          fetch-depth: 0
+      - name: Localize non-exported user32 calls
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("apps/cliptype/examples/p1_controlled_e2e.rs")
+          text = path.read_text(encoding="utf-8")
+          old = '''        UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, DispatchMessageW, GetFocus, GetForegroundWindow,
+            GetWindowTextLengthW, GetWindowTextW, MSG, PeekMessageW, SetFocus,
+            SetForegroundWindow, ShowWindow, TranslateMessage, UpdateWindow,
+        },
+    };
+
+    const OPT_IN'''
+          new = '''        UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, DispatchMessageW, GetForegroundWindow,
+            GetWindowTextLengthW, GetWindowTextW, MSG, PeekMessageW, SetForegroundWindow,
+            ShowWindow, TranslateMessage,
+        },
+    };
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        #[link_name = "GetFocus"]
+        fn get_focus() -> HWND;
+
+        #[link_name = "SetFocus"]
+        fn set_focus(window: HWND) -> HWND;
+
+        #[link_name = "UpdateWindow"]
+        fn update_window(window: HWND) -> i32;
+    }
+
+    const OPT_IN'''
+          if old not in text:
+              raise SystemExit("expected import block not found")
+          text = text.replace(old, new)
+          text = text.replace("UpdateWindow(self.parent)", "update_window(self.parent)")
+          text = text.replace("SetFocus(self.edit)", "set_focus(self.edit)")
+          text = text.replace("GetFocus()", "get_focus()")
+          path.write_text(text, encoding="utf-8")
+      - name: Format and commit
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/cliptype/examples/p1_controlled_e2e.rs
+          git commit -m "fix: localize controlled E2E user32 bindings"
+          git push origin HEAD:test/p1-10-controlled-windows-e2e
