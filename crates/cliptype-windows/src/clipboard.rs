@@ -8,12 +8,18 @@ use windows_sys::Win32::{
     Foundation::{ERROR_ACCESS_DENIED, GetLastError, HGLOBAL},
     System::{
         DataExchange::{
-            CF_UNICODETEXT, CloseClipboard, CountClipboardFormats, GetClipboardData,
-            IsClipboardFormatAvailable, OpenClipboard,
+            CloseClipboard, CountClipboardFormats, GetClipboardData, IsClipboardFormatAvailable,
+            OpenClipboard,
         },
         Memory::{GlobalLock, GlobalSize, GlobalUnlock},
     },
 };
+
+// `CF_UNICODETEXT` is the stable Win32 standard clipboard-format identifier.
+// windows-sys 0.61 keeps this winuser constant outside DataExchange while the
+// related clipboard functions remain in that module, so keeping the documented
+// numeric identifier local avoids importing an unrelated header module.
+const CF_UNICODETEXT: u32 = 13;
 
 /// Windows adapter for one bounded current Unicode clipboard read.
 #[derive(Debug, Default, Clone, Copy)]
