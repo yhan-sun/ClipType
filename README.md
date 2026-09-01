@@ -30,6 +30,8 @@ The repository is documentation-first. Start with [`docs/README.md`](docs/README
 
 Current implementation sequencing is defined in [`docs/phases/P1_WINDOWS_VERTICAL_SLICE.md`](docs/phases/P1_WINDOWS_VERTICAL_SLICE.md). The phase tracking issue is [#1](https://github.com/yhan-sun/ClipType/issues/1).
 
+The P1 native contract research and its evidence limitations are recorded in [`docs/research/P1_WINDOWS_NATIVE_SPIKE.md`](docs/research/P1_WINDOWS_NATIVE_SPIKE.md).
+
 Key documents cover product scope, architecture, platform backends, injection semantics, security/privacy, compatibility, testing, releases, roadmap, ADRs, and AI-agent contribution rules.
 
 ## Architecture direction
@@ -68,7 +70,7 @@ P1-S01 disposable Windows mechanism experiments belong under
 
 Implementation follows roadmap phase gates and the repository [`AGENTS.md`](AGENTS.md) contract. Changes that alter a documented architectural decision must add or supersede an ADR rather than silently changing behavior.
 
-P1 begins with workspace bootstrap, a bounded interactive Windows native-mechanism spike, then contract freeze and parallel adapter work. Do not skip directly to a production `SendInput` implementation before the runtime/thread/focus assumptions are evidenced.
+P1 begins with workspace bootstrap, a bounded Windows native-mechanism spike, then contract freeze and parallel adapter work. Hosted-runner probe evidence does not replace the interactive Windows compatibility gate.
 
 ## License
 

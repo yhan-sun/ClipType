@@ -1,0 +1,36 @@
+name: P1 Windows Native Spike
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p1-windows-native-spike.yml"
+      - "crates/cliptype-windows/examples/p1_s01_windows_native.rs"
+      - "crates/cliptype-windows/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p1-native-spike-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  thread-message-queue-probe:
+    name: Thread hotkey/message-loop probe
+    runs-on: windows-2025
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Record environment
+        shell: pwsh
+        run: |
+          rustc --version --verbose
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, OsArchitecture
+      - name: Run content-free native probe
+        run: cargo run --locked -p cliptype-windows --example p1_s01_windows_native

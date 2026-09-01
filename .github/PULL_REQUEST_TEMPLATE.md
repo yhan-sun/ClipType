@@ -42,101 +42,73 @@ Explain any changed file outside the task packet's allowed-write area.
 - [ ] No architecture decision changes
 - [ ] Existing ADR(s) apply: <!-- list -->
 - [ ] New/superseding ADR included
-- [ ] Shared contracts unchanged
-- [ ] Shared contract change is explicit and coordinated
 
-Describe crate dependency impact, public contract changes, runtime/thread ownership changes, and intentionally deferred abstractions.
+Describe dependency direction, public contract changes, and deferred behavior.
+
+## Runtime / ownership
+
+Describe affected thread, event-loop, cancellation, resource, and shutdown ownership. State `not applicable` when genuinely irrelevant.
 
 ## Security and privacy
 
-- [ ] Clipboard/injected plaintext is not logged or persisted
-- [ ] Ordinary `Debug`/`Display`/error/status paths are content-free
-- [ ] Permission and platform security boundaries are preserved
-- [ ] Cancellation, target/focus, and modifier safety are considered
-- [ ] Native input/retry operations are bounded
-- [ ] Partial or unknown synthetic input is not blindly retried
-- [ ] No unrelated keystrokes, focused text, or window titles are captured
+- [ ] Clipboard/injected plaintext is absent from ordinary logs and persistence
+- [ ] Permission/security boundaries are preserved
+- [ ] Cancellation/focus/modifier behavior was considered
+- [ ] Native lengths, waits, retries, and batches are bounded where applicable
+- [ ] Partial/unknown input is not retried
 
-Threat-model delta / notes:
+Notes:
 
-## Native / unsafe / FFI review
+## Unsafe / FFI
 
-Complete for native/unsafe work; otherwise write `Not applicable`.
+List every native API, pointer/buffer/count invariant, encoding rule, cleanup requirement, and safe-wrapper guarantee introduced. State `none` when applicable.
 
-- Native APIs/features:
-- Ownership/lifetime rules:
-- Pointer/buffer/count/encoding invariants:
-- Thread or message-loop requirements:
-- Cleanup/error translation:
-- Safe-wrapper guarantee:
-- Why the unsafe region is minimal:
+## Dependencies and licensing
 
-## Platform evidence
+List dependency changes, current-phase need, target scoping, license, transitive/unsafe impact, and attribution requirements.
 
-| Platform/environment | Affected | Evidence type | Verified | Notes / limitations |
-|---|---|---|---|---|
-| Windows interactive desktop | | `CI / controlled E2E / manual` | | |
-| Windows CI/build | | | | |
-| Platform-neutral crates on non-Windows | | | | |
-| macOS | | | | |
-| Linux X11 | | | | |
-| Linux Wayland | | | | |
+## Verification
 
-Do not present headless CI as proof of interactive native input.
+### Automated / CI
 
-## Verification performed
-
-Commands/checks actually run:
+Commands and jobs actually run:
 
 ```text
 
 ```
 
-Interactive/manual procedure and environment:
+### Controlled interactive evidence
 
-Measured bounds/results where applicable:
+Environment and behavior actually exercised on an unlocked interactive desktop:
 
-- batch/checkpoint settings:
-- cancellation latency:
-- focus/target behavior:
-- modifier behavior:
-- clipboard contention/payload limit:
+### Manual representative-target observations
 
-## Privacy sentinel
+Application/version/category and observed result:
 
-- Fixture marker used:
-- Locations searched:
-- Result:
+### Not verified
 
-Do not paste real clipboard content into this PR.
+List unavailable OS/session/application/race paths.
 
-## Not verified
+### Expected by contract
 
-List unavailable OS/session/application/race paths precisely. Do not write `all tests pass` when only a subset was executed.
+List behavior supported by pure tests/docs but not executed end to end.
 
-## Documentation and compatibility
+Do not treat hosted/headless CI as proof of interactive native input.
 
-- [ ] No documentation change required, with reason
-- [ ] Normative documentation updated
-- [ ] Phase execution documentation updated
-- [ ] Compatibility wording updated only from evidence
-- [ ] Research report added/updated for a spike
+## Privacy sentinel / artifacts
 
-## Dependency and license impact
+Describe the synthetic marker and where logs/status/test/crash artifacts were checked. State `not applicable` only when no sensitive text path exists.
 
-- New/changed dependencies:
-- Current-phase need:
-- License compatibility:
-- Transitive/unsafe/platform impact:
-- Attribution/source-copy impact:
+## Documentation / compatibility
 
-## Rollback, risks, and handoff
+- [ ] No documentation change required
+- [ ] Documentation updated
+- [ ] Compatibility updated from observed evidence only
 
-- Failure modes / rollback:
-- Known limitations:
-- Follow-ups intentionally out of scope:
-- Exact next dependent task:
+## Rollback, risks, and next handoff
 
-## Authority
+Describe failure modes, rollback, known limitations, and the exact next task/contract that may rely on this change.
 
-- [ ] This PR does not merge, tag, publish, release, elevate privileges, or broaden support claims without explicit maintainer approval.
+## Agent / release authority
+
+- [ ] No merge, tag, publish, release, automatic elevation, or broad support claim was performed without explicit authority
