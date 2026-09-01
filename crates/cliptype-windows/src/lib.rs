@@ -1,10 +1,14 @@
-//! Windows platform adapters for ClipType.
+//! Windows platform adapter boundary for ClipType.
 //!
-//! Native APIs and unsafe code remain private to this crate. Public adapters
-//! expose the native-neutral contracts from `cliptype-platform`.
+//! Win32 calls and unsafe code are localized in this package and exposed through
+//! the native-neutral contracts defined by `cliptype-platform`.
 
 #[cfg(windows)]
 mod clipboard;
+#[cfg(windows)]
+mod target;
 
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
+#[cfg(windows)]
+pub use target::WindowsTarget;
