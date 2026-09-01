@@ -16,9 +16,7 @@ mod target;
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
 #[cfg(windows)]
-pub use command::{
-    CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCommandSource,
-};
+pub use command::{CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCommandSource};
 #[cfg(windows)]
 pub use keyboard::WindowsKeyboard;
 #[cfg(windows)]
