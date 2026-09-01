@@ -17,13 +17,15 @@ This directory is the design source of truth for ClipType. P0 established the ar
 11. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
 12. [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md) — current sequencing, ownership, and evidence gates.
 13. [`research/P1_WINDOWS_NATIVE_SPIKE.md`](research/P1_WINDOWS_NATIVE_SPIKE.md) — official and automated Windows contract evidence plus interactive gaps.
-14. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
-15. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, risk levels, handoffs, and multi-agent rules.
-16. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
-17. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
-18. [`REFERENCES.md`](REFERENCES.md) — official APIs and reference projects.
-19. [`adr/`](adr/) — immutable architecture decision records.
-20. [`research/`](research/) — bounded research evidence.
+14. [`contracts/P1_CONTRACT_FREEZE.md`](contracts/P1_CONTRACT_FREEZE.md) — native-neutral P1 types, ports, bounds, and downstream branch baseline.
+15. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
+16. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, risk levels, handoffs, and multi-agent rules.
+17. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
+18. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
+19. [`REFERENCES.md`](REFERENCES.md) — official APIs and reference projects.
+20. [`adr/`](adr/) — immutable architecture decision records.
+21. [`research/`](research/) — bounded research evidence.
+22. [`contracts/`](contracts/) — reviewed phase contract baselines.
 
 Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contract.
 
@@ -41,6 +43,7 @@ Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contr
 - Licensing and third-party provenance: `DEPENDENCY_POLICY.md`.
 - Phase scope: `ROADMAP.md`.
 - Current P1 sequencing and gates: `phases/P1_WINDOWS_VERTICAL_SLICE.md`.
+- Frozen P1 implementation boundary: `contracts/P1_CONTRACT_FREEZE.md` plus the corresponding merged source commit.
 - Agent execution: repository `AGENTS.md`; detailed model: `AGENT_DESIGN.md`.
 - Development lifecycle: `DEVELOPMENT_WORKFLOW.md`.
 - Accepted ADRs override older descriptive text; dependent docs must then be updated.
