@@ -48,6 +48,11 @@ Primary references:
 6. unregisters the hotkey;
 7. samples only the aggregate count of held modifier keys.
 
+Verified on head `828a426b7e7d91978c3d0bb77b6edcf83bcaa425`:
+
+- P1 Windows Native Spike run `33518031519`: `success`;
+- Rust CI run `33518031529`: formatting, Linux native-neutral checks, and Windows workspace checks all `success`.
+
 This proves registration/message-queue/worker signalling and teardown on the runner. The private posted message is not proof that Windows generated a real `WM_HOTKEY`, and the runner is not treated as representative interactive-desktop input evidence.
 
 ### Not yet verified interactively
