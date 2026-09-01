@@ -41,7 +41,7 @@ mod windows_e2e {
     };
 
     use cliptype_app::{Coordinator, SessionCompletion, TriggerResult, WaitResult};
-    use cliptype_core::{TerminalOutcome, Utf16UnitCount};
+    use cliptype_core::TerminalOutcome;
     use cliptype_windows::{WindowsClipboard, WindowsKeyboard, WindowsTarget};
     use windows_sys::Win32::{
         Foundation::{GlobalFree, HGLOBAL, HWND},
@@ -50,11 +50,23 @@ mod windows_e2e {
             Memory::{GlobalAlloc, GlobalLock, GlobalUnlock},
         },
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DestroyWindow, DispatchMessageW, GetFocus, GetForegroundWindow,
-            GetWindowTextLengthW, GetWindowTextW, MSG, PeekMessageW, SetFocus,
-            SetForegroundWindow, ShowWindow, TranslateMessage, UpdateWindow,
+            CreateWindowExW, DestroyWindow, DispatchMessageW, GetForegroundWindow,
+            GetWindowTextLengthW, GetWindowTextW, MSG, PeekMessageW, SetForegroundWindow,
+            ShowWindow, TranslateMessage,
         },
     };
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        #[link_name = "GetFocus"]
+        fn get_focus() -> HWND;
+
+        #[link_name = "SetFocus"]
+        fn set_focus(window: HWND) -> HWND;
+
+        #[link_name = "UpdateWindow"]
+        fn update_window(window: HWND) -> i32;
+    }
 
     const OPT_IN: &str = "CLIPTYPE_RUN_CONTROLLED_E2E";
     const SENTINEL: &str = "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841";
@@ -177,7 +189,6 @@ mod windows_e2e {
             });
         }
 
-        let _ = Utf16UnitCount::new(observed_units);
         Ok(Observation {
             expected_utf16_units: expected_units,
             observed_utf16_units: observed_units,
@@ -258,18 +269,18 @@ mod windows_e2e {
                 // `ShowWindow` reports prior visibility, not success, so its
                 // return value is intentionally ignored.
                 let _ = unsafe { ShowWindow(self.parent, SW_SHOW) };
-                // SAFETY: both handles are live and owned by this test process.
-                let _ = unsafe { UpdateWindow(self.parent) };
+                // SAFETY: `self.parent` is a live window owned by this guard.
+                let _ = unsafe { update_window(self.parent) };
                 // SAFETY: foreground/focus requests target this process's own
                 // visible controlled windows.
                 let _ = unsafe { SetForegroundWindow(self.parent) };
-                let _ = unsafe { SetFocus(self.edit) };
+                let _ = unsafe { set_focus(self.edit) };
                 pump_messages();
 
                 // SAFETY: these calls return opaque handles and do not transfer
                 // ownership.
                 let foreground = unsafe { GetForegroundWindow() };
-                let focus = unsafe { GetFocus() };
+                let focus = unsafe { get_focus() };
                 if foreground == self.parent && focus == self.edit {
                     return Ok(());
                 }
