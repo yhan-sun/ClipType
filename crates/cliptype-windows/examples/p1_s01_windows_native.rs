@@ -136,9 +136,8 @@ mod windows_probe {
         });
 
         let mut message: Message = unsafe { zeroed() };
-        let received = unsafe {
-            get_message_w(&mut message, null_mut(), PROBE_MESSAGE, PROBE_MESSAGE)
-        };
+        let received =
+            unsafe { get_message_w(&mut message, null_mut(), PROBE_MESSAGE, PROBE_MESSAGE) };
 
         let unregistered = unsafe { unregister_hot_key(null_mut(), HOTKEY_ID) };
         let worker_result = worker
