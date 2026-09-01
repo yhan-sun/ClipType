@@ -14,9 +14,7 @@ fn main() {
     match windows_e2e::run() {
         Ok(observation) => println!(
             "p1_controlled_e2e result=ok expected_utf16_units={} observed_utf16_units={} batches={}",
-            observation.expected_utf16_units,
-            observation.observed_utf16_units,
-            observation.batches
+            observation.expected_utf16_units, observation.observed_utf16_units, observation.batches
         ),
         Err(error) => {
             eprintln!(
@@ -173,9 +171,7 @@ mod windows_e2e {
         }
 
         let status = coordinator.status();
-        if status.completion
-            != Some(SessionCompletion::Finished(TerminalOutcome::Completed))
-        {
+        if status.completion != Some(SessionCompletion::Finished(TerminalOutcome::Completed)) {
             return Err(E2eError::CoordinatorOutcome);
         }
 
