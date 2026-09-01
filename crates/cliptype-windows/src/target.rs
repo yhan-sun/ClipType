@@ -45,18 +45,18 @@ impl TargetPort for WindowsTarget {
             expected.token::<WindowsTargetToken>(),
             observed.token::<WindowsTargetToken>(),
         ) else {
-            return TargetComparison::Unavailable;
+            return TargetComparison::UnavailableOrAmbiguous;
         };
 
         if !is_window_alive(expected_token.top_level) {
-            return TargetComparison::Changed;
+            return TargetComparison::Disappeared;
         }
 
         compare_tokens(
             expected_token,
-            expected.metadata().evidence_strength,
+            expected.strength(),
             observed_token,
-            observed.metadata().evidence_strength,
+            observed.strength(),
         )
     }
 
@@ -92,10 +92,10 @@ fn capture_target() -> Result<TargetEvidence, TargetCaptureError> {
     // SAFETY: this call has no pointer or ownership preconditions.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.is_null() {
-        return Err(TargetCaptureError::TemporarilyUnavailable);
+        return Err(TargetCaptureError::Unavailable);
     }
 
-    let mut process_id = 0;
+    let mut process_id: u32 = 0;
     // SAFETY: `foreground` is an observed window handle and `process_id` is a
     // valid out pointer for the duration of the call.
     let thread_id = unsafe { GetWindowThreadProcessId(foreground, &raw mut process_id) };
@@ -105,7 +105,7 @@ fn capture_target() -> Result<TargetEvidence, TargetCaptureError> {
         )));
     }
     if !is_window_alive(foreground as usize) {
-        return Err(TargetCaptureError::TemporarilyUnavailable);
+        return Err(TargetCaptureError::Disappeared);
     }
 
     // SAFETY: zero is a valid initial state for `GUITHREADINFO`; Win32 requires
@@ -142,7 +142,7 @@ fn capture_target() -> Result<TargetEvidence, TargetCaptureError> {
         }
     };
 
-    let evidence_strength = if !detailed {
+    let strength = if !detailed {
         EvidenceStrength::Degraded
     } else if info.hwndFocus.is_null() {
         EvidenceStrength::TopLevelTarget
@@ -154,8 +154,9 @@ fn capture_target() -> Result<TargetEvidence, TargetCaptureError> {
         token,
         TargetMetadata {
             process_id: Some(process_id),
-            evidence_strength,
+            gui_thread_id: Some(thread_id),
         },
+        strength,
     ))
 }
 
@@ -211,7 +212,7 @@ fn query_process_integrity(process_id: u32) -> Option<u32> {
 
     // SAFETY: the access mask requests query-only rights, inheritance is false,
     // and the identifier came from the foreground window owner.
-    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
     let process = OwnedHandle::new(process)?;
     query_token_integrity(process.get())
 }
@@ -225,12 +226,12 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
     }
     let token = OwnedHandle::new(token)?;
 
-    let mut required = 0;
+    let mut required: u32 = 0;
     // SAFETY: the null-buffer query is the documented size-discovery call.
     let _ = unsafe {
         GetTokenInformation(
             token.get(),
-            TokenIntegrityLevel,
+            TokenIntegrityLevel as i32,
             null_mut(),
             0,
             &raw mut required,
@@ -248,7 +249,7 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
     if unsafe {
         GetTokenInformation(
             token.get(),
-            TokenIntegrityLevel,
+            TokenIntegrityLevel as i32,
             storage.as_mut_ptr().cast(),
             required,
             &raw mut required,
@@ -392,8 +393,9 @@ mod tests {
             private,
             TargetMetadata {
                 process_id: Some(41),
-                evidence_strength: EvidenceStrength::NativeFocusedControl,
+                gui_thread_id: Some(42),
             },
+            EvidenceStrength::NativeFocusedControl,
         );
         let debug = format!("{evidence:?}");
 
