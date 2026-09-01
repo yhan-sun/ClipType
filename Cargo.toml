@@ -1,0 +1,28 @@
+[workspace]
+members = [
+    "crates/cliptype-core",
+    "crates/cliptype-platform",
+    "crates/cliptype-app",
+    "crates/cliptype-windows",
+    "apps/cliptype",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+repository = "https://github.com/yhan-sun/ClipType"
+publish = false
+
+[workspace.dependencies]
+cliptype-core = { path = "crates/cliptype-core" }
+cliptype-platform = { path = "crates/cliptype-platform" }
+cliptype-app = { path = "crates/cliptype-app" }
+cliptype-windows = { path = "crates/cliptype-windows" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }

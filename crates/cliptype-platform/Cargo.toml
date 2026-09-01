@@ -1,0 +1,14 @@
+[package]
+name = "cliptype-platform"
+description = "Native-neutral ports and capability boundary for ClipType."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cliptype-core.workspace = true
+
+[lints]
+workspace = true

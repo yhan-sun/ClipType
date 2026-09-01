@@ -1,0 +1,15 @@
+[package]
+name = "cliptype"
+description = "Windows composition root for ClipType."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cliptype-app.workspace = true
+cliptype-windows.workspace = true
+
+[lints]
+workspace = true
