@@ -1,6 +1,6 @@
 # ClipType Documentation
 
-This directory is the design source of truth for ClipType. The repository intentionally freezes product and architecture decisions before implementation.
+This directory is the design source of truth for ClipType. P0 established the architecture and product foundation; P1 is now the current implementation phase.
 
 ## Reading order
 
@@ -14,12 +14,14 @@ This directory is the design source of truth for ClipType. The repository intent
 8. [`CONFIGURATION.md`](CONFIGURATION.md) — planned configuration model and stable semantics.
 9. [`TESTING.md`](TESTING.md) — test pyramid, platform matrix, release gates.
 10. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
-11. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
-12. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, state machine, risk levels, handoffs, and multi-agent rules.
-13. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
-14. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
-15. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
-16. [`adr/`](adr/) — immutable architecture decision records.
+11. [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md) — current P1 sequencing, issue boundaries, runtime model, PR order, and phase evidence.
+12. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
+13. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, state machine, risk levels, handoffs, and multi-agent rules.
+14. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
+15. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
+16. [`REFERENCES.md`](REFERENCES.md) — official APIs and projects used as design references.
+17. [`adr/`](adr/) — immutable architecture decision records.
+18. [`research/`](research/) — bounded research/spike evidence; research does not override accepted architecture without an ADR/document update.
 
 Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contract for AI agents. `AGENT_DESIGN.md` explains the detailed operating model behind it.
 
@@ -34,13 +36,17 @@ Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contr
 - OS-specific mechanisms: `PLATFORMS.md`.
 - Support claims: `COMPATIBILITY.md`.
 - Privacy/security: `SECURITY_PRIVACY.md` overrides convenience/performance goals.
-- Schedule/scope: `ROADMAP.md`.
+- Phase scope: `ROADMAP.md`.
+- Current P1 sequencing/integration gates: `phases/P1_WINDOWS_VERTICAL_SLICE.md`.
 - Agent execution rules: repository `AGENTS.md`; detailed role/workflow design: `AGENT_DESIGN.md`.
 - Development lifecycle: `DEVELOPMENT_WORKFLOW.md`.
 - Architecture decisions: accepted ADRs override older descriptive text; dependent docs should then be updated.
+- Research findings: evidence for decisions, not permission to bypass normative documents.
 
 ## Documentation change policy
 
 Public behavior, permissions, compatibility, architecture, persistence, injection semantics, or release gates MUST be documented in the same PR that changes them.
 
 Accepted ADRs are historical records. Do not edit their decision into a different decision; add a superseding ADR.
+
+Phase execution documents may refine sequencing and ownership without an ADR. If they change architecture, security posture, public behavior, or support promises, update the normative document and add an ADR when required.
