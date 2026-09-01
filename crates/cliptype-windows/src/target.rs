@@ -4,17 +4,17 @@ use std::{mem::size_of, ptr::null_mut};
 
 use cliptype_core::{EvidenceStrength, IntegrityRelation};
 use cliptype_platform::{
-    NativeError, NativeErrorKind, TargetComparison, TargetError, TargetEvidence, TargetMetadata,
-    TargetPort,
+    NativeError, NativeErrorKind, TargetCaptureError, TargetComparison, TargetEvidence,
+    TargetMetadata, TargetPort,
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, HANDLE, HWND},
     Security::{
-        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, OpenProcessToken,
-        TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TokenIntegrityLevel,
+        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL,
+        TOKEN_QUERY, TokenIntegrityLevel,
     },
     System::Threading::{
-        GetCurrentProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
     },
     UI::WindowsAndMessaging::{
         GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, IsWindow, GUITHREADINFO,
@@ -32,40 +32,36 @@ impl WindowsTarget {
 }
 
 impl TargetPort for WindowsTarget {
-    fn capture(&self) -> Result<TargetEvidence, TargetError> {
+    fn capture(&self) -> Result<TargetEvidence, TargetCaptureError> {
         capture_target()
     }
 
-    fn compare(&self, expected: &TargetEvidence) -> TargetComparison {
-        let Some(expected_token) = expected.downcast_ref::<WindowsTargetToken>() else {
+    fn compare(
+        &self,
+        expected: &TargetEvidence,
+        observed: &TargetEvidence,
+    ) -> TargetComparison {
+        let (Some(expected_token), Some(observed_token)) = (
+            expected.token::<WindowsTargetToken>(),
+            observed.token::<WindowsTargetToken>(),
+        ) else {
             return TargetComparison::Unavailable;
         };
 
-        let current = match capture_target() {
-            Ok(current) => current,
-            Err(TargetError::Unavailable | TargetError::Ambiguous) => {
-                return if is_window_alive(expected_token.top_level) {
-                    TargetComparison::Unavailable
-                } else {
-                    TargetComparison::Disappeared
-                };
-            }
-            Err(TargetError::Native(_)) => return TargetComparison::Unavailable,
-        };
-        let Some(current_token) = current.downcast_ref::<WindowsTargetToken>() else {
-            return TargetComparison::Unavailable;
-        };
+        if !is_window_alive(expected_token.top_level) {
+            return TargetComparison::Changed;
+        }
 
         compare_tokens(
             expected_token,
-            expected.strength(),
-            current_token,
-            current.strength(),
+            expected.metadata().evidence_strength,
+            observed_token,
+            observed.metadata().evidence_strength,
         )
     }
 
     fn integrity_relation(&self, target: &TargetEvidence) -> IntegrityRelation {
-        let Some(token) = target.downcast_ref::<WindowsTargetToken>() else {
+        let Some(token) = target.token::<WindowsTargetToken>() else {
             return IntegrityRelation::Unknown;
         };
 
@@ -92,24 +88,24 @@ struct WindowsTargetToken {
     caret: usize,
 }
 
-fn capture_target() -> Result<TargetEvidence, TargetError> {
+fn capture_target() -> Result<TargetEvidence, TargetCaptureError> {
     // SAFETY: this call has no pointer or ownership preconditions.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.is_null() {
-        return Err(TargetError::Unavailable);
+        return Err(TargetCaptureError::TemporarilyUnavailable);
     }
 
     let mut process_id = 0;
     // SAFETY: `foreground` is an observed window handle and `process_id` is a
     // valid out pointer for the duration of the call.
-    let thread_id = unsafe { GetWindowThreadProcessId(foreground, &mut process_id) };
+    let thread_id = unsafe { GetWindowThreadProcessId(foreground, &raw mut process_id) };
     if thread_id == 0 || process_id == 0 {
-        return Err(TargetError::Native(last_native_error(
+        return Err(TargetCaptureError::Native(last_native_error(
             NativeErrorKind::TemporarilyUnavailable,
         )));
     }
     if !is_window_alive(foreground as usize) {
-        return Err(TargetError::Ambiguous);
+        return Err(TargetCaptureError::TemporarilyUnavailable);
     }
 
     // SAFETY: zero is a valid initial state for `GUITHREADINFO`; Win32 requires
@@ -118,9 +114,9 @@ fn capture_target() -> Result<TargetEvidence, TargetError> {
     info.cbSize = size_of::<GUITHREADINFO>() as u32;
     // SAFETY: `thread_id` owns the observed foreground window and `info` is a
     // correctly sized writable structure.
-    let exact = unsafe { GetGUIThreadInfo(thread_id, &mut info) } != 0;
+    let detailed = unsafe { GetGUIThreadInfo(thread_id, &raw mut info) } != 0;
 
-    let token = if exact {
+    let token = if detailed {
         WindowsTargetToken {
             top_level: foreground as usize,
             process_id,
@@ -146,13 +142,19 @@ fn capture_target() -> Result<TargetEvidence, TargetError> {
         }
     };
 
+    let evidence_strength = if !detailed {
+        EvidenceStrength::Degraded
+    } else if info.hwndFocus.is_null() {
+        EvidenceStrength::TopLevelTarget
+    } else {
+        EvidenceStrength::NativeFocusedControl
+    };
+
     Ok(TargetEvidence::new(
         token,
-        TargetMetadata::new(Some(process_id)),
-        if exact {
-            EvidenceStrength::Exact
-        } else {
-            EvidenceStrength::Degraded
+        TargetMetadata {
+            process_id: Some(process_id),
+            evidence_strength,
         },
     ))
 }
@@ -160,18 +162,18 @@ fn capture_target() -> Result<TargetEvidence, TargetError> {
 fn compare_tokens(
     expected: &WindowsTargetToken,
     expected_strength: EvidenceStrength,
-    current: &WindowsTargetToken,
-    current_strength: EvidenceStrength,
+    observed: &WindowsTargetToken,
+    observed_strength: EvidenceStrength,
 ) -> TargetComparison {
-    if expected.top_level != current.top_level
-        || expected.process_id != current.process_id
-        || expected.thread_id != current.thread_id
+    if expected.top_level != observed.top_level
+        || expected.process_id != observed.process_id
+        || expected.thread_id != observed.thread_id
     {
         return TargetComparison::Changed;
     }
 
-    if expected_strength == EvidenceStrength::Exact && current_strength == EvidenceStrength::Exact {
-        if expected == current {
+    if has_native_focus_detail(expected_strength) && has_native_focus_detail(observed_strength) {
+        if expected == observed {
             TargetComparison::Same
         } else {
             TargetComparison::Changed
@@ -179,6 +181,13 @@ fn compare_tokens(
     } else {
         TargetComparison::Same
     }
+}
+
+const fn has_native_focus_detail(strength: EvidenceStrength) -> bool {
+    matches!(
+        strength,
+        EvidenceStrength::NativeFocusedControl | EvidenceStrength::RenderHostLimited
+    )
 }
 
 fn is_window_alive(value: usize) -> bool {
@@ -202,16 +211,16 @@ fn query_process_integrity(process_id: u32) -> Option<u32> {
 
     // SAFETY: the access mask requests query-only rights, inheritance is false,
     // and the identifier came from the foreground window owner.
-    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) };
     let process = OwnedHandle::new(process)?;
     query_token_integrity(process.get())
 }
 
 fn query_token_integrity(process: HANDLE) -> Option<u32> {
-    let mut token = null_mut();
+    let mut token: HANDLE = null_mut();
     // SAFETY: `process` is a live process handle/pseudo-handle and `token` is a
     // valid out pointer. The resulting token is closed by `OwnedHandle`.
-    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &raw mut token) } == 0 {
         return None;
     }
     let token = OwnedHandle::new(token)?;
@@ -224,14 +233,14 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
             TokenIntegrityLevel,
             null_mut(),
             0,
-            &mut required,
+            &raw mut required,
         )
     };
     if required < size_of::<TOKEN_MANDATORY_LABEL>() as u32 {
         return None;
     }
 
-    let byte_count = usize::try_from(required).ok()?;
+    let byte_count = required as usize;
     let word_count = byte_count.div_ceil(size_of::<usize>());
     let mut storage = vec![0usize; word_count];
     // SAFETY: `storage` is aligned for pointer-containing token structures,
@@ -242,7 +251,7 @@ fn query_token_integrity(process: HANDLE) -> Option<u32> {
             TokenIntegrityLevel,
             storage.as_mut_ptr().cast(),
             required,
-            &mut required,
+            &raw mut required,
         )
     } == 0
     {
@@ -331,32 +340,32 @@ mod tests {
     }
 
     #[test]
-    fn exact_tokens_detect_native_focus_changes() {
+    fn native_focus_tokens_detect_control_changes() {
         let original = token(10, 11);
         assert_eq!(
             compare_tokens(
                 &original,
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
                 &original,
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
             ),
             TargetComparison::Same
         );
         assert_eq!(
             compare_tokens(
                 &original,
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
                 &token(10, 12),
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
             ),
             TargetComparison::Changed
         );
         assert_eq!(
             compare_tokens(
                 &original,
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
                 &token(20, 11),
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
             ),
             TargetComparison::Changed
         );
@@ -370,7 +379,7 @@ mod tests {
                 &original,
                 EvidenceStrength::Degraded,
                 &token(10, 99),
-                EvidenceStrength::Exact,
+                EvidenceStrength::NativeFocusedControl,
             ),
             TargetComparison::Same
         );
@@ -381,8 +390,10 @@ mod tests {
         let private = token(0xDEAD_BEEF, 0xA11C_E001);
         let evidence = TargetEvidence::new(
             private,
-            TargetMetadata::new(Some(41)),
-            EvidenceStrength::Exact,
+            TargetMetadata {
+                process_id: Some(41),
+                evidence_strength: EvidenceStrength::NativeFocusedControl,
+            },
         );
         let debug = format!("{evidence:?}");
 
