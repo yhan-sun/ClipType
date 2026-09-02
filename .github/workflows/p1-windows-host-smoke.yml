@@ -36,4 +36,6 @@ jobs:
         run: cargo build --locked -p cliptype
       - name: Start and stop through the private command queue
         shell: pwsh
-        run: '"shutdown" | cargo run --locked --quiet -p cliptype'
+        env:
+          CLIPTYPE_HEADLESS: "1"
+        run: '"shutdown" | cargo run --locked --quiet -p cliptype -- --headless'
