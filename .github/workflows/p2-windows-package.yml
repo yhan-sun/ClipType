@@ -61,11 +61,12 @@ jobs:
               exit 1
             }
           }
-      - name: Install, run headless, register startup, and fully roll back
+      - name: Install, run headless, preserve startup choice, and fully roll back
         shell: pwsh
         run: |
           $installRoot = Join-Path $env:RUNNER_TEMP "ClipType Product Install"
           $localData = Join-Path $env:RUNNER_TEMP "ClipType Local Data"
+          $configPath = Join-Path $localData "ClipType\config.toml"
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           $env:LOCALAPPDATA = $localData
           $env:CLIPTYPE_HEADLESS = "1"
@@ -76,6 +77,10 @@ jobs:
               -NoLaunch
             $installed = Join-Path $installRoot "cliptype.exe"
             if (-not (Test-Path $installed)) { throw "installed executable missing" }
+            if (-not (Test-Path $configPath)) { throw "installer did not create settings" }
+            if (-not (Select-String -Path $configPath -SimpleMatch "start_at_login = false" -Quiet)) {
+              throw "initial settings do not disable startup"
+            }
             "shutdown" | & $installed --headless
             if ($LASTEXITCODE -ne 0) { throw "installed host smoke failed" }
 
@@ -84,8 +89,18 @@ jobs:
               -InstallRoot $installRoot `
               -StartAtLogin `
               -NoLaunch
+            if (-not (Select-String -Path $configPath -SimpleMatch "start_at_login = true" -Quiet)) {
+              throw "installer did not persist startup choice"
+            }
             $runValue = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
             if (-not $runValue.Contains($installed)) { throw "startup registration mismatch" }
+
+            "shutdown" | & $installed --headless
+            if ($LASTEXITCODE -ne 0) { throw "startup-enabled host smoke failed" }
+            $runAfterHost = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
+            if (-not $runAfterHost.Contains($installed)) {
+              throw "application startup synchronization removed the installer choice"
+            }
 
             & "packaging\windows\uninstall.ps1" `
               -InstallRoot $installRoot `
@@ -99,18 +114,24 @@ jobs:
             Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item $localData -Recurse -Force -ErrorAction SilentlyContinue
           }
-      - name: Scan package for generated privacy sentinels
+      - name: Scan staged distributable files for generated privacy sentinels
         shell: pwsh
         run: |
-          $archive = [IO.File]::ReadAllBytes("dist\ClipType-windows-x86_64-unsigned.zip")
-          $text = [Text.Encoding]::ASCII.GetString($archive)
-          foreach ($sentinel in @(
+          $sentinels = @(
             "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265",
             "P2_COORDINATOR_PRIVATE_SENTINEL",
             "SETTINGS_PRIVATE_SENTINEL"
-          )) {
-            if ($text.Contains($sentinel)) {
-              throw "privacy sentinel entered the distributable archive"
+          )
+          $files = Get-ChildItem "dist\ClipType" -File -Recurse
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+            $unicode = [Text.Encoding]::Unicode.GetString($bytes)
+            foreach ($sentinel in $sentinels) {
+              if ($ascii.Contains($sentinel) -or $unicode.Contains($sentinel)) {
+                throw "privacy sentinel entered staged distributable file $($file.Name)"
+              }
             }
           }
-          Write-Output "p2_package result=ok kind=unsigned_development_archive"
+          Write-Output "p2_package result=ok kind=unsigned_development_archive files=$($files.Count)"
