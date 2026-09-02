@@ -16,6 +16,5 @@ pub use coordinator::{
     WaitResult,
 };
 pub use settings::{
-    SettingsError, SettingsLoad, SettingsSource, SettingsStore, parse_settings,
-    serialize_settings,
+    SettingsError, SettingsLoad, SettingsSource, SettingsStore, parse_settings, serialize_settings,
 };

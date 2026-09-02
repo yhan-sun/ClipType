@@ -351,9 +351,7 @@ mod tests {
         AutoClipboardThreshold, HotkeyPreset, InjectionMode, ProductSettings, SpeedPreset,
     };
 
-    use super::{
-        SettingsError, SettingsSource, SettingsStore, parse_settings, serialize_settings,
-    };
+    use super::{SettingsError, SettingsSource, SettingsStore, parse_settings, serialize_settings};
 
     #[test]
     fn round_trip_is_deterministic_and_content_free() {
