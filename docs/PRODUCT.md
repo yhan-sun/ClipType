@@ -1,97 +1,96 @@
-# Product Specification
+# Product
 
-## Product statement
+## Purpose
 
-**ClipType lets a user type the current clipboard text into the currently focused application using OS-native input facilities.**
+ClipType is a local, privacy-first Windows tray utility for one explicit action:
 
-Tagline: **Type your clipboard anywhere.**
+> deliver the text currently on the user's clipboard to the destination that was active when the user triggered ClipType.
 
-ClipType is not primarily a clipboard manager. It is a local text-delivery tool for situations where normal paste is inconvenient, blocked, unreliable, or semantically different from typing.
+It is not a clipboard manager, key logger, macro recorder, remote automation service, or privilege-bypass tool.
 
-## Primary use cases
+## User loop
 
-- Enter clipboard text into applications that reject or mishandle paste.
-- Type into remote desktops, virtual machines, terminal-like surfaces, forms, IDEs, and other focused controls.
-- Deliver Unicode and multiline clipboard content with a predictable, cancellable mechanism.
-- Choose between simulated typing and normal clipboard paste depending on target and payload.
+1. The user copies text in any application.
+2. The user focuses the intended destination.
+3. The user invokes the reviewed global trigger hotkey or tray command.
+4. ClipType captures content-free destination evidence, waits for physical trigger modifiers to clear, reads the current clipboard once within configured bounds, and freezes one injection backend.
+5. ClipType revalidates destination, integrity, modifier, cancellation, and—when pasting—clipboard revision evidence.
+6. ClipType performs bounded native input and reports a content-free outcome.
+7. An independent cancel hotkey or tray command can stop remaining work between safe boundaries.
 
-## Core UX contract
+## Injection modes
 
-1. The user copies text using normal OS/application behavior.
-2. The user focuses the destination control.
-3. The user invokes ClipType through a global hotkey or explicit tray action.
-4. ClipType reads the current clipboard snapshot.
-5. ClipType captures target/focus metadata and builds an injection plan.
-6. ClipType injects the content using the selected backend.
-7. The user can cancel immediately.
-8. If the target changes in a way that violates the plan's focus policy, ClipType aborts rather than continuing into an unintended application.
+### Keyboard
 
-ClipType MUST NOT require locating a visual caret on screen. The OS focus/input-routing model is the target mechanism.
+`keyboard` normalizes Unicode text into semantic atoms and emits bounded `SendInput` batches. It is appropriate when text-event semantics are preferred over application paste behavior.
 
-## Default safety posture
+The path supports ASCII, CJK, supplementary Unicode scalars, combining marks, normalized line breaks, and the configured Tab policy. It stops on target change/evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress.
 
-- Manual invocation is the default.
-- Clipboard-change-triggered auto-typing is not a V1 feature.
-- Empty/non-text clipboard content is a no-op with explicit user feedback.
-- Injection is cancellable.
-- Focus changes are guarded.
-- Clipboard content is not persisted by default.
-- The application does not transmit clipboard text.
+### Clipboard
 
-## V1 feature set
+`clipboard` uses the user's already-current clipboard. It captures a content-blind revision, verifies that revision immediately before dispatch, and sends exactly one bounded `Ctrl+V` chord.
 
-- Current plain-text clipboard read.
-- Global trigger.
-- Keyboard injection mode.
-- Clipboard-paste mode.
-- Auto planner that selects an appropriate mode.
-- Configurable keyboard delay/throughput bounds.
-- Unicode and multiline support within each backend's documented capabilities.
-- Cancellation.
-- Focus guard.
-- Tray/status shell and permission onboarding.
-- Clear error/reporting for unsupported permissions/capabilities.
+ClipType does not write, clear, own, restore, cache, or retain clipboard contents. The destination application chooses its ordinary paste behavior and may select an existing rich-text format.
 
-## Explicit V1 non-goals
+### Auto
 
-- Clipboard history.
-- Background capture of every copied item.
-- Cloud sync or accounts.
-- AI text rewriting.
-- OCR/image/rich-media typing.
-- General-purpose macros or arbitrary scripting.
-- Hidden automation designed to evade application controls.
-- Security-boundary bypass.
-- Mobile platforms.
+`auto` chooses one backend from payload size and proven capabilities. The choice is immutable for the session. It can select clipboard only when both paste dispatch and revision guarding are fully available. Explicit modes never silently fall back.
 
-## Product principles
+## Product surface
 
-### User control over automation
-Synthetic input can be dangerous. Every default favors an explicit trigger, visible state, immediate cancellation, and fail-safe behavior.
+The Windows beta provides:
 
-### Capability honesty
-The UI and documentation MUST distinguish supported, degraded, experimental, and unavailable behavior. This is especially important on Wayland.
+- native notification-area icon and context menu;
+- trigger, cancel, enable/disable, and quit commands;
+- keyboard/clipboard/auto selection;
+- slow/normal/fast keyboard pacing;
+- notification control;
+- reviewed trigger/cancel hotkey presets;
+- per-user start-at-login control;
+- strict versioned per-user configuration with backup recovery;
+- portable and per-user installation options;
+- content-free status and remediation categories.
 
-### Native integration
-Use documented OS facilities and platform permissions instead of browser automation or accessibility hacks when a direct API exists.
+## Safety rules
 
-### Privacy by architecture
-Clipboard content should spend as little time as practical in memory, should not enter logs, and should not cross the network.
+- The destination is captured before clipboard acquisition and revalidated before every dispatch boundary.
+- ClipType never redirects remaining input to a newly focused target.
+- Detailed target evidence that later degrades fails closed.
+- A normal-integrity process does not inject into a higher-integrity target.
+- ClipType observes physical modifiers and never releases keys owned by the user.
+- Clipboard retries, modifier settling, batch sizes, waits, worker lifetime, and shutdown are bounded.
+- Partial or progress-unknown native input is terminal and is never blindly retried.
+- Only one injection session can be active; a second trigger returns Busy.
+- Active sessions retain an immutable configuration snapshot; settings changes affect future sessions.
 
-### Small surface area
-ClipType should remain a focused utility rather than growing into a general desktop automation framework.
+## Privacy rules
 
-## Success metrics
+- No clipboard history or continuous plaintext watcher.
+- No network transmission of clipboard content.
+- No persistence of clipboard/injected text, prefixes, suffixes, hashes, fingerprints, or samples.
+- No focused-field content or window-title collection.
+- Normal logs, status, notifications, evidence, and package metadata contain categories and counts only.
+- Generated privacy sentinels are scanned out of distributable files and ordinary workflow output.
 
-V1 success is measured primarily by correctness, safety, compatibility, and startup/runtime footprint—not feature count.
+## Compatibility promise
 
-Engineering metrics should include:
-- injection completion/failure reason counts without content;
-- cancellation latency;
-- focus-change abort correctness;
-- clipboard restoration success for paste mode;
-- Unicode/multiline compatibility matrix;
-- CPU/memory idle footprint;
-- platform permission/setup failure rate measured locally unless privacy-preserving telemetry is later explicitly designed.
+The first public beta is Windows x86_64. Windows 11 x64 is the recommended client. Windows 10 22H2 x64 is best-effort API-compatible with an operating-system support/security caveat. Windows Server 2022 and 2025 Desktop Experience are mechanism-compatible CI reference environments.
 
-No metric may require recording clipboard plaintext.
+ClipType supports ordinary editable desktop targets that accept Unicode-oriented `SendInput` or standard `Ctrl+V`. This is a mechanism-level support contract, not a universal guarantee for every application, logical field, remote session, or security boundary. See `docs/COMPATIBILITY.md`.
+
+## Explicit non-goals
+
+- clipboard history, search, synchronization, or analytics;
+- arbitrary global keyboard capture;
+- macros, scripting, or unattended command execution;
+- automatic elevation or Windows integrity-boundary bypass;
+- forced focus restoration or destination switching;
+- transformed/generated text through a clipboard rewrite/restore transaction;
+- ARM64, 32-bit, service, Server Core, or non-interactive support in the first beta;
+- claiming Authenticode trusted-publisher identity without a trusted certificate.
+
+## Public release
+
+`v0.1.0-beta.1` is distributed as a GitHub prerelease with a ZIP package, portable executable, SHA-256 manifest, dependency inventory, build metadata, Sigstore keyless signatures, and GitHub artifact attestations.
+
+The first beta is not Authenticode publisher-signed. This boundary is shown in release notes and build metadata rather than hidden.
