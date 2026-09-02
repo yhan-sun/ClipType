@@ -13,6 +13,8 @@ mod command_host;
 #[cfg(windows)]
 mod keyboard;
 #[cfg(windows)]
+mod paste;
+#[cfg(windows)]
 mod target;
 
 #[cfg(windows)]
@@ -23,5 +25,7 @@ pub use cliptype_platform::CommandEvent as WindowsCommandEvent;
 pub use command::{CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCommandSource};
 #[cfg(windows)]
 pub use keyboard::WindowsKeyboard;
+#[cfg(windows)]
+pub use paste::WindowsPaste;
 #[cfg(windows)]
 pub use target::WindowsTarget;
