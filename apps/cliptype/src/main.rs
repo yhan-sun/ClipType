@@ -120,8 +120,8 @@ mod windows_host {
             (None, None, None)
         } else {
             let (event_tx, event_rx) = mpsc::channel();
-            let tray = WindowsTrayHandle::spawn(settings, event_tx)
-                .map_err(|_| HostError::TrayStart)?;
+            let tray =
+                WindowsTrayHandle::spawn(settings, event_tx).map_err(|_| HostError::TrayStart)?;
             let signal = tray.signal();
             let handler = spawn_tray_handler(
                 event_rx,
@@ -398,9 +398,9 @@ mod windows_host {
                 Some(TrayNotice::ModifierConflict)
             }
             SessionCompletion::Finished(TerminalOutcome::KnownSecurityRestriction)
-            | SessionCompletion::PreparationFailed(
-                PreparationFailure::KnownSecurityRestriction,
-            ) => Some(TrayNotice::SecurityRestriction),
+            | SessionCompletion::PreparationFailed(PreparationFailure::KnownSecurityRestriction) => {
+                Some(TrayNotice::SecurityRestriction)
+            }
             SessionCompletion::PreparationFailed(
                 PreparationFailure::ClipboardUnavailable
                 | PreparationFailure::ClipboardRevisionUnavailable
@@ -443,8 +443,8 @@ mod windows_host {
     impl HostOptions {
         fn from_environment() -> Self {
             let mut background = false;
-            let mut headless = env::var_os("CLIPTYPE_HEADLESS").as_deref()
-                == Some(std::ffi::OsStr::new("1"));
+            let mut headless =
+                env::var_os("CLIPTYPE_HEADLESS").as_deref() == Some(std::ffi::OsStr::new("1"));
             for argument in env::args_os().skip(1) {
                 if argument == "--background" {
                     background = true;
