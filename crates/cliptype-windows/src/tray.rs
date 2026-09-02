@@ -82,8 +82,7 @@ unsafe extern "system" {
 #[link(name = "user32")]
 unsafe extern "system" {
     #[link_name = "LoadIconW"]
-    fn load_icon_w(instance: *mut core::ffi::c_void, name: *const u16)
-    -> *mut core::ffi::c_void;
+    fn load_icon_w(instance: *mut core::ffi::c_void, name: *const u16) -> *mut core::ffi::c_void;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,10 +153,7 @@ pub struct WindowsTrayHandle {
 }
 
 impl WindowsTrayHandle {
-    pub fn spawn(
-        settings: ProductSettings,
-        events: Sender<TrayEvent>,
-    ) -> Result<Self, TrayError> {
+    pub fn spawn(settings: ProductSettings, events: Sender<TrayEvent>) -> Result<Self, TrayError> {
         let shared_settings = Arc::new(Mutex::new(settings));
         let notices = Arc::new(Mutex::new(VecDeque::new()));
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -407,7 +403,10 @@ fn show_context_menu(window: HWND) {
         settings.start_at_login,
         false,
     );
-    let hotkey = format!("Hotkey: {} (cycle; restart)", settings.hotkey.trigger_label());
+    let hotkey = format!(
+        "Hotkey: {} (cycle; restart)",
+        settings.hotkey.trigger_label()
+    );
     append(menu, CMD_HOTKEY, &hotkey, false, false);
     append_separator(menu);
     append(menu, CMD_QUIT, "Quit ClipType", false, false);
@@ -573,32 +572,38 @@ const fn notice_text(notice: TrayNotice) -> (&'static str, &'static str, u32) {
         TrayNotice::ClipboardUnavailable => {
             ("ClipType", "Clipboard text is unavailable.", NIIF_WARNING)
         }
-        TrayNotice::ClipboardChanged => {
-            ("ClipType", "Clipboard changed before paste; nothing was sent.", NIIF_WARNING)
-        }
-        TrayNotice::TargetChanged => {
-            ("ClipType", "Destination changed; remaining input was stopped.", NIIF_WARNING)
-        }
-        TrayNotice::ModifierConflict => {
-            ("ClipType", "Modifier keys prevented safe input.", NIIF_WARNING)
-        }
+        TrayNotice::ClipboardChanged => (
+            "ClipType",
+            "Clipboard changed before paste; nothing was sent.",
+            NIIF_WARNING,
+        ),
+        TrayNotice::TargetChanged => (
+            "ClipType",
+            "Destination changed; remaining input was stopped.",
+            NIIF_WARNING,
+        ),
+        TrayNotice::ModifierConflict => (
+            "ClipType",
+            "Modifier keys prevented safe input.",
+            NIIF_WARNING,
+        ),
         TrayNotice::SecurityRestriction => (
             "ClipType",
             "The destination has a higher security boundary.",
             NIIF_WARNING,
         ),
         TrayNotice::SettingsSaved => ("ClipType", "Settings saved.", NIIF_INFO),
-        TrayNotice::SettingsFailed => {
-            ("ClipType", "Settings could not be saved.", NIIF_ERROR)
-        }
+        TrayNotice::SettingsFailed => ("ClipType", "Settings could not be saved.", NIIF_ERROR),
         TrayNotice::StartupFailed => (
             "ClipType",
             "Start-at-login could not be updated.",
             NIIF_ERROR,
         ),
-        TrayNotice::NativeFailure => {
-            ("ClipType", "Windows rejected the input operation.", NIIF_ERROR)
-        }
+        TrayNotice::NativeFailure => (
+            "ClipType",
+            "Windows rejected the input operation.",
+            NIIF_ERROR,
+        ),
     }
 }
 

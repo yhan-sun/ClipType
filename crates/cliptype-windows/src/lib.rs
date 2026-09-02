@@ -36,6 +36,4 @@ pub use startup::{StartupError, StartupStatus, WindowsStartup};
 #[cfg(windows)]
 pub use target::WindowsTarget;
 #[cfg(windows)]
-pub use tray::{
-    TrayError, TrayEvent, TrayNotice, WindowsTrayHandle, WindowsTraySignal,
-};
+pub use tray::{TrayError, TrayEvent, TrayNotice, WindowsTrayHandle, WindowsTraySignal};
