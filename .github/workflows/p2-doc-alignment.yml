@@ -1,0 +1,232 @@
+name: P2 Documentation Alignment
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  align-and-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out latest productization branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+
+      - name: Align ADR and index
+        shell: python
+        run: |
+          from pathlib import Path
+
+          adr = '''# ADR-0007: Native Win32 Tray-First Product Shell
+
+          - Status: Accepted
+          - Date: 2026-09-02
+
+          ## Context
+
+          P1 proved the Windows clipboard, target, keyboard, hotkey, coordinator, and controlled-host lifecycle with a minimal console process. P2 turns that vertical slice into a daily-usable Windows utility with persistent settings, visible status, startup-at-login, and packaging.
+
+          The user surface is intentionally small. A rendered cross-platform UI framework or daemon/client split would add runtime size, IPC, lifecycle, dependency, and privacy surface before another platform needs it. The application already requires native Windows message-loop ownership for global hotkeys and tray integration.
+
+          ## Decision
+
+          The Windows product uses one unprivileged Rust process with a native Win32 tray-first shell.
+
+          A dedicated tray/message-loop thread is responsible for:
+
+          - the Windows message queue and hidden tray owner window;
+          - taskbar/tray icon lifecycle through `Shell_NotifyIconW`;
+          - a native context menu that is the initial P2 settings surface;
+          - content-free status notifications;
+          - tray-triggered product commands and controlled shutdown signals.
+
+          The existing command-source owner remains responsible for global trigger and cancellation hotkey registration and message translation. UI callbacks translate native menu commands into narrow application operations such as trigger, cancel, query status, validate/apply configuration, and shutdown. They do not implement injection policy or call clipboard/input FFI directly.
+
+          The injection coordinator and worker model remains the single live state machine. Clipboard reads and input dispatch never execute on the tray/message-loop owner.
+
+          ## Settings model
+
+          P2 introduces one versioned human-editable TOML file at the platform-appropriate per-user local application-data directory, normally:
+
+          ```text
+          %LOCALAPPDATA%\\ClipType\\config.toml
+          ```
+
+          The implementation uses a strict, fixed-schema TOML subset in the application crate rather than adding a serialization framework. It accepts only documented scalar keys and sections, rejects duplicate or unknown security-sensitive fields, validates all numeric bounds, and never stores clipboard text, target text, window titles, content fingerprints, or session history.
+
+          Writes use a temporary file plus flush/sync and a recoverable backup/replace sequence. On startup, a valid primary file wins; otherwise a valid backup may be recovered with an explicit content-free status. Invalid settings never produce unbounded or security-weakened defaults.
+
+          The tray menu exposes enabled state, notifications, injection mode, speed, startup-at-login, reviewed hotkey-preset cycling, immediate trigger/cancel, and quit. The TOML file remains the advanced settings surface for numeric safety bounds.
+
+          ## Hotkeys
+
+          V1 product configuration exposes reviewed hotkey presets rather than recording arbitrary keyboard activity.
+
+          - Each preset maps to explicit Win32 modifier and virtual-key values.
+          - Registration uses `MOD_NOREPEAT` where supported.
+          - Trigger and cancel are distinct.
+          - A registration conflict is visible and the process remains controllable through the tray.
+          - Preset changes are validated and persisted immediately, then applied on the next controlled process start; the current registration remains active until that restart.
+          - No low-level global keyboard hook or general key capture is introduced.
+
+          Live same-thread hotkey re-registration and richer arbitrary hotkey capture remain later product candidates unless bounded rollback behavior is designed and reviewed.
+
+          ## Startup at login
+
+          The per-user startup option is implemented through the current-user Windows Run registration. It stores only the quoted executable path and a stable product value name.
+
+          - No administrator access is requested.
+          - Disabling removes only ClipType's own value.
+          - The setting is reconciled with persistent configuration and surfaced as a content-free error if registry access fails.
+          - ClipType does not install a service, scheduled task, or elevated helper.
+
+          ## Notifications and diagnostics
+
+          Tray text and notifications use a strict fixed vocabulary derived from typed outcomes. They may include mode, phase, counts, capability category, and remediation class, but never clipboard/injected plaintext, samples, hashes, focused content, or window titles.
+
+          The process installs a content-free panic hook for distribution builds. Raw memory dumps are neither collected nor uploaded by ClipType.
+
+          ## Packaging
+
+          P2 produces a reproducible per-user Windows archive containing the executable, licenses, configuration reference, and install/uninstall PowerShell scripts. The scripts install under the current user's local programs directory, create/remove product-owned shortcuts and startup state, and require no elevation.
+
+          Release builds use the Windows GUI subsystem so the tray utility does not open a console window. Debug and controlled CI builds retain console behavior for deterministic host testing.
+
+          This development artifact does not replace the signed-package requirement. Signing and public promotion remain release gates and require explicit maintainer action and secret configuration.
+
+          ## Alternatives considered
+
+          ### Windows App SDK or a broad Rust GUI framework
+
+          Deferred. It can improve visual polish, but the current surface does not justify a large runtime/dependency graph or a second event-loop abstraction.
+
+          ### Electron/web UI
+
+          Rejected because it conflicts with the native/small-footprint direction and creates an unnecessary browser runtime for a tray utility.
+
+          ### Separate settings window in initial P2
+
+          Deferred. The tray menu plus strict configuration file covers the bounded initial surface without another native window lifecycle. A later accessibility/usability pass may add a dedicated dialog without moving injection policy into the UI layer.
+
+          ### Console host as the product UI
+
+          Rejected for P2 because startup, status, settings, conflict remediation, and daily use would retain hidden developer steps.
+
+          ### Background service plus UI client
+
+          Rejected under ADR-0005. No demonstrated Windows capability requires a second process or privilege boundary.
+
+          ## Consequences
+
+          ### Positive
+
+          - small dependency and runtime footprint;
+          - native tray/startup conventions;
+          - clear separation between shell commands and application policy;
+          - no new process, IPC, network, or elevated surface;
+          - auditable fixed-schema settings and diagnostics.
+
+          ### Negative / trade-offs
+
+          - raw Win32 UI code requires localized unsafe wrappers and careful lifecycle tests;
+          - appearance is intentionally modest rather than framework-rich;
+          - platform presentation will not share one rendered UI implementation with macOS/Linux;
+          - hotkey preset changes require a controlled restart in this P2 implementation;
+          - a dedicated settings dialog and arbitrary hotkey capture are deferred.
+
+          ## Follow-up
+
+          P2 automated evidence covers lifecycle, settings recovery, hotkey registration conflict, tray commands, startup registration, packaging smoke, backend benchmarks, and privacy sentinels. Representative desktop/application compatibility remains separately gated before a public beta.
+          '''
+          adr = "\n".join(line[10:] if line.startswith("          ") else line for line in adr.splitlines()) + "\n"
+          Path("docs/adr/0007-native-win32-tray-shell.md").write_text(adr, encoding="utf-8")
+
+          index = Path("docs/adr/README.md")
+          text = index.read_text(encoding="utf-8")
+          entry = "- [`ADR-0007`](0007-native-win32-tray-shell.md) — Native Win32 tray-first product shell and persistent settings boundary."
+          if "0007-native-win32-tray-shell.md" not in text:
+              index.write_text(text.rstrip() + "\n\n" + entry + "\n", encoding="utf-8")
+
+      - name: Update P2 pull-request description
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          import json
+          import os
+          import urllib.request
+
+          body = '''## Scope
+
+          Implements the complete automated P2 Windows productization slice on top of the P1 integration lineage.
+
+          ## Product implementation
+
+          - explicit `keyboard`, `clipboard`, and `auto` modes with one immutable backend per session;
+          - guarded current-clipboard normal paste using revision checks, with no clipboard rewrite or restore;
+          - one-session coordinator with cancellation, destination, evidence, integrity, modifier, retry, and bounded dispatch checks;
+          - native Win32 tray icon, context-menu settings surface, content-free notifications, trigger/cancel, and controlled quit;
+          - strict versioned per-user TOML settings with backup recovery and bounded validation;
+          - reviewed hotkey presets; changes are persisted and apply on the next controlled restart;
+          - current-user startup-at-login integration without elevation, service, or scheduled task;
+          - Windows GUI-subsystem release binary while debug/CI builds retain deterministic console support;
+          - reproducible per-user archive plus install/uninstall scripts and package smoke;
+          - controlled keyboard/clipboard/auto E2E, clipboard race/configuration harness, benchmark, license/dependency, FFI, formatting, test, and Clippy gates.
+
+          ## Evidence
+
+          `docs/testing/P2_AUTOMATED_EVIDENCE.md` records the exact tested product SHA and exact workflow run IDs. The evidence recorder writes that report only after every standard P1/P2 workflow succeeds on the same non-superseded candidate SHA.
+
+          ## Security and privacy
+
+          ClipType remains one unprivileged process. It does not elevate, bypass UIPI, capture arbitrary keys, persist clipboard text, print target content/titles, or retry partial/unknown native input. Clipboard mode never clears, replaces, owns, or restores the user's clipboard.
+
+          ## Explicit limitations
+
+          The initial settings surface is the native tray menu plus the strict configuration file; no separate settings dialog is claimed. Hotkey-preset changes require a controlled restart in this implementation.
+
+          Representative human desktop/application compatibility remains in #33, including physical hotkeys, Chromium, Electron/VS Code, terminals, same-render-host fields, elevated targets, Windows 10, and measured physical timing. Automated success is not `WINDOWS BETA READY`.
+
+          ## Promotion boundary
+
+          This PR does not authorize merge, tag, signing, publication, release, or public-beta promotion.
+          '''
+          body = "\n".join(line[10:] if line.startswith("          ") else line for line in body.splitlines()) + "\n"
+          payload = json.dumps({"body": body}).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/pulls/37",
+              data=payload,
+              method="PATCH",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "cliptype-p2-doc-alignment",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30):
+              pass
+
+      - name: Remove transient workflow and commit documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/p2-doc-alignment.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/adr .github/workflows
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "docs: align P2 capability claims with implementation"
+          git push origin HEAD:feat/p2-windows-productization
