@@ -1,6 +1,6 @@
 # ADR-0006: Paste the Current Clipboard Without Rewriting It
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-02
 
 ## Context
@@ -58,6 +58,6 @@ Avoids clipboard races but is slower for large payloads and does not provide the
 
 ## Follow-up
 
-- Add controlled Windows tests that change the clipboard after planning and require an abort.
-- Benchmark keyboard and clipboard modes before freezing the default auto threshold.
+- Controlled Windows tests change the clipboard after planning and require an abort.
+- Backend benchmarks record the automatic crossover recommendation used by the product gate.
 - Any future feature that writes or restores clipboard data requires a new ADR and must never overwrite a newer external value.
