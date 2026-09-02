@@ -128,7 +128,7 @@ mod tests {
         HotkeyPreset, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError,
         SpeedPreset,
     };
-    use crate::{InjectionMode, ProductConfig};
+    use crate::InjectionMode;
 
     #[test]
     fn defaults_are_versioned_and_runtime_valid() {
@@ -136,7 +136,16 @@ mod tests {
         assert_eq!(settings.version, SETTINGS_SCHEMA_VERSION);
         assert!(settings.validate().is_ok());
         let runtime = settings.runtime_config().expect("runtime config");
-        assert_eq!(runtime, ProductConfig::default());
+        assert_eq!(runtime.enabled, settings.enabled);
+        assert_eq!(runtime.mode, settings.mode);
+        assert_eq!(
+            runtime.auto_clipboard_threshold,
+            settings.auto_clipboard_threshold
+        );
+        assert_eq!(
+            runtime.safety.keyboard_interval,
+            SpeedPreset::Normal.keyboard_interval()
+        );
     }
 
     #[test]
