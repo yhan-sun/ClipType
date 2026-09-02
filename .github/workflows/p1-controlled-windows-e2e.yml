@@ -1,0 +1,61 @@
+name: P1 Controlled Windows E2E
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-core/**"
+      - "crates/cliptype-platform/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p1-controlled-windows-e2e.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-core/**"
+      - "crates/cliptype-platform/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p1-controlled-windows-e2e.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CLIPTYPE_RUN_CONTROLLED_E2E: "1"
+
+jobs:
+  controlled-edit:
+    name: Clipboard to bounded SendInput to Win32 edit
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Build controlled E2E harness
+        run: cargo build --locked -p cliptype --example p1_controlled_e2e
+      - name: Execute three isolated controlled runs
+        shell: pwsh
+        run: |
+          $log = "p1-controlled-e2e.log"
+          Remove-Item $log -ErrorAction SilentlyContinue
+          1..3 | ForEach-Object {
+            $output = cargo run --locked --quiet -p cliptype --example p1_controlled_e2e 2>&1
+            $code = $LASTEXITCODE
+            $output | Tee-Object -FilePath $log -Append
+            if ($code -ne 0) {
+              exit $code
+            }
+          }
+          $successes = (Select-String -Path $log -SimpleMatch "p1_controlled_e2e result=ok").Count
+          if ($successes -ne 3) {
+            throw "expected three content-free success records"
+          }
+          if (Select-String -Path $log -SimpleMatch "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841" -Quiet) {
+            throw "privacy sentinel escaped into ordinary test output"
+          }

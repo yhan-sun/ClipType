@@ -7,7 +7,9 @@ name = "cliptype"
 version = "0.1.0"
 dependencies = [
  "cliptype-app",
+ "cliptype-core",
  "cliptype-windows",
+ "windows-sys",
 ]
 
 [[package]]
