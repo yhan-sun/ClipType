@@ -61,7 +61,8 @@ if ($StartAtLogin) {
     New-Item -Path $runKey -Force | Out-Null
     New-ItemProperty -Path $runKey -Name $valueName -PropertyType String -Value $command -Force | Out-Null
 } else {
-    $current = (Get-ItemProperty -Path $runKey -Name $valueName -ErrorAction SilentlyContinue).$valueName
+    $properties = Get-ItemProperty -Path $runKey -Name $valueName -ErrorAction SilentlyContinue
+    $current = if ($null -ne $properties) { $properties.$valueName } else { $null }
     if ($current -and $current.StartsWith(('"{0}"' -f $target), [StringComparison]::OrdinalIgnoreCase)) {
         Remove-ItemProperty -Path $runKey -Name $valueName -ErrorAction SilentlyContinue
     }
