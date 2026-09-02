@@ -1,9 +1,9 @@
-//! Native-neutral live coordinator for the P1 keyboard injection path.
+//! Native-neutral live coordinator for keyboard and current-clipboard paste paths.
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
-        Arc, Condvar, Mutex, MutexGuard,
+        Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
@@ -11,14 +11,16 @@ use std::{
 };
 
 use cliptype_core::{
-    CapabilityState, ConfigError, DispatchDecision, DispatchObservation, FlowEvent, FlowState,
-    IntegrityRelation, NoInputReason, NormalizationError, P1Config, PlanCapabilities, PlanError,
-    PreparationFailure, SensitiveText, SessionPhase, TerminalOutcome, TextBatch,
-    build_keyboard_plan, classify_dispatch, transition,
+    AutoClipboardThreshold, CapabilityState, ConfigError, DispatchDecision, DispatchObservation,
+    FlowEvent, FlowState, InjectionBackend, InjectionPlan, IntegrityRelation, NoInputReason,
+    NormalizationError, P1Config, PlanCapabilities, PlanError, PreparationFailure,
+    ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, SessionPhase,
+    TerminalOutcome, TextBatch, build_injection_plan, classify_dispatch, transition,
 };
 use cliptype_platform::{
-    ClipboardError, ClipboardPort, DispatchResult, KeyboardCapabilities, KeyboardError,
-    KeyboardPort, ModifierObservation, ModifierPort, NativeErrorKind, TargetCaptureError,
+    ClipboardError, ClipboardPort, ClipboardRevision, ClipboardSnapshot, DispatchResult,
+    KeyboardCapabilities, KeyboardError, KeyboardPort, ModifierObservation, ModifierPort,
+    NativeErrorKind, PasteCapabilities, PasteError, PastePort, TargetCaptureError,
     TargetComparison, TargetEvidence, TargetPort,
 };
 
@@ -34,6 +36,7 @@ pub enum SessionCompletion {
 pub struct StatusSnapshot {
     pub generation: u64,
     pub phase: SessionPhase,
+    pub backend: Option<InjectionBackend>,
     pub completion: Option<SessionCompletion>,
     pub batches_completed: u32,
 }
@@ -71,11 +74,13 @@ struct SessionPorts {
     target: Arc<dyn TargetPort>,
     keyboard: Arc<dyn KeyboardPort>,
     modifiers: Arc<dyn ModifierPort>,
+    paste: Arc<dyn PastePort>,
 }
 
 struct RuntimeState {
     generation: u64,
     phase: SessionPhase,
+    backend: Option<InjectionBackend>,
     completion: Option<SessionCompletion>,
     batches_completed: u32,
     cancellation: Option<Arc<CancellationFlag>>,
@@ -86,6 +91,7 @@ impl Default for RuntimeState {
         Self {
             generation: 0,
             phase: SessionPhase::Idle,
+            backend: None,
             completion: None,
             batches_completed: 0,
             cancellation: None,
@@ -115,6 +121,7 @@ impl SharedRuntime {
         let mut state = lock_unpoisoned(&self.state);
         state.generation = state.generation.saturating_add(1);
         state.phase = SessionPhase::Preparing;
+        state.backend = None;
         state.completion = None;
         state.batches_completed = 0;
         state.cancellation = Some(Arc::clone(&cancellation));
@@ -123,6 +130,10 @@ impl SharedRuntime {
 
     fn set_phase(&self, phase: SessionPhase) {
         lock_unpoisoned(&self.state).phase = phase;
+    }
+
+    fn set_backend(&self, backend: InjectionBackend) {
+        lock_unpoisoned(&self.state).backend = Some(backend);
     }
 
     fn increment_batches(&self) {
@@ -157,21 +168,23 @@ impl SharedRuntime {
         StatusSnapshot {
             generation: state.generation,
             phase: state.phase,
+            backend: state.backend,
             completion: state.completion,
             batches_completed: state.batches_completed,
         }
     }
 }
 
-/// Owns exactly one live P1 injection session and its worker lifecycle.
+/// Owns exactly one live bounded injection session and its worker lifecycle.
 pub struct Coordinator {
     ports: SessionPorts,
-    config: P1Config,
+    config: RwLock<ProductConfig>,
     shared: Arc<SharedRuntime>,
     worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Coordinator {
+    /// P1-compatible keyboard-only constructor.
     pub fn new<C, T, K, M>(
         clipboard: C,
         target: T,
@@ -185,15 +198,26 @@ impl Coordinator {
         K: KeyboardPort + 'static,
         M: ModifierPort + 'static,
     {
-        Self::from_ports(
+        let config = config.validate()?;
+        let product = ProductConfig {
+            enabled: true,
+            mode: cliptype_core::InjectionMode::Keyboard,
+            auto_clipboard_threshold: AutoClipboardThreshold::new(256)
+                .expect("legacy keyboard threshold is non-zero"),
+            safety: config,
+        };
+
+        Ok(Self::from_validated_ports(
             Arc::new(clipboard),
             Arc::new(target),
             Arc::new(keyboard),
             Arc::new(modifiers),
-            config,
-        )
+            Arc::new(UnavailablePaste),
+            product,
+        ))
     }
 
+    /// P1-compatible keyboard-only constructor using erased ports.
     pub fn from_ports(
         clipboard: Arc<dyn ClipboardPort>,
         target: Arc<dyn TargetPort>,
@@ -202,21 +226,101 @@ impl Coordinator {
         config: P1Config,
     ) -> Result<Self, ConfigError> {
         let config = config.validate()?;
-        Ok(Self {
+        let product = ProductConfig {
+            enabled: true,
+            mode: cliptype_core::InjectionMode::Keyboard,
+            auto_clipboard_threshold: AutoClipboardThreshold::new(256)
+                .expect("legacy keyboard threshold is non-zero"),
+            safety: config,
+        };
+
+        Ok(Self::from_validated_ports(
+            clipboard,
+            target,
+            keyboard,
+            modifiers,
+            Arc::new(UnavailablePaste),
+            product,
+        ))
+    }
+
+    /// Product constructor with keyboard and current-clipboard paste backends.
+    pub fn new_product<C, T, K, M, P>(
+        clipboard: C,
+        target: T,
+        keyboard: K,
+        modifiers: M,
+        paste: P,
+        config: ProductConfig,
+    ) -> Result<Self, ProductConfigError>
+    where
+        C: ClipboardPort + 'static,
+        T: TargetPort + 'static,
+        K: KeyboardPort + 'static,
+        M: ModifierPort + 'static,
+        P: PastePort + 'static,
+    {
+        Self::from_product_ports(
+            Arc::new(clipboard),
+            Arc::new(target),
+            Arc::new(keyboard),
+            Arc::new(modifiers),
+            Arc::new(paste),
+            config,
+        )
+    }
+
+    pub fn from_product_ports(
+        clipboard: Arc<dyn ClipboardPort>,
+        target: Arc<dyn TargetPort>,
+        keyboard: Arc<dyn KeyboardPort>,
+        modifiers: Arc<dyn ModifierPort>,
+        paste: Arc<dyn PastePort>,
+        config: ProductConfig,
+    ) -> Result<Self, ProductConfigError> {
+        let config = config.validate()?;
+        Ok(Self::from_validated_ports(
+            clipboard,
+            target,
+            keyboard,
+            modifiers,
+            paste,
+            config,
+        ))
+    }
+
+    fn from_validated_ports(
+        clipboard: Arc<dyn ClipboardPort>,
+        target: Arc<dyn TargetPort>,
+        keyboard: Arc<dyn KeyboardPort>,
+        modifiers: Arc<dyn ModifierPort>,
+        paste: Arc<dyn PastePort>,
+        config: ProductConfig,
+    ) -> Self {
+        Self {
             ports: SessionPorts {
                 clipboard,
                 target,
                 keyboard,
                 modifiers,
+                paste,
             },
-            config,
+            config: RwLock::new(config),
             shared: Arc::new(SharedRuntime::new()),
             worker: Mutex::new(None),
-        })
+        }
     }
 
-    pub const fn config(&self) -> P1Config {
-        self.config
+    /// Returns the configuration used by future sessions.
+    pub fn config(&self) -> ProductConfig {
+        *read_unpoisoned(&self.config)
+    }
+
+    /// Updates only future sessions. An active session retains its old snapshot.
+    pub fn update_config(&self, config: ProductConfig) -> Result<(), ProductConfigError> {
+        let config = config.validate()?;
+        *write_unpoisoned(&self.config) = config;
+        Ok(())
     }
 
     pub fn status(&self) -> StatusSnapshot {
@@ -226,6 +330,11 @@ impl Coordinator {
     pub fn trigger(&self) -> TriggerResult {
         if self.shared.shutting_down.load(Ordering::Acquire) {
             return TriggerResult::ShuttingDown;
+        }
+
+        let config = self.config();
+        if !config.enabled {
+            return TriggerResult::Rejected(PreparationFailure::Disabled);
         }
 
         let mut worker_slot = lock_unpoisoned(&self.worker);
@@ -276,7 +385,7 @@ impl Coordinator {
 
         let context = SessionContext {
             ports: self.ports.clone(),
-            config: self.config,
+            config,
             shared: Arc::clone(&self.shared),
             cancellation,
             original_target: target,
@@ -332,7 +441,7 @@ impl Coordinator {
     }
 
     pub fn shutdown(&self) -> ShutdownResult {
-        self.shutdown_with_timeout(self.config.worker_shutdown_grace)
+        self.shutdown_with_timeout(self.config().safety.worker_shutdown_grace)
     }
 
     pub fn shutdown_with_timeout(&self, timeout: Duration) -> ShutdownResult {
@@ -362,7 +471,7 @@ impl Drop for Coordinator {
 
 struct SessionContext {
     ports: SessionPorts,
-    config: P1Config,
+    config: ProductConfig,
     shared: Arc<SharedRuntime>,
     cancellation: Arc<CancellationFlag>,
     original_target: TargetEvidence,
@@ -381,8 +490,8 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
         return SessionCompletion::PreparationFailed(PreparationFailure::Cancelled);
     }
 
-    let capabilities = context.ports.keyboard.capabilities();
-    if let Some(failure) = modifier_capability_failure(capabilities) {
+    let keyboard_capabilities = context.ports.keyboard.capabilities();
+    if let Some(failure) = modifier_capability_failure(keyboard_capabilities) {
         return SessionCompletion::PreparationFailed(failure);
     }
 
@@ -393,18 +502,27 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
         return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
     }
 
-    let text = match acquire_clipboard(context) {
-        Ok(text) => text,
+    let snapshot = match acquire_clipboard(context) {
+        Ok(snapshot) => snapshot,
         Err(completion) => return completion,
     };
     if advance(&mut context.flow, FlowEvent::ClipboardAcquired).is_err() {
         return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
     }
 
-    let plan = match build_keyboard_plan(text, context.config, plan_capabilities(capabilities)) {
+    let revision = snapshot.revision();
+    let (text, _) = snapshot.into_parts();
+    let paste_capabilities = context.ports.paste.capabilities();
+    let plan = match build_injection_plan(
+        text,
+        revision.is_known(),
+        context.config,
+        product_capabilities(keyboard_capabilities, paste_capabilities),
+    ) {
         Ok(plan) => plan,
-        Err(error) => return SessionCompletion::PreparationFailed(map_plan_error(error)),
+        Err(error) => return SessionCompletion::PreparationFailed(map_product_plan_error(error)),
     };
+
     if context.cancellation.is_requested() {
         return SessionCompletion::PreparationFailed(PreparationFailure::Cancelled);
     }
@@ -419,8 +537,20 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
     if advance(&mut context.flow, FlowEvent::PlanReady).is_err() {
         return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
     }
+
+    context.shared.set_backend(plan.backend());
     context.shared.set_phase(SessionPhase::Injecting);
 
+    match plan {
+        InjectionPlan::Keyboard(plan) => run_keyboard_plan(context, &plan),
+        InjectionPlan::Clipboard(_) => run_clipboard_plan(context, revision),
+    }
+}
+
+fn run_keyboard_plan(
+    context: &mut SessionContext,
+    plan: &cliptype_core::KeyboardPlan,
+) -> SessionCompletion {
     let batch_count = plan.batch_slices().len();
     for (index, atoms) in plan.batch_slices().enumerate() {
         if context.cancellation.is_requested() {
@@ -429,11 +559,8 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
         if let Err(outcome) = verify_target(&context.ports, &context.original_target) {
             return SessionCompletion::Finished(outcome);
         }
-        match context.ports.modifiers.observe_modifiers() {
-            ModifierObservation::Clear => {}
-            ModifierObservation::Held(_) | ModifierObservation::Unknown => {
-                return SessionCompletion::Finished(TerminalOutcome::ModifierConflict);
-            }
+        if context.ports.modifiers.observe_modifiers() != ModifierObservation::Clear {
+            return SessionCompletion::Finished(TerminalOutcome::ModifierConflict);
         }
 
         let batch = match TextBatch::new(atoms, plan.config().dispatch_batch_limit) {
@@ -446,38 +573,78 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
             Ok(result) => result,
             Err(error) => return SessionCompletion::Finished(map_keyboard_error(error)),
         };
-        let observation = dispatch_observation(
-            native,
-            context
-                .ports
-                .target
-                .integrity_relation(&context.original_target),
-        );
-        match classify_dispatch(observation) {
-            DispatchDecision::Continue => {
-                if advance(&mut context.flow, FlowEvent::BatchAccepted).is_err() {
-                    return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
-                }
-                context.shared.increment_batches();
-            }
-            DispatchDecision::Stop(outcome) => return SessionCompletion::Finished(outcome),
+        if let Err(outcome) = accept_dispatch(context, native) {
+            return SessionCompletion::Finished(outcome);
         }
 
         if index + 1 < batch_count
             && sleep_interruptibly(
                 &context.cancellation,
-                context.config.keyboard_interval,
-                context.config.modifier_poll_interval,
+                context.config.safety.keyboard_interval,
+                context.config.safety.modifier_poll_interval,
             )
         {
             return SessionCompletion::Finished(TerminalOutcome::Cancelled);
         }
     }
 
-    if advance(&mut context.flow, FlowEvent::AllBatchesComplete).is_err() {
-        return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
+    complete_flow(context)
+}
+
+fn run_clipboard_plan(
+    context: &mut SessionContext,
+    revision: ClipboardRevision,
+) -> SessionCompletion {
+    if context.cancellation.is_requested() {
+        return SessionCompletion::Finished(TerminalOutcome::Cancelled);
     }
-    SessionCompletion::Finished(TerminalOutcome::Completed)
+    if let Err(outcome) = verify_target(&context.ports, &context.original_target) {
+        return SessionCompletion::Finished(outcome);
+    }
+    if context.ports.modifiers.observe_modifiers() != ModifierObservation::Clear {
+        return SessionCompletion::Finished(TerminalOutcome::ModifierConflict);
+    }
+
+    let native = match context.ports.paste.dispatch_paste(revision) {
+        Ok(result) => result,
+        Err(error) => return SessionCompletion::Finished(map_paste_error(error)),
+    };
+    if let Err(outcome) = accept_dispatch(context, native) {
+        return SessionCompletion::Finished(outcome);
+    }
+
+    complete_flow(context)
+}
+
+fn accept_dispatch(
+    context: &mut SessionContext,
+    native: DispatchResult,
+) -> Result<(), TerminalOutcome> {
+    let observation = dispatch_observation(
+        native,
+        context
+            .ports
+            .target
+            .integrity_relation(&context.original_target),
+    );
+    match classify_dispatch(observation) {
+        DispatchDecision::Continue => {
+            if advance(&mut context.flow, FlowEvent::BatchAccepted).is_err() {
+                return Err(TerminalOutcome::InternalInvariant);
+            }
+            context.shared.increment_batches();
+            Ok(())
+        }
+        DispatchDecision::Stop(outcome) => Err(outcome),
+    }
+}
+
+fn complete_flow(context: &mut SessionContext) -> SessionCompletion {
+    if advance(&mut context.flow, FlowEvent::AllBatchesComplete).is_err() {
+        SessionCompletion::Finished(TerminalOutcome::InternalInvariant)
+    } else {
+        SessionCompletion::Finished(TerminalOutcome::Completed)
+    }
 }
 
 fn modifier_capability_failure(capabilities: KeyboardCapabilities) -> Option<PreparationFailure> {
@@ -488,17 +655,25 @@ fn modifier_capability_failure(capabilities: KeyboardCapabilities) -> Option<Pre
     }
 }
 
-fn plan_capabilities(capabilities: KeyboardCapabilities) -> PlanCapabilities {
-    PlanCapabilities {
-        unicode_text: capabilities.unicode_text,
-        line_break: capabilities.line_break,
-        tab: capabilities.tab,
-        modifier_observation: capabilities.modifier_observation,
+fn product_capabilities(
+    keyboard: KeyboardCapabilities,
+    paste: PasteCapabilities,
+) -> ProductCapabilities {
+    ProductCapabilities {
+        keyboard: PlanCapabilities {
+            unicode_text: keyboard.unicode_text,
+            line_break: keyboard.line_break,
+            tab: keyboard.tab,
+            modifier_observation: keyboard.modifier_observation,
+        },
+        clipboard_paste: paste.paste_chord,
+        clipboard_revision_guard: paste.clipboard_revision_guard,
     }
 }
 
 fn wait_for_modifier_clear(context: &SessionContext) -> Result<(), SessionCompletion> {
-    let Some(deadline) = Instant::now().checked_add(context.config.modifier_settle_timeout) else {
+    let Some(deadline) = Instant::now().checked_add(context.config.safety.modifier_settle_timeout)
+    else {
         return Err(SessionCompletion::PreparationFailed(
             PreparationFailure::InternalInvariant,
         ));
@@ -525,8 +700,12 @@ fn wait_for_modifier_clear(context: &SessionContext) -> Result<(), SessionComple
         }
         if sleep_interruptibly(
             &context.cancellation,
-            context.config.modifier_poll_interval.min(remaining),
-            context.config.modifier_poll_interval,
+            context
+                .config
+                .safety
+                .modifier_poll_interval
+                .min(remaining),
+            context.config.safety.modifier_poll_interval,
         ) {
             return Err(SessionCompletion::PreparationFailed(
                 PreparationFailure::Cancelled,
@@ -535,8 +714,8 @@ fn wait_for_modifier_clear(context: &SessionContext) -> Result<(), SessionComple
     }
 }
 
-fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionCompletion> {
-    let budget = context.config.clipboard_retry;
+fn acquire_clipboard(context: &SessionContext) -> Result<ClipboardSnapshot, SessionCompletion> {
+    let budget = context.config.safety.clipboard_retry;
     let attempts = budget.attempts.get();
     let divisor = u32::try_from(attempts).unwrap_or(u32::MAX);
     let retry_pause = budget.total_window / divisor;
@@ -556,9 +735,9 @@ fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionC
         match context
             .ports
             .clipboard
-            .read_current_text(context.config.native_clipboard_limit)
+            .read_current_snapshot(context.config.safety.native_clipboard_limit)
         {
-            Ok(text) => return Ok(text),
+            Ok(snapshot) => return Ok(snapshot),
             Err(error) if clipboard_error_is_retryable(error) && attempt + 1 < attempts => {
                 if let Err(outcome) = verify_target(&context.ports, &context.original_target) {
                     return Err(SessionCompletion::Finished(outcome));
@@ -570,7 +749,7 @@ fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionC
                 if sleep_interruptibly(
                     &context.cancellation,
                     retry_pause.min(remaining),
-                    context.config.modifier_poll_interval,
+                    context.config.safety.modifier_poll_interval,
                 ) {
                     return Err(SessionCompletion::PreparationFailed(
                         PreparationFailure::Cancelled,
@@ -593,9 +772,11 @@ fn acquire_clipboard(context: &SessionContext) -> Result<SensitiveText, SessionC
 const fn clipboard_error_is_retryable(error: ClipboardError) -> bool {
     matches!(
         error,
-        ClipboardError::Busy | ClipboardError::Native(cliptype_platform::NativeError { .. })
+        ClipboardError::Busy
+            | ClipboardError::ChangedDuringRead
+            | ClipboardError::Native(cliptype_platform::NativeError { .. })
     ) && match error {
-        ClipboardError::Busy => true,
+        ClipboardError::Busy | ClipboardError::ChangedDuringRead => true,
         ClipboardError::Native(native) => {
             matches!(native.kind(), NativeErrorKind::TemporarilyUnavailable)
         }
@@ -605,13 +786,32 @@ const fn clipboard_error_is_retryable(error: ClipboardError) -> bool {
 
 const fn map_clipboard_error(error: ClipboardError) -> PreparationFailure {
     match error {
-        ClipboardError::Busy | ClipboardError::Native(_) => {
-            PreparationFailure::ClipboardUnavailable
-        }
+        ClipboardError::Busy
+        | ClipboardError::ChangedDuringRead
+        | ClipboardError::Native(_) => PreparationFailure::ClipboardUnavailable,
         ClipboardError::Empty => PreparationFailure::ClipboardEmpty,
         ClipboardError::NonText => PreparationFailure::ClipboardNonText,
         ClipboardError::Malformed => PreparationFailure::ClipboardMalformed,
         ClipboardError::TooLarge { .. } => PreparationFailure::PayloadTooLarge,
+    }
+}
+
+const fn map_product_plan_error(error: ProductPlanError) -> PreparationFailure {
+    match error {
+        ProductPlanError::Disabled => PreparationFailure::Disabled,
+        ProductPlanError::InvalidConfiguration(_) => PreparationFailure::InternalInvariant,
+        ProductPlanError::Empty => PreparationFailure::ClipboardEmpty,
+        ProductPlanError::PayloadTooLarge { .. } => PreparationFailure::PayloadTooLarge,
+        ProductPlanError::Keyboard(error) => map_plan_error(error),
+        ProductPlanError::ClipboardCapabilityUnavailable => {
+            PreparationFailure::UnsupportedCapability
+        }
+        ProductPlanError::ClipboardCapabilityDegraded => {
+            PreparationFailure::DegradedCapabilityRejected
+        }
+        ProductPlanError::ClipboardRevisionUnavailable => {
+            PreparationFailure::ClipboardRevisionUnavailable
+        }
     }
 }
 
@@ -640,6 +840,14 @@ const fn map_keyboard_error(error: KeyboardError) -> TerminalOutcome {
     }
 }
 
+const fn map_paste_error(error: PasteError) -> TerminalOutcome {
+    match error {
+        PasteError::ClipboardChanged => TerminalOutcome::ClipboardChanged,
+        PasteError::Native(_) => TerminalOutcome::NativeFailure,
+        PasteError::Unsupported | PasteError::InvalidRequest => TerminalOutcome::InternalInvariant,
+    }
+}
+
 fn verify_target(ports: &SessionPorts, original: &TargetEvidence) -> Result<(), TerminalOutcome> {
     let observed = match ports.target.capture() {
         Ok(observed) => observed,
@@ -653,7 +861,9 @@ fn verify_target(ports: &SessionPorts, original: &TargetEvidence) -> Result<(), 
         TargetComparison::Same => Ok(()),
         TargetComparison::Changed => Err(TerminalOutcome::TargetChanged),
         TargetComparison::Disappeared => Err(TerminalOutcome::TargetDisappeared),
-        TargetComparison::UnavailableOrAmbiguous => Err(TerminalOutcome::TargetEvidenceUnavailable),
+        TargetComparison::UnavailableOrAmbiguous => {
+            Err(TerminalOutcome::TargetEvidenceUnavailable)
+        }
     }
 }
 
@@ -714,5 +924,38 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn read_unpoisoned<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    match lock.read() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn write_unpoisoned<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    match lock.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+#[derive(Debug, Default)]
+struct UnavailablePaste;
+
+impl PastePort for UnavailablePaste {
+    fn capabilities(&self) -> PasteCapabilities {
+        PasteCapabilities {
+            paste_chord: CapabilityState::Unavailable,
+            clipboard_revision_guard: CapabilityState::Unavailable,
+        }
+    }
+
+    fn dispatch_paste(
+        &self,
+        _expected_revision: ClipboardRevision,
+    ) -> Result<DispatchResult, PasteError> {
+        Err(PasteError::Unsupported)
     }
 }
