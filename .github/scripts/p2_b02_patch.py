@@ -15,4 +15,5 @@ new = "'''        if command > 0 {\n            apply_command(command as usize, 
 if source.count(old) != 1:
     raise RuntimeError(f"bootstrap source context matches={source.count(old)}")
 source = source.replace(old, new, 1)
+source += '''\nreplace_once(\n    "crates/cliptype-app/tests/coordinator.rs",\n    "    assert_eq!(status.batches_completed, 5);",\n    "    assert_eq!(status.batches_completed, 9);",\n)\n'''
 exec(compile(source, str(path), "exec"))
