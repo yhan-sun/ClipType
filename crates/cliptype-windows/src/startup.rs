@@ -111,7 +111,8 @@ impl WindowsStartup {
         let Some(existing) = self.read_value()? else {
             return Ok(StartupStatus::Disabled);
         };
-        if existing == command_for_executable(executable) {
+        let expected = command_for_executable(executable);
+        if existing == registry_text(&expected) {
             Ok(StartupStatus::EnabledMatching)
         } else {
             Ok(StartupStatus::EnabledDifferent)
@@ -285,6 +286,10 @@ fn command_for_executable(executable: &Path) -> Vec<u16> {
     command
 }
 
+fn registry_text(value: &[u16]) -> &[u16] {
+    value.strip_suffix(&[0]).unwrap_or(value)
+}
+
 const fn current_user() -> HKey {
     HKEY_CURRENT_USER_VALUE as usize as HKey
 }
@@ -305,12 +310,12 @@ fn wide(value: &str) -> Vec<u16> {
 mod tests {
     use std::path::Path;
 
-    use super::{StartupStatus, WindowsStartup, command_for_executable};
+    use super::{StartupStatus, WindowsStartup, command_for_executable, registry_text};
 
     #[test]
     fn executable_command_is_quoted_and_has_background_flag() {
         let command = command_for_executable(Path::new(r"C:\Program Files\ClipType\cliptype.exe"));
-        let text = String::from_utf16(&command[..command.len() - 1]).expect("valid command");
+        let text = String::from_utf16(registry_text(&command)).expect("valid command");
         assert_eq!(
             text,
             r#""C:\Program Files\ClipType\cliptype.exe" --background"#
@@ -339,6 +344,6 @@ mod tests {
         );
         startup
             .set_enabled(executable, false)
-            .expect("cleanup isolated startup value");
+            .expect("cleanup isolated test value");
     }
 }
