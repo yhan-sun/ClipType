@@ -51,7 +51,7 @@ mod windows_e2e {
         AutoClipboardThreshold, InjectionBackend, InjectionMode, NativeByteLimit, P1Config,
         ProductConfig, TerminalOutcome,
     };
-    use cliptype_platform::{ClipboardPort, ClipboardRevision};
+    use cliptype_platform::ClipboardPort;
     use cliptype_windows::{WindowsClipboard, WindowsKeyboard, WindowsPaste, WindowsTarget};
     use windows_sys::Win32::{
         Foundation::{GlobalFree, HGLOBAL, HWND},
