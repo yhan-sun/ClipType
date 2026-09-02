@@ -1,0 +1,113 @@
+name: P2 Governance Cleanup
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  cleanup-and-record:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out productization branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+
+      - name: Close accidental probe issues and comment on P2 tracker
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "cliptype-p2-governance-cleanup",
+          }
+
+          def request_json(url: str, method: str = "GET", payload: dict | None = None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(url, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = response.read()
+                  return json.loads(body) if body else None
+
+          accidental = {
+              "__DO_NOT_CREATE__",
+              "__DO_NOT_CREATE_2__",
+              "__DO_NOT_CREATE_3__",
+          }
+          page = 1
+          while True:
+              issues = request_json(
+                  f"https://api.github.com/repos/{repository}/issues"
+                  f"?state=open&per_page=100&page={page}"
+              )
+              if not issues:
+                  break
+              for issue in issues:
+                  if "pull_request" in issue or issue.get("title") not in accidental:
+                      continue
+                  number = issue["number"]
+                  request_json(
+                      f"https://api.github.com/repos/{repository}/issues/{number}",
+                      method="PATCH",
+                      payload={
+                          "title": f"Closed accidental automation probe #{number}",
+                          "body": "Accidental connector probe created during P2 status reporting. No project work or decision is associated with this issue.",
+                          "state": "closed",
+                          "state_reason": "not_planned",
+                      },
+                  )
+              if len(issues) < 100:
+                  break
+              page += 1
+
+          comment = '''P2 implementation status update:
+
+          - Complete implementation is available in PR #37 on the stacked P1 integration lineage.
+          - Product modes: explicit keyboard, guarded current-clipboard paste, and auto selection.
+          - Safety: one session, bounded work, cancellation, target/evidence/integrity/modifier/revision checks, no retry after partial or unknown native input.
+          - Product shell: native Win32 tray menu, content-free notifications, persistent versioned settings, reviewed hotkey presets, and current-user startup registration.
+          - Distribution: Windows GUI-subsystem release binary, per-user archive, install/uninstall scripts, package smoke, benchmark, race harness, controlled E2E, and standard Rust CI.
+          - Exact tested source SHA and workflow run IDs are recorded in `docs/testing/P2_AUTOMATED_EVIDENCE.md` only after the same non-superseded candidate passed the complete workflow matrix.
+          - Hotkey preset changes are persisted and apply on controlled restart in this implementation; no separate settings dialog is claimed.
+          - Representative physical/application compatibility remains explicitly blocked by #33 before broad Windows support, public beta, signing, or release promotion.
+
+          PR #37 remains open. No merge, tag, signing, publication, or release has been performed.
+          '''
+          comment = "\n".join(line[10:] if line.startswith("          ") else line for line in comment.splitlines()) + "\n"
+          request_json(
+              f"https://api.github.com/repos/{repository}/issues/36/comments",
+              method="POST",
+              payload={"body": comment},
+          )
+
+      - name: Remove transient workflow and commit cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/p2-governance-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows
+          git commit -m "chore: remove transient P2 governance workflow"
+          git push origin HEAD:feat/p2-windows-productization
