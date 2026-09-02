@@ -2,9 +2,7 @@
 
 use std::{fmt, time::Duration};
 
-use crate::{
-    AutoClipboardThreshold, InjectionMode, P1Config, ProductConfig, ProductConfigError,
-};
+use crate::{AutoClipboardThreshold, InjectionMode, P1Config, ProductConfig, ProductConfigError};
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
 
@@ -150,7 +148,10 @@ mod tests {
         };
         let runtime = settings.runtime_config().expect("runtime config");
         assert_eq!(runtime.mode, InjectionMode::Clipboard);
-        assert_eq!(runtime.safety.keyboard_interval, SpeedPreset::Fast.keyboard_interval());
+        assert_eq!(
+            runtime.safety.keyboard_interval,
+            SpeedPreset::Fast.keyboard_interval()
+        );
     }
 
     #[test]
