@@ -180,10 +180,7 @@ mod windows_e2e {
         let keyboard_expected = keyboard_source.replace('\n', "\r\n");
         let clipboard_source = format!("{SENTINEL}|clipboard|A中😀e\u{301}|line-one\r\nline-two");
         let auto_short = format!("{SENTINEL}|auto-short");
-        let auto_long = format!(
-            "{SENTINEL}|auto-long|{}",
-            "0123456789abcdef".repeat(32)
-        );
+        let auto_long = format!("{SENTINEL}|auto-long|{}", "0123456789abcdef".repeat(32));
 
         let cases = [
             Case {
@@ -261,9 +258,7 @@ mod windows_e2e {
         }
 
         let status = coordinator.status();
-        if status.completion
-            != Some(SessionCompletion::Finished(TerminalOutcome::Completed))
-        {
+        if status.completion != Some(SessionCompletion::Finished(TerminalOutcome::Completed)) {
             return Err(E2eError::CoordinatorOutcome);
         }
         if status.backend != Some(case.backend) {
