@@ -18,6 +18,8 @@ mod paste;
 mod startup;
 #[cfg(windows)]
 mod target;
+#[cfg(windows)]
+mod tray;
 
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
@@ -33,3 +35,7 @@ pub use paste::WindowsPaste;
 pub use startup::{StartupError, StartupStatus, WindowsStartup};
 #[cfg(windows)]
 pub use target::WindowsTarget;
+#[cfg(windows)]
+pub use tray::{
+    TrayError, TrayEvent, TrayNotice, WindowsTrayHandle, WindowsTraySignal,
+};
