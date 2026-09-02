@@ -1,0 +1,219 @@
+name: Ensure ClipType v0.1.0-beta.1 Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ensure-v0.1.0-beta.1-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+env:
+  VERSION: v0.1.0-beta.1
+
+jobs:
+  ensure-release:
+    name: Merge exact product, publish, and verify immutable prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out main with complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Idempotently merge branding and product pull requests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          merge_if_open() {
+            local number="$1"
+            local state
+            state="$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+            if [ "$state" = "OPEN" ]; then
+              if gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft | grep -qx true; then
+                gh pr ready "$number" --repo "$GITHUB_REPOSITORY"
+              fi
+              gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --merge
+            fi
+          }
+          merge_if_open 42
+          merge_if_open 37
+      - name: Refresh exact merged main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+          git checkout -B main origin/main
+          git reset --hard origin/main
+      - name: Verify merged product and branding inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f apps/cliptype/build.rs
+          test -f assets/branding/cliptype-primary.svg
+          test -f assets/branding/cliptype-tray.svg
+          test -f assets/branding/README.md
+          test -f .github/workflows/windows-release.yml
+          test "$(tr -d '\r\n' < release/VERSION)" = "$VERSION"
+          test -f "docs/releases/$VERSION.md"
+          grep -F 'public Windows **prerelease**' "docs/releases/$VERSION.md"
+          grep -F 'build = "build.rs"' apps/cliptype/Cargo.toml
+          grep -F 'load_icon_w(instance, IDI_CLIPTYPE_TRAY)' crates/cliptype-windows/src/tray.rs
+      - name: Remove every one-time maintenance workflow before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch \
+            .github/workflows/ensure-v0.1.0-beta.1-release.yml \
+            .github/workflows/finalize-beta-release.yml \
+            .github/workflows/promote-windows-beta.yml \
+            .github/workflows/branding-windows-gate.yml \
+            .github/workflows/branding-release-prep.yml \
+            .github/workflows/branding-release-prep-v2.yml \
+            .github/workflows/branding-cleanup.yml \
+            .github/workflows/p2-b02-apply.yml \
+            .github/scripts/branding_release_prep.py \
+            .github/scripts/branding_release_prep_v2.py \
+            .github/scripts/branding_cleanup.py \
+            .github/scripts/p2_b02_patch.py \
+            assets/branding/.release-prep-probe
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): remove one-time beta automation"
+            git push origin HEAD:main
+          fi
+          echo "CLEAN_MAIN_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Dispatch official release workflow when prerelease is absent
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh workflow run windows-release.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "created=true" >> "$GITHUB_OUTPUT"
+      - name: Wait for official release workflow
+        if: steps.dispatch.outputs.created == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow windows-release.yml --branch main --limit 40 --json databaseId,headSha,status --jq ".[] | select(.headSha == \"$CLEAN_MAIN_SHA\") | .databaseId" | head -n1)"
+            if [ -n "$run_id" ]; then break; fi
+            sleep 5
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          echo "RELEASE_RUN_ID=$run_id" >> "$GITHUB_ENV"
+      - name: Resolve existing release workflow run
+        if: steps.dispatch.outputs.created != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha)"
+          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow windows-release.yml --limit 100 --json databaseId,headSha,conclusion --jq ".[] | select(.headSha == \"$tag_sha\" and .conclusion == \"success\") | .databaseId" | head -n1)"
+          echo "RELEASE_RUN_ID=$run_id" >> "$GITHUB_ENV"
+      - name: Install pinned Cosign for independent verification
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        with:
+          cosign-release: v3.0.3
+      - name: Download and verify every published asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf verified-release
+          mkdir verified-release
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir verified-release
+          cd verified-release
+          archive="ClipType-$VERSION-windows-x86_64.zip"
+          executable="ClipType-$VERSION-windows-x86_64.exe"
+          for required in "$archive" "$executable" DEPENDENCIES.json BUILD-INFO.txt SHA256SUMS.txt; do
+            test -s "$required"
+            test -s "$required.sigstore.json"
+          done
+          sha256sum --check SHA256SUMS.txt
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/windows-release.yml@refs/heads/main"
+          for asset in "$archive" "$executable" DEPENDENCIES.json BUILD-INFO.txt SHA256SUMS.txt; do
+            cosign verify-blob \
+              --bundle "$asset.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$asset"
+          done
+          gh attestation verify "$archive" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "$executable" --repo "$GITHUB_REPOSITORY"
+      - name: Verify release metadata and exact tagged source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json tagName,targetCommitish,isDraft,isPrerelease,url,assets)"
+          echo "$release"
+          test "$(jq -r .tagName <<<"$release")" = "$VERSION"
+          test "$(jq -r .isDraft <<<"$release")" = "false"
+          test "$(jq -r .isPrerelease <<<"$release")" = "true"
+          asset_count="$(jq '.assets | length' <<<"$release")"
+          test "$asset_count" -ge 10
+          git fetch origin "refs/tags/$VERSION:refs/tags/$VERSION" --force
+          tag_sha="$(git rev-list -n1 "$VERSION")"
+          git merge-base --is-ancestor "$tag_sha" origin/main
+          git show "$tag_sha:apps/cliptype/build.rs" >/dev/null
+          git show "$tag_sha:assets/branding/cliptype-primary.svg" >/dev/null
+          git show "$tag_sha:assets/branding/cliptype-tray.svg" >/dev/null
+          echo "TAG_SHA=$tag_sha" >> "$GITHUB_ENV"
+          echo "RELEASE_URL=$(jq -r .url <<<"$release")" >> "$GITHUB_ENV"
+      - name: Record verified publication on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "release/PUBLISHED-$VERSION.md" <<EOF
+          # ClipType $VERSION publication record
+
+          - Release: $RELEASE_URL
+          - Tagged source commit: \`$TAG_SHA\`
+          - Official release workflow run: \`${RELEASE_RUN_ID:-existing-successful-run}\`
+          - Channel: GitHub prerelease
+          - Assets: Windows x86_64 ZIP, portable EXE, dependency inventory, build metadata, SHA-256 manifest, five Sigstore bundles, and GitHub artifact attestations
+          - Application/tray branding: embedded resource IDs 1 and 2
+          - Authenticode publisher signature: not configured
+          - Compatibility boundary: issues #33 and #41 remain open for post-fix named-client evidence
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "release/PUBLISHED-$VERSION.md"
+          git commit -m "docs(release): record verified $VERSION publication"
+          git push origin HEAD:main
+      - name: Comment on release tracking issues
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body="ClipType $VERSION is now published as a verified GitHub **prerelease** from tagged commit $TAG_SHA. The ZIP, portable EXE, dependency inventory, build metadata, SHA-256 manifest, Sigstore bundles, and GitHub artifact attestations were downloaded and independently re-verified. Release: $RELEASE_URL
+
+The executable is not Authenticode publisher-signed. Issues #33 and #41 remain open for the post-fix named-client Chinese, timing/jitter, typo/Backspace, tray-target, and physical interactive evidence; this prerelease does not claim universal per-application compatibility."
+          for issue in 33 36 41; do
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body"
+          done
