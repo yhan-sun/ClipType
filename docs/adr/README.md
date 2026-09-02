@@ -48,3 +48,5 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - ADR-0003 — Keyboard, clipboard, and auto injection modes.
 - ADR-0004 — Clipboard plaintext is ephemeral and not persisted by default.
 - ADR-0005 — Single unprivileged user process by default; privileged helpers only when required.
+
+- [`ADR-0007`](0007-native-win32-tray-shell.md) — Native Win32 tray-first product shell and persistent settings boundary.

@@ -5,25 +5,23 @@
 
 ## Context
 
-P1 proved the Windows clipboard, target, keyboard, hotkey, coordinator, and controlled-host lifecycle with a minimal console process. P2 must turn that vertical slice into a daily-usable Windows utility with persistent settings, visible status, startup-at-login, and packaging.
+P1 proved the Windows clipboard, target, keyboard, hotkey, coordinator, and controlled-host lifecycle with a minimal console process. P2 turns that vertical slice into a daily-usable Windows utility with persistent settings, visible status, startup-at-login, and packaging.
 
-The user surface is intentionally small. A rendered cross-platform UI framework or daemon/client split would add runtime size, network-like IPC, lifecycle, dependency, and privacy surface before another platform needs it. The existing application already requires a Windows message-loop owner for global hotkeys.
+The user surface is intentionally small. A rendered cross-platform UI framework or daemon/client split would add runtime size, IPC, lifecycle, dependency, and privacy surface before another platform needs it. The application already requires native Windows message-loop ownership for global hotkeys and tray integration.
 
 ## Decision
 
 The Windows product uses one unprivileged Rust process with a native Win32 tray-first shell.
 
-A hidden top-level/message window owned by the main thread is responsible for:
+A dedicated tray/message-loop thread is responsible for:
 
-- the Windows message queue;
-- global trigger and cancellation hotkey registration;
+- the Windows message queue and hidden tray owner window;
 - taskbar/tray icon lifecycle through `Shell_NotifyIconW`;
-- a native context menu;
-- a small native settings window;
+- a native context menu that is the initial P2 settings surface;
 - content-free status notifications;
-- session-end and controlled shutdown messages.
+- tray-triggered product commands and controlled shutdown signals.
 
-UI callbacks translate native commands into narrow application operations such as trigger, cancel, query status, validate/apply configuration, and shutdown. They do not implement injection policy or call clipboard/input FFI directly.
+The existing command-source owner remains responsible for global trigger and cancellation hotkey registration and message translation. UI callbacks translate native menu commands into narrow application operations such as trigger, cancel, query status, validate/apply configuration, and shutdown. They do not implement injection policy or call clipboard/input FFI directly.
 
 The injection coordinator and worker model remains the single live state machine. Clipboard reads and input dispatch never execute on the tray/message-loop owner.
 
@@ -35,9 +33,11 @@ P2 introduces one versioned human-editable TOML file at the platform-appropriate
 %LOCALAPPDATA%\ClipType\config.toml
 ```
 
-The initial implementation uses a strict, fixed-schema TOML subset implemented in the application crate rather than adding a serialization framework. It accepts only documented scalar keys and sections, rejects duplicate or unknown security-sensitive fields, validates all numeric bounds, and never stores clipboard text, target text, window titles, content fingerprints, or session history.
+The implementation uses a strict, fixed-schema TOML subset in the application crate rather than adding a serialization framework. It accepts only documented scalar keys and sections, rejects duplicate or unknown security-sensitive fields, validates all numeric bounds, and never stores clipboard text, target text, window titles, content fingerprints, or session history.
 
 Writes use a temporary file plus flush/sync and a recoverable backup/replace sequence. On startup, a valid primary file wins; otherwise a valid backup may be recovered with an explicit content-free status. Invalid settings never produce unbounded or security-weakened defaults.
+
+The tray menu exposes enabled state, notifications, injection mode, speed, startup-at-login, reviewed hotkey-preset cycling, immediate trigger/cancel, and quit. The TOML file remains the advanced settings surface for numeric safety bounds.
 
 ## Hotkeys
 
@@ -45,12 +45,12 @@ V1 product configuration exposes reviewed hotkey presets rather than recording a
 
 - Each preset maps to explicit Win32 modifier and virtual-key values.
 - Registration uses `MOD_NOREPEAT` where supported.
-- Trigger and cancel must be distinct.
-- Reconfiguration unregisters the previous pair on the owning thread before registering the new pair.
-- A conflict is visible and leaves the process controllable through the tray.
+- Trigger and cancel are distinct.
+- A registration conflict is visible and the process remains controllable through the tray.
+- Preset changes are validated and persisted immediately, then applied on the next controlled process start; the current registration remains active until that restart.
 - No low-level global keyboard hook or general key capture is introduced.
 
-Richer arbitrary hotkey capture remains a post-1.0 candidate unless a bounded native control is designed and reviewed.
+Live same-thread hotkey re-registration and richer arbitrary hotkey capture remain later product candidates unless bounded rollback behavior is designed and reviewed.
 
 ## Startup at login
 
@@ -69,9 +69,11 @@ The process installs a content-free panic hook for distribution builds. Raw memo
 
 ## Packaging
 
-P2 initially produces a reproducible per-user Windows archive containing the executable, licenses, configuration reference, and install/uninstall PowerShell scripts. The scripts install under the current user's local programs directory, create/remove product-owned shortcuts and startup state, and require no elevation.
+P2 produces a reproducible per-user Windows archive containing the executable, licenses, configuration reference, and install/uninstall PowerShell scripts. The scripts install under the current user's local programs directory, create/remove product-owned shortcuts and startup state, and require no elevation.
 
-This development/beta artifact does not replace the signed-package requirement. Signing and public promotion remain release gates and require explicit maintainer action and secret configuration.
+Release builds use the Windows GUI subsystem so the tray utility does not open a console window. Debug and controlled CI builds retain console behavior for deterministic host testing.
+
+This development artifact does not replace the signed-package requirement. Signing and public promotion remain release gates and require explicit maintainer action and secret configuration.
 
 ## Alternatives considered
 
@@ -82,6 +84,10 @@ Deferred. It can improve visual polish, but the current surface does not justify
 ### Electron/web UI
 
 Rejected because it conflicts with the native/small-footprint direction and creates an unnecessary browser runtime for a tray utility.
+
+### Separate settings window in initial P2
+
+Deferred. The tray menu plus strict configuration file covers the bounded initial surface without another native window lifecycle. A later accessibility/usability pass may add a dedicated dialog without moving injection policy into the UI layer.
 
 ### Console host as the product UI
 
@@ -95,7 +101,6 @@ Rejected under ADR-0005. No demonstrated Windows capability requires a second pr
 
 ### Positive
 
-- reuses the required Windows message loop;
 - small dependency and runtime footprint;
 - native tray/startup conventions;
 - clear separation between shell commands and application policy;
@@ -107,8 +112,9 @@ Rejected under ADR-0005. No demonstrated Windows capability requires a second pr
 - raw Win32 UI code requires localized unsafe wrappers and careful lifecycle tests;
 - appearance is intentionally modest rather than framework-rich;
 - platform presentation will not share one rendered UI implementation with macOS/Linux;
-- arbitrary hotkey capture is deferred.
+- hotkey preset changes require a controlled restart in this P2 implementation;
+- a dedicated settings dialog and arbitrary hotkey capture are deferred.
 
 ## Follow-up
 
-P2 must add lifecycle, settings recovery, hotkey conflict, tray command, startup registration, packaging smoke, idle footprint, and privacy-sentinel evidence. Representative desktop/application compatibility remains separately gated before a public beta.
+P2 automated evidence covers lifecycle, settings recovery, hotkey registration conflict, tray commands, startup registration, packaging smoke, backend benchmarks, and privacy sentinels. Representative desktop/application compatibility remains separately gated before a public beta.
