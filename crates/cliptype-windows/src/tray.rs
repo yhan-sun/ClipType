@@ -126,12 +126,7 @@ unsafe extern "system" {
     fn post_quit_message(exit_code: i32);
 
     #[link_name = "PostThreadMessageW"]
-    fn post_thread_message_w(
-        thread_id: u32,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> i32;
+    fn post_thread_message_w(thread_id: u32, message: u32, wparam: WPARAM, lparam: LPARAM) -> i32;
 
     #[link_name = "RegisterClassW"]
     fn register_class_w(window_class: *const WNDCLASSW) -> u16;
