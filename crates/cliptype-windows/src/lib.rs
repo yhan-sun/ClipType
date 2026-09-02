@@ -15,6 +15,8 @@ mod keyboard;
 #[cfg(windows)]
 mod paste;
 #[cfg(windows)]
+mod startup;
+#[cfg(windows)]
 mod target;
 
 #[cfg(windows)]
@@ -27,5 +29,7 @@ pub use command::{CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCo
 pub use keyboard::WindowsKeyboard;
 #[cfg(windows)]
 pub use paste::WindowsPaste;
+#[cfg(windows)]
+pub use startup::{StartupError, StartupStatus, WindowsStartup};
 #[cfg(windows)]
 pub use target::WindowsTarget;
