@@ -1,58 +1,43 @@
 # ClipType Documentation
 
-This directory is the design source of truth for ClipType. P0 established the architecture and product foundation; P1 is now the current implementation phase.
+This index describes the current repository after completion of the P1 Windows vertical slice and P2 Windows productization work.
 
-## Reading order
+## Current status
 
-1. [`PRODUCT.md`](PRODUCT.md) — product definition, users, goals, non-goals, UX contract.
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — system boundaries, components, event flow, process model.
-3. [`TECHNOLOGY.md`](TECHNOLOGY.md) — language, UI, dependency, packaging, and native-integration choices.
-4. [`INJECTION_ENGINE.md`](INJECTION_ENGINE.md) — injection modes, planner, state machine, cancellation, restoration.
-5. [`PLATFORMS.md`](PLATFORMS.md) — Windows/macOS/X11/Wayland backend strategy.
-6. [`COMPATIBILITY.md`](COMPATIBILITY.md) — capability matrix and support vocabulary.
-7. [`SECURITY_PRIVACY.md`](SECURITY_PRIVACY.md) — threat model and non-negotiable data rules.
-8. [`DEPENDENCY_POLICY.md`](DEPENDENCY_POLICY.md) — licensing, dependency review, copied-code, and attribution rules.
-9. [`CONFIGURATION.md`](CONFIGURATION.md) — planned configuration model and stable semantics.
-10. [`TESTING.md`](TESTING.md) — test pyramid, platform matrix, release gates.
-11. [`ROADMAP.md`](ROADMAP.md) — staged implementation with entry/exit criteria.
-12. [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md) — current sequencing, ownership, and evidence gates.
-13. [`research/P1_WINDOWS_NATIVE_SPIKE.md`](research/P1_WINDOWS_NATIVE_SPIKE.md) — official and automated Windows contract evidence plus interactive gaps.
-14. [`contracts/P1_CONTRACT_FREEZE.md`](contracts/P1_CONTRACT_FREEZE.md) — native-neutral P1 types, ports, bounds, and downstream branch baseline.
-15. [`DEVELOPMENT_WORKFLOW.md`](DEVELOPMENT_WORKFLOW.md) — branch/PR/design/review/merge workflow.
-16. [`AGENT_DESIGN.md`](AGENT_DESIGN.md) — AI-agent roles, task packets, risk levels, handoffs, and multi-agent rules.
-17. [`RELEASE.md`](RELEASE.md) — versioning, artifacts, signing, promotion gates.
-18. [`GLOSSARY.md`](GLOSSARY.md) — shared terminology.
-19. [`REFERENCES.md`](REFERENCES.md) — official APIs and reference projects.
-20. [`adr/`](adr/) — immutable architecture decision records.
-21. [`research/`](research/) — bounded research evidence.
-22. [`contracts/`](contracts/) — reviewed phase contract baselines.
+- P1 controlled Windows clipboard-to-input evidence and the fail-closed target-evidence fix are merged into `main`.
+- P2 implements the native Windows tray product, persistent settings, keyboard/clipboard/auto modes, startup integration, packaging, compatibility gates, and public beta release pipeline.
+- `release/VERSION` declares the next public GitHub prerelease.
+- Windows x86_64 is the only shipped architecture. Other platforms remain architectural research, not product claims.
 
-Repository-level [`../AGENTS.md`](../AGENTS.md) is the mandatory execution contract.
+## Product and support
 
-## Normative language
+- [Product](PRODUCT.md) — user intent, modes, product surface, and non-goals.
+- [Compatibility](COMPATIBILITY.md) — supported Windows environments, application mechanism contract, and limitations.
+- [Configuration](CONFIGURATION.md) — versioned per-user settings and bounds.
+- [Release Process](RELEASE.md) — package contents, Sigstore signing, GitHub attestations, publication, and rollback.
+- [Roadmap](ROADMAP.md) — completed P1/P2 milestones and later work.
 
-`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are used in the RFC sense. A `MUST` violation requires a design change or ADR rather than silent implementation drift.
+## Architecture and safety
 
-## Source-of-truth boundaries
+- [Architecture](ARCHITECTURE.md) — crate boundaries and runtime composition.
+- [Injection Engine](INJECTION_ENGINE.md) — planning, target evidence, batching, cancellation, and outcome semantics.
+- [Platform Backends](PLATFORMS.md) — native mechanisms and constraints.
+- [Security and Privacy](SECURITY_PRIVACY.md) — clipboard confidentiality, diagnostics, privilege boundaries, and threat model.
+- [Technology](TECHNOLOGY.md) — implementation choices and toolchain.
+- [Architecture Decision Records](adr/README.md) — accepted cross-cutting decisions.
 
-- Product behavior: `PRODUCT.md` and `INJECTION_ENGINE.md`.
-- Component ownership/boundaries: `ARCHITECTURE.md`.
-- OS mechanisms: `PLATFORMS.md`.
-- Support claims: `COMPATIBILITY.md`.
-- Privacy/security: `SECURITY_PRIVACY.md` overrides convenience/performance.
-- Licensing and third-party provenance: `DEPENDENCY_POLICY.md`.
-- Phase scope: `ROADMAP.md`.
-- Current P1 sequencing and gates: `phases/P1_WINDOWS_VERTICAL_SLICE.md`.
-- Frozen P1 implementation boundary: `contracts/P1_CONTRACT_FREEZE.md` plus the corresponding merged source commit.
-- Agent execution: repository `AGENTS.md`; detailed model: `AGENT_DESIGN.md`.
-- Development lifecycle: `DEVELOPMENT_WORKFLOW.md`.
-- Accepted ADRs override older descriptive text; dependent docs must then be updated.
-- Research reports supply evidence but do not create support claims or bypass normative decisions.
+## Engineering process and evidence
 
-## Documentation change policy
+- [Testing](TESTING.md) — deterministic, native, controlled E2E, compatibility, packaging, signing, and release evidence.
+- [Development Workflow](DEVELOPMENT_WORKFLOW.md) — branch, review, and validation rules.
+- [Dependency Policy](DEPENDENCY_POLICY.md) — dependency and license expectations.
+- [References](REFERENCES.md) — primary platform/API references.
+- [P1 Phase](phases/P1_WINDOWS_VERTICAL_SLICE.md) — Windows vertical-slice scope and gate.
+- [P2 Phase](phases/P2_WINDOWS_PRODUCTIZATION.md) — Windows productization scope and gate.
+- [P1 Automated Evidence](testing/P1_AUTOMATED_EVIDENCE.md) — historical P1 candidate evidence.
 
-Public behavior, permissions, compatibility, architecture, persistence, injection semantics, dependency/contribution licensing, or release gates must be documented in the same PR that changes them.
+The final P2/public-release evidence report is recorded only after the exact candidate workflows complete; it must distinguish hosted controlled evidence from physical/named-application observations.
 
-Accepted ADRs are historical records. Add a superseding ADR rather than rewriting an accepted decision.
+## Authority
 
-Phase execution documents may refine sequencing and ownership without an ADR. If they change architecture, security posture, public behavior, or support promises, update the normative document and add an ADR when required.
+For repository work, follow `AGENTS.md`. Current explicit maintainer/user instructions outrank older task text. Documentation must describe observed implementation and evidence, not planned or assumed behavior.
