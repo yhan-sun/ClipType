@@ -87,7 +87,11 @@ impl StartupError {
 
 impl std::fmt::Display for StartupError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Windows startup registry operation failed: {}", self.code)
+        write!(
+            formatter,
+            "Windows startup registry operation failed: {}",
+            self.code
+        )
     }
 }
 
