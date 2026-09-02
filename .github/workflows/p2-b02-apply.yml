@@ -1,0 +1,86 @@
+name: P2-B02 Apply Human Typing Patch
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+    paths:
+      - .github/scripts/p2_b02_patch.py
+      - .github/workflows/p2-b02-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-b02-apply-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    name: Apply patch, format, cross-check, and commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - name: Check out exact P2 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+
+      - name: Refuse unexpected base drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="b728314093c107078d877cc3c2e85024dac864a3"
+          head="$(git rev-parse HEAD)"
+          echo "p2_b02 bootstrap_head=$head expected_ancestor=$expected"
+          if ! git merge-base --is-ancestor "$expected" HEAD; then
+            echo "The patch was prepared for lineage rooted at $expected; refusing unexpected drift."
+            exit 1
+          fi
+
+      - name: Apply reviewed source transformation
+        run: python .github/scripts/p2_b02_patch.py
+
+      - name: Install pinned Rust toolchain and Windows check target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup target add x86_64-pc-windows-msvc --toolchain 1.98.0
+
+      - name: Format transformed source
+        run: cargo +1.98.0 fmt --all
+
+      - name: Validate native-neutral crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 check --locked --all-targets \
+            -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 test --locked \
+            -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 clippy --locked --all-targets \
+            -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+
+      - name: Cross-check the complete Windows workspace
+        run: cargo +1.98.0 check --workspace --all-targets --locked --target x86_64-pc-windows-msvc
+
+      - name: Remove one-time bootstrap files
+        shell: bash
+        run: |
+          rm .github/scripts/p2_b02_patch.py
+          rm .github/scripts/p2_b02_patch.py.part{1,2,3,4}
+          rm .github/workflows/p2-b02-apply.yml
+
+      - name: Commit transformed implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "P2-B02: add reliable per-action human typing controls"
+          git push origin HEAD:feat/p2-windows-productization
