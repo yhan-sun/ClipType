@@ -14,6 +14,7 @@ mod outcome;
 mod plan;
 mod product;
 mod sensitive;
+mod settings;
 mod state;
 mod text;
 
@@ -38,6 +39,9 @@ pub use product::{
     ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, build_injection_plan,
 };
 pub use sensitive::SensitiveText;
+pub use settings::{
+    HotkeyPreset, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError, SpeedPreset,
+};
 pub use state::{
     DispatchDecision, DispatchObservation, FlowEvent, FlowState, NoInputReason, PreparationStage,
     TransitionError, TriggerDecision, classify_dispatch, decide_trigger, transition,
