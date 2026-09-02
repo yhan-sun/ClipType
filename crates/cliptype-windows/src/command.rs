@@ -3,6 +3,7 @@
 use core::ffi::c_void;
 use std::{marker::PhantomData, ptr::null_mut, rc::Rc};
 
+use cliptype_core::HotkeyPreset;
 use cliptype_platform::{
     CommandEvent, CommandEventSource, CommandSourceError, CommandSourceErrorKind, NativeError,
     NativeErrorKind,
@@ -29,7 +30,6 @@ const MOD_ALT: u32 = 0x0001;
 const MOD_CONTROL: u32 = 0x0002;
 const MOD_SHIFT: u32 = 0x0004;
 const MOD_NOREPEAT: u32 = 0x4000;
-const DEVELOPMENT_MODIFIERS: u32 = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
 
 const VK_F11: u32 = 0x7A;
 const VK_F12: u32 = 0x7B;
@@ -41,9 +41,9 @@ const WM_APP: u32 = 0x8000;
 const WM_CLIPTYPE_SHUTDOWN: u32 = WM_APP + 0x4354;
 const ERROR_HOTKEY_ALREADY_REGISTERED: u32 = 1409;
 
-/// Human-readable P1 development binding for starting an injection session.
+/// Human-readable default trigger binding retained for P1 compatibility.
 pub const TRIGGER_HOTKEY: &str = "Ctrl+Alt+Shift+F12";
-/// Human-readable P1 development binding for cancelling the active session.
+/// Human-readable default cancel binding retained for P1 compatibility.
 pub const CANCEL_HOTKEY: &str = "Ctrl+Alt+Shift+F11";
 
 /// Cross-thread signal handle for controlled host shutdown.
@@ -75,16 +75,22 @@ impl WindowsCommandSignal {
 #[derive(Debug)]
 pub struct WindowsCommandSource {
     owner_thread_id: u32,
+    preset: HotkeyPreset,
     registered: bool,
     _thread_affine: PhantomData<Rc<()>>,
 }
 
 impl WindowsCommandSource {
     pub fn new() -> Self {
+        Self::with_preset(HotkeyPreset::default())
+    }
+
+    pub fn with_preset(preset: HotkeyPreset) -> Self {
         // SAFETY: this call has no pointer or ownership preconditions.
         let owner_thread_id = unsafe { GetCurrentThreadId() };
         Self {
             owner_thread_id,
+            preset,
             registered: false,
             _thread_affine: PhantomData,
         }
@@ -98,6 +104,35 @@ impl WindowsCommandSource {
 
     pub const fn is_registered(&self) -> bool {
         self.registered
+    }
+
+    pub const fn preset(&self) -> HotkeyPreset {
+        self.preset
+    }
+
+    pub const fn trigger_hotkey(&self) -> &'static str {
+        self.preset.trigger_label()
+    }
+
+    pub const fn cancel_hotkey(&self) -> &'static str {
+        self.preset.cancel_label()
+    }
+
+    /// Changes the reviewed preset only while no native registration exists.
+    pub fn set_preset(&mut self, preset: HotkeyPreset) -> Result<(), CommandSourceError> {
+        self.ensure_owner_thread()?;
+        if self.registered {
+            return Err(CommandSourceError::new(
+                CommandSourceErrorKind::RegistrationConflict,
+                None,
+            ));
+        }
+        self.preset = preset;
+        Ok(())
+    }
+
+    fn modifiers(&self) -> u32 {
+        preset_modifiers(self.preset)
     }
 
     fn ensure_owner_thread(&self) -> Result<(), CommandSourceError> {
@@ -164,16 +199,17 @@ impl CommandEventSource for WindowsCommandSource {
         }
 
         self.create_message_queue();
+        let modifiers = self.modifiers();
 
         // SAFETY: null HWND creates thread-owned registrations. The ids are
         // process-local constants, the modifiers are explicit, and F11/F12 are
         // valid virtual-key values.
-        if unsafe { register_hot_key(null_mut(), TRIGGER_ID, DEVELOPMENT_MODIFIERS, VK_F12) } == 0 {
+        if unsafe { register_hot_key(null_mut(), TRIGGER_ID, modifiers, VK_F12) } == 0 {
             return Err(registration_error());
         }
 
         // SAFETY: same invariant as the trigger registration.
-        if unsafe { register_hot_key(null_mut(), CANCEL_ID, DEVELOPMENT_MODIFIERS, VK_F11) } == 0 {
+        if unsafe { register_hot_key(null_mut(), CANCEL_ID, modifiers, VK_F11) } == 0 {
             // SAFETY: the trigger registration succeeded on this owner thread.
             let _ = unsafe { unregister_hot_key(null_mut(), TRIGGER_ID) };
             return Err(registration_error());
@@ -224,6 +260,15 @@ impl Drop for WindowsCommandSource {
     }
 }
 
+const fn preset_modifiers(preset: HotkeyPreset) -> u32 {
+    let modifiers = match preset {
+        HotkeyPreset::CtrlAltShiftFunction => MOD_CONTROL | MOD_ALT | MOD_SHIFT,
+        HotkeyPreset::CtrlAltFunction => MOD_CONTROL | MOD_ALT,
+        HotkeyPreset::CtrlShiftFunction => MOD_CONTROL | MOD_SHIFT,
+    };
+    modifiers | MOD_NOREPEAT
+}
+
 const fn decode_message(message: u32, wparam: usize) -> Option<CommandEvent> {
     match (message, wparam as i32) {
         (WM_HOTKEY, TRIGGER_ID) => Some(CommandEvent::Trigger),
@@ -266,11 +311,12 @@ fn last_command_error(kind: CommandSourceErrorKind) -> CommandSourceError {
 mod tests {
     use std::{thread, time::Duration};
 
+    use cliptype_core::HotkeyPreset;
     use cliptype_platform::{CommandEvent, CommandEventSource};
 
     use super::{
-        CANCEL_ID, TRIGGER_ID, WM_CLIPTYPE_SHUTDOWN, WM_HOTKEY, WindowsCommandSource,
-        decode_message,
+        CANCEL_ID, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, TRIGGER_ID,
+        WM_CLIPTYPE_SHUTDOWN, WM_HOTKEY, WindowsCommandSource, decode_message, preset_modifiers,
     };
 
     #[test]
@@ -288,6 +334,22 @@ mod tests {
             Some(CommandEvent::Shutdown)
         );
         assert_eq!(decode_message(WM_HOTKEY, 999), None);
+    }
+
+    #[test]
+    fn reviewed_presets_map_to_explicit_no_repeat_modifiers() {
+        assert_eq!(
+            preset_modifiers(HotkeyPreset::CtrlAltShiftFunction),
+            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT
+        );
+        assert_eq!(
+            preset_modifiers(HotkeyPreset::CtrlAltFunction),
+            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT
+        );
+        assert_eq!(
+            preset_modifiers(HotkeyPreset::CtrlShiftFunction),
+            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+        );
     }
 
     #[test]
