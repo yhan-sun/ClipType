@@ -1,0 +1,74 @@
+name: Branding Release Preparation V2
+
+on:
+  push:
+    branches:
+      - automation/cliptype-branding-release-prep
+    paths:
+      - ".github/workflows/branding-release-prep-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Apply cfg-safe branded resource integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact preparation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/cliptype-branding-release-prep
+          fetch-depth: 0
+      - name: Require P2 branch ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/p2-windows-productization
+          git merge-base --is-ancestor origin/feat/p2-windows-productization HEAD
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Apply corrected branding preparation
+        run: python .github/scripts/branding_release_prep_v2.py
+      - name: Format and verify native-neutral workspace
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+      - name: Verify final repository shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f apps/cliptype/build.rs
+          test -f assets/branding/cliptype-primary.svg
+          test -f assets/branding/cliptype-tray.svg
+          test -f assets/branding/README.md
+          grep -F '#[cfg(windows)]' apps/cliptype/build.rs
+          grep -F 'build = "build.rs"' apps/cliptype/Cargo.toml
+          grep -F 'IDI_CLIPTYPE_TRAY' crates/cliptype-windows/src/tray.rs
+          grep -F 'public Windows **prerelease**' docs/releases/v0.1.0-beta.1.md
+          test ! -e assets/branding/.release-prep-probe
+          test ! -e .github/workflows/branding-release-prep.yml
+          test ! -e .github/workflows/branding-release-prep-v2.yml
+          test ! -e .github/workflows/branding-cleanup.yml
+          test ! -e .github/workflows/p2-b02-apply.yml
+          test ! -e .github/scripts/branding_release_prep.py
+          test ! -e .github/scripts/branding_release_prep_v2.py
+          test ! -e .github/scripts/branding_cleanup.py
+          test ! -e .github/scripts/p2_b02_patch.py
+      - name: Commit verified integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "P2: embed ClipType branding and prepare beta prerelease"
+          git push origin HEAD:automation/cliptype-branding-release-prep
