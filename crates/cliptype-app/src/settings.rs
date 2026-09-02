@@ -3,14 +3,14 @@
 use std::{
     collections::HashSet,
     fmt,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
 };
 
 use cliptype_core::{
-    AutoClipboardThreshold, HotkeyPreset, InjectionMode, ProductSettings, SETTINGS_SCHEMA_VERSION,
-    SettingsValidationError, SpeedPreset,
+    AutoClipboardThreshold, HotkeyPreset, InjectionMode, ProductSettings, SettingsValidationError,
+    SpeedPreset,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
