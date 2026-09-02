@@ -1,0 +1,47 @@
+name: P2 Transient Workflow Final Cleanup
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+      - name: Wait for prior one-time jobs
+        run: sleep 75
+      - name: Reset to latest branch and remove every transient workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/p2-windows-productization
+          git reset --hard origin/feat/p2-windows-productization
+          rm -f .github/workflows/p2-one-time-*.yml
+          rm -f .github/workflows/p2-doc-alignment.yml
+          rm -f .github/workflows/p2-governance-cleanup.yml
+          rm -f .github/workflows/zz-p2-transient-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A .github/workflows
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: remove all transient P2 workflows"
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:feat/p2-windows-productization; then
+              exit 0
+            fi
+            git fetch origin feat/p2-windows-productization
+            git rebase origin/feat/p2-windows-productization
+          done
+          exit 1
