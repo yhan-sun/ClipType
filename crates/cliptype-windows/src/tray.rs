@@ -774,10 +774,12 @@ mod tests {
 
     #[test]
     fn settings_commands_are_content_free_enum_transitions() {
-        let mut settings = ProductSettings::default();
-        settings.enabled = true;
-        settings.mode = InjectionMode::Auto;
-        settings.speed = SpeedPreset::Normal;
+        let settings = ProductSettings {
+            enabled: true,
+            mode: InjectionMode::Auto,
+            speed: SpeedPreset::Normal,
+            ..ProductSettings::default()
+        };
 
         // The menu's side effect is exercised through pure expected settings;
         // process-global event delivery is intentionally not installed here.
