@@ -25,7 +25,10 @@ fn main() {
             );
         }
         Err(error) => {
-            eprintln!("p2_backend_benchmark result=failed category={}", error.label());
+            eprintln!(
+                "p2_backend_benchmark result=failed category={}",
+                error.label()
+            );
             std::process::exit(1);
         }
     }
@@ -169,10 +172,7 @@ mod benchmark {
         })
     }
 
-    fn measure(
-        elements: usize,
-        mode: InjectionMode,
-    ) -> Result<Vec<u128>, BenchmarkError> {
+    fn measure(elements: usize, mode: InjectionMode) -> Result<Vec<u128>, BenchmarkError> {
         let mut durations = Vec::with_capacity(REPETITIONS);
         for repetition in 0..REPETITIONS {
             let character = char::from(b'a' + u8::try_from(repetition).unwrap_or_default());
@@ -212,9 +212,7 @@ mod benchmark {
             let elapsed = started.elapsed().as_micros();
 
             let status = coordinator.status();
-            if status.completion
-                != Some(SessionCompletion::Finished(TerminalOutcome::Completed))
-            {
+            if status.completion != Some(SessionCompletion::Finished(TerminalOutcome::Completed)) {
                 return Err(BenchmarkError::CoordinatorOutcome);
             }
             let expected_backend = match mode {
