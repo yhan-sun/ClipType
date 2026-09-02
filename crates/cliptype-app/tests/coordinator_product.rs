@@ -10,7 +10,7 @@ use std::{
 use cliptype_app::{Coordinator, SessionCompletion, TriggerResult, WaitResult};
 use cliptype_core::{
     AutoClipboardThreshold, CapabilityState, InjectionBackend, InjectionMode, NativeEventCount,
-    ProductConfig, PreparationFailure, SensitiveText, TerminalOutcome,
+    PreparationFailure, ProductConfig, SensitiveText, TerminalOutcome,
 };
 use cliptype_platform::{
     ClipboardError, ClipboardPort, ClipboardRevision, DispatchResult, KeyboardCapabilities,
@@ -27,8 +27,8 @@ struct RevisionedClipboard {
 
 impl RevisionedClipboard {
     fn stable(text: &str, revision: u64, sessions: usize) -> Self {
-        let revisions = std::iter::repeat_n(ClipboardRevision::Known(revision), sessions * 2)
-            .collect();
+        let revisions =
+            std::iter::repeat_n(ClipboardRevision::Known(revision), sessions * 2).collect();
         Self {
             text: text.to_owned(),
             revisions: Arc::new(Mutex::new(revisions)),
@@ -100,10 +100,7 @@ impl TargetPort for StableTarget {
         }
     }
 
-    fn integrity_relation(
-        &self,
-        _target: &TargetEvidence,
-    ) -> cliptype_core::IntegrityRelation {
+    fn integrity_relation(&self, _target: &TargetEvidence) -> cliptype_core::IntegrityRelation {
         cliptype_core::IntegrityRelation::KnownNotRestricted
     }
 }
@@ -440,12 +437,18 @@ fn config_update_changes_future_sessions_not_the_active_snapshot() {
         coordinator.wait_for_idle(Duration::from_secs(2)),
         WaitResult::Idle
     );
-    assert_eq!(coordinator.status().backend, Some(InjectionBackend::Keyboard));
+    assert_eq!(
+        coordinator.status().backend,
+        Some(InjectionBackend::Keyboard)
+    );
     assert_ne!(keyboard.calls(), 0);
     assert_eq!(paste.calls(), 0);
 
     start_and_wait(&coordinator);
-    assert_eq!(coordinator.status().backend, Some(InjectionBackend::Clipboard));
+    assert_eq!(
+        coordinator.status().backend,
+        Some(InjectionBackend::Clipboard)
+    );
     assert_eq!(paste.calls(), 1);
 }
 
