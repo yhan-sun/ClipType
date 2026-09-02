@@ -64,6 +64,46 @@ jobs:
       - name: Install, run headless, preserve startup choice, and fully roll back
         shell: pwsh
         run: |
+          function Invoke-ClipTypeHeadless {
+            param(
+              [Parameter(Mandatory = $true)][string]$Executable,
+              [Parameter(Mandatory = $true)][string]$Label
+            )
+
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $Executable
+            $startInfo.Arguments = "--headless"
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardInput = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            if (-not $process.Start()) {
+              throw "$Label did not start"
+            }
+            try {
+              $process.StandardInput.WriteLine("shutdown")
+              $process.StandardInput.Close()
+              $stdout = $process.StandardOutput.ReadToEnd()
+              $stderr = $process.StandardError.ReadToEnd()
+              $process.WaitForExit()
+
+              if ($stdout) { Write-Output $stdout.TrimEnd() }
+              if ($stderr) { Write-Output $stderr.TrimEnd() }
+              if ($process.ExitCode -ne 0) {
+                throw "$Label exited with code $($process.ExitCode)"
+              }
+              if (-not $stdout.Contains("cliptype status=stopped")) {
+                throw "$Label did not report controlled shutdown"
+              }
+            } finally {
+              $process.Dispose()
+            }
+          }
+
           $installRoot = Join-Path $env:RUNNER_TEMP "ClipType Product Install"
           $localData = Join-Path $env:RUNNER_TEMP "ClipType Local Data"
           $configPath = Join-Path $localData "ClipType\config.toml"
@@ -81,8 +121,7 @@ jobs:
             if (-not (Select-String -Path $configPath -SimpleMatch "start_at_login = false" -Quiet)) {
               throw "initial settings do not disable startup"
             }
-            "shutdown" | & $installed --headless
-            if ($LASTEXITCODE -ne 0) { throw "installed host smoke failed" }
+            Invoke-ClipTypeHeadless -Executable $installed -Label "installed host smoke"
 
             & "packaging\windows\install.ps1" `
               -SourceExe "target\release\cliptype.exe" `
@@ -95,8 +134,7 @@ jobs:
             $runValue = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
             if (-not $runValue.Contains($installed)) { throw "startup registration mismatch" }
 
-            "shutdown" | & $installed --headless
-            if ($LASTEXITCODE -ne 0) { throw "startup-enabled host smoke failed" }
+            Invoke-ClipTypeHeadless -Executable $installed -Label "startup-enabled host smoke"
             $runAfterHost = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
             if (-not $runAfterHost.Contains($installed)) {
               throw "application startup synchronization removed the installer choice"
