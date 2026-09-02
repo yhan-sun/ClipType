@@ -141,15 +141,21 @@ impl SettingsStore {
         file.sync_all()?;
         drop(file);
 
-        remove_if_exists(&backup)?;
-        let had_primary = self.path.exists();
-        if had_primary {
+        let primary_is_valid = match fs::read_to_string(&self.path) {
+            Ok(contents) => parse_settings(&contents).is_ok(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        };
+        if primary_is_valid {
+            remove_if_exists(&backup)?;
             fs::rename(&self.path, &backup)?;
+        } else {
+            remove_if_exists(&self.path)?;
         }
 
         if let Err(error) = fs::rename(&temporary, &self.path) {
             let _ = remove_if_exists(&temporary);
-            if had_primary && !self.path.exists() && backup.exists() {
+            if primary_is_valid && !self.path.exists() && backup.exists() {
                 let _ = fs::rename(&backup, &self.path);
             }
             return Err(error.into());
@@ -425,6 +431,11 @@ mod tests {
         let recovered = store.load().expect("recover backup");
         assert_eq!(recovered.source, SettingsSource::Backup);
         assert_eq!(recovered.settings, ProductSettings::default());
+        store
+            .save(recovered.settings)
+            .expect("repair primary without replacing the valid backup");
+        let backup = fs::read_to_string(store.backup_path()).expect("valid backup remains");
+        assert_eq!(parse_settings(&backup), Ok(ProductSettings::default()));
 
         let _ = fs::remove_dir_all(directory);
     }

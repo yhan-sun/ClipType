@@ -61,6 +61,7 @@ const TPM_NONOTIFY: u32 = 0x0080;
 const CMD_TRIGGER: usize = 1001;
 const CMD_CANCEL: usize = 1002;
 const CMD_ENABLED: usize = 1100;
+const CMD_NOTIFICATIONS: usize = 1101;
 const CMD_MODE_AUTO: usize = 1200;
 const CMD_MODE_KEYBOARD: usize = 1201;
 const CMD_MODE_CLIPBOARD: usize = 1202;
@@ -142,6 +143,9 @@ impl WindowsTraySignal {
     }
 
     pub fn notify(&self, notice: TrayNotice) -> Result<(), TrayError> {
+        if !lock_unpoisoned(&self.settings).notifications {
+            return Ok(());
+        }
         lock_unpoisoned(&self.notices).push_back(notice);
         post_thread_message(self.thread_id, WM_TRAY_NOTICE)
     }
@@ -211,6 +215,7 @@ fn tray_thread(
 ) {
     // SAFETY: no preconditions; used as the target for private thread messages.
     let thread_id = unsafe { GetCurrentThreadId() };
+    let notifications_enabled = lock_unpoisoned(&settings).notifications;
     *lock_unpoisoned(context()) = Some(TrayContext { events, settings });
 
     let window = match create_hidden_window() {
@@ -233,7 +238,9 @@ fn tray_thread(
     };
 
     let _ = ready.send(Ok(thread_id));
-    icon.show_notice(TrayNotice::Ready);
+    if notifications_enabled {
+        icon.show_notice(TrayNotice::Ready);
+    }
 
     let mut message = MSG::default();
     loop {
@@ -355,6 +362,13 @@ fn show_context_menu(window: HWND) {
     append(menu, CMD_ENABLED, "Enabled", settings.enabled, false);
     append(
         menu,
+        CMD_NOTIFICATIONS,
+        "Notifications",
+        settings.notifications,
+        false,
+    );
+    append(
+        menu,
         CMD_MODE_AUTO,
         "Mode: Auto",
         settings.mode == InjectionMode::Auto,
@@ -442,6 +456,10 @@ fn apply_command(command: usize, mut settings: ProductSettings) {
         CMD_CANCEL => Some(TrayEvent::Cancel),
         CMD_ENABLED => {
             settings.enabled = !settings.enabled;
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_NOTIFICATIONS => {
+            settings.notifications = !settings.notifications;
             Some(TrayEvent::SettingsChanged(settings))
         }
         CMD_MODE_AUTO => {
