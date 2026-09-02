@@ -1,0 +1,116 @@
+name: P2 Windows Package
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/p2-windows-package.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/p2-windows-package.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package-smoke:
+    name: Build, package, install, run, uninstall
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Build release executable
+        run: cargo build --release --locked -p cliptype
+      - name: Assemble unsigned development package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD "dist\ClipType"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\release\cliptype.exe" $stage
+          Copy-Item "packaging\windows\install.ps1" $stage
+          Copy-Item "packaging\windows\uninstall.ps1" $stage
+          Copy-Item "packaging\windows\README.md" $stage
+          Copy-Item "LICENSE-APACHE" $stage
+          Copy-Item "LICENSE-MIT" $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\ClipType-windows-x86_64-unsigned.zip" -Force
+          if (-not (Test-Path "dist\ClipType-windows-x86_64-unsigned.zip")) {
+            throw "development archive was not created"
+          }
+      - name: Parse installation scripts
+        shell: pwsh
+        run: |
+          foreach ($script in @("packaging\windows\install.ps1", "packaging\windows\uninstall.ps1")) {
+            $tokens = $null
+            $errors = $null
+            [void][Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+          }
+      - name: Install, run headless, register startup, and fully roll back
+        shell: pwsh
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP "ClipType Product Install"
+          $localData = Join-Path $env:RUNNER_TEMP "ClipType Local Data"
+          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          $env:LOCALAPPDATA = $localData
+          $env:CLIPTYPE_HEADLESS = "1"
+          try {
+            & "packaging\windows\install.ps1" `
+              -SourceExe "target\release\cliptype.exe" `
+              -InstallRoot $installRoot `
+              -NoLaunch
+            $installed = Join-Path $installRoot "cliptype.exe"
+            if (-not (Test-Path $installed)) { throw "installed executable missing" }
+            "shutdown" | & $installed --headless
+            if ($LASTEXITCODE -ne 0) { throw "installed host smoke failed" }
+
+            & "packaging\windows\install.ps1" `
+              -SourceExe "target\release\cliptype.exe" `
+              -InstallRoot $installRoot `
+              -StartAtLogin `
+              -NoLaunch
+            $runValue = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
+            if (-not $runValue.Contains($installed)) { throw "startup registration mismatch" }
+
+            & "packaging\windows\uninstall.ps1" `
+              -InstallRoot $installRoot `
+              -RemoveSettings
+            if (Test-Path $installRoot) { throw "install root was not removed" }
+            if (Test-Path (Join-Path $localData "ClipType")) { throw "settings root was not removed" }
+            $remaining = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction SilentlyContinue).ClipType
+            if ($remaining) { throw "startup registration was not removed" }
+          } finally {
+            Remove-ItemProperty -Path $runKey -Name ClipType -ErrorAction SilentlyContinue
+            Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $localData -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Scan package for generated privacy sentinels
+        shell: pwsh
+        run: |
+          $archive = [IO.File]::ReadAllBytes("dist\ClipType-windows-x86_64-unsigned.zip")
+          $text = [Text.Encoding]::ASCII.GetString($archive)
+          foreach ($sentinel in @(
+            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "P2_COORDINATOR_PRIVATE_SENTINEL",
+            "SETTINGS_PRIVATE_SENTINEL"
+          )) {
+            if ($text.Contains($sentinel)) {
+              throw "privacy sentinel entered the distributable archive"
+            }
+          }
+          Write-Output "p2_package result=ok kind=unsigned_development_archive"
