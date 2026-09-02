@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Force -Path $settingsRoot | Out-Null
 $startupLiteral = if ($StartAtLogin) { "true" } else { "false" }
 if (Test-Path -LiteralPath $configPath) {
     $content = [IO.File]::ReadAllText($configPath)
-    $pattern = '(?m)^start_at_login = (true|false)$'
+    $pattern = '(?m)^start_at_login = (true|false)\r?$'
     $matches = [Text.RegularExpressions.Regex]::Matches($content, $pattern)
     if ($matches.Count -ne 1) {
         throw "Existing ClipType settings do not contain exactly one start_at_login field"
