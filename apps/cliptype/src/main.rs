@@ -19,7 +19,7 @@ fn main() {
 mod windows_host {
     use std::{
         env, io,
-        path::PathBuf,
+        path::{Path, PathBuf},
         sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
@@ -268,7 +268,7 @@ mod windows_host {
         coordinator: &Coordinator,
         store: &SettingsStore,
         startup: &WindowsStartup,
-        executable: &PathBuf,
+        executable: &Path,
         tray: &WindowsTraySignal,
         current: ProductSettings,
         proposed: ProductSettings,
@@ -344,10 +344,10 @@ mod windows_host {
                             current.batches_completed,
                             current.completion,
                         );
-                        if previous.and_then(|value| value.completion) != current.completion {
-                            if let Some(completion) = current.completion {
-                                notify_completion(tray.as_ref(), current.backend, completion);
-                            }
+                        if previous.and_then(|value| value.completion) != current.completion
+                            && let Some(completion) = current.completion
+                        {
+                            notify_completion(tray.as_ref(), current.backend, completion);
                         }
                         previous = Some(current);
                     }
