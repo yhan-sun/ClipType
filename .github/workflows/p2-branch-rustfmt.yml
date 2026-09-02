@@ -22,19 +22,31 @@ jobs:
         with:
           ref: feat/p2-windows-productization
           fetch-depth: 0
+      - name: Remove known static unused imports
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/cliptype-app/src/settings.rs")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("fs::{self, File, OpenOptions}", "fs::{self, OpenOptions}")
+          text = text.replace(
+              "ProductSettings, SETTINGS_SCHEMA_VERSION,\n    SettingsValidationError",
+              "ProductSettings, SettingsValidationError",
+          )
+          path.write_text(text, encoding="utf-8")
       - name: Install pinned rustfmt
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt
       - name: Format Rust sources
         run: cargo fmt --all
-      - name: Commit formatting when needed
+      - name: Commit hygiene changes when needed
         shell: bash
         run: |
           if git diff --quiet; then
-            echo "No formatting changes required."
+            echo "No hygiene changes required."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- '*.rs'
-          git commit -m "style: apply rustfmt to P2 worktree"
+          git commit -m "style: apply P2 source hygiene"
           git push origin HEAD:feat/p2-windows-productization
