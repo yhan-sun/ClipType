@@ -1,0 +1,1 @@
+ClipType branding sources and deterministic Windows icon resource generation are included in the source tree. Binary release icons are generated during the native Windows build and embedded into the executable.

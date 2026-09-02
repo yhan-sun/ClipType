@@ -1,0 +1,114 @@
+name: Branding Windows Integration Gate
+
+on:
+  push:
+    branches:
+      - automation/cliptype-branding-release-prep
+    paths:
+      - ".github/workflows/branding-windows-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  integrate:
+    name: Compile icons, validate Windows binary, and merge branding PR
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact branding branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/cliptype-branding-release-prep
+          fetch-depth: 0
+      - name: Ensure preparation has been applied
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "apps\cliptype\build.rs")) {
+            if (Test-Path ".github\scripts\branding_release_prep_v2.py") {
+              python .github/scripts/branding_release_prep_v2.py
+            } elseif (Test-Path ".github\scripts\branding_release_prep.py") {
+              python .github/scripts/branding_release_prep.py
+            } else {
+              throw "Branding resource preparation was not applied and no repair script is present"
+            }
+          }
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Run exact Windows quality gate
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo build --release --locked -p cliptype
+      - name: Verify branded executable resources
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "target\release\cliptype.exe"
+          if (-not (Test-Path $exe)) { throw "release executable missing" }
+          if (-not (Select-String -Path "crates\cliptype-windows\src\tray.rs" -SimpleMatch "IDI_CLIPTYPE_TRAY" -Quiet)) {
+            throw "tray resource id is not wired"
+          }
+          if (-not (Select-String -Path "crates\cliptype-windows\src\tray.rs" -SimpleMatch "load_icon_w(instance, IDI_CLIPTYPE_TRAY)" -Quiet)) {
+            throw "tray does not load the embedded resource"
+          }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+          if ($null -eq $icon -or $icon.Width -lt 16 -or $icon.Height -lt 16) {
+            throw "Windows could not extract the application icon"
+          }
+          try {
+            $bitmap = $icon.ToBitmap()
+            $sample = $bitmap.GetPixel([Math]::Floor($bitmap.Width / 2), [Math]::Floor($bitmap.Height / 2))
+            Write-Output "cliptype_branding icon_width=$($icon.Width) icon_height=$($icon.Height) center_alpha=$($sample.A)"
+            if ($sample.A -eq 0) { throw "extracted icon center is transparent" }
+          } finally {
+            if ($null -ne $bitmap) { $bitmap.Dispose() }
+            $icon.Dispose()
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "cliptype_branding result=ok exe_sha256=$hash"
+      - name: Remove every maintenance-only file
+        shell: pwsh
+        run: |
+          $temporary = @(
+            ".github\workflows\branding-windows-gate.yml",
+            ".github\workflows\branding-release-prep.yml",
+            ".github\workflows\branding-release-prep-v2.yml",
+            ".github\workflows\branding-cleanup.yml",
+            ".github\workflows\p2-b02-apply.yml",
+            ".github\scripts\branding_release_prep.py",
+            ".github\scripts\branding_release_prep_v2.py",
+            ".github\scripts\branding_cleanup.py",
+            ".github\scripts\p2_b02_patch.py",
+            "assets\branding\.release-prep-probe"
+          )
+          foreach ($path in $temporary) {
+            if (Test-Path $path) { Remove-Item $path -Force }
+          }
+      - name: Commit exact validated head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "P2: finalize branded Windows release resources"
+            git push origin HEAD:automation/cliptype-branding-release-prep
+          fi
+      - name: Merge branding PR into the P2 product branch
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $pr = gh pr list --repo $env:GITHUB_REPOSITORY --head automation/cliptype-branding-release-prep --base feat/p2-windows-productization --state open --json number --jq '.[0].number'
+          if (-not $pr) { throw "open branding PR not found" }
+          gh pr merge $pr --repo $env:GITHUB_REPOSITORY --merge --subject "P2: embed ClipType application and tray branding" --body "Windows icon resource compilation, extraction, workspace tests, and release build passed on the exact branding head."
