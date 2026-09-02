@@ -169,14 +169,14 @@ fn compare_tokens(
         return TargetComparison::Changed;
     }
 
-    if has_native_focus_detail(expected_strength) && has_native_focus_detail(observed_strength) {
-        if expected == observed {
-            TargetComparison::Same
-        } else {
-            TargetComparison::Changed
-        }
-    } else {
-        TargetComparison::Same
+    match (
+        has_native_focus_detail(expected_strength),
+        has_native_focus_detail(observed_strength),
+    ) {
+        (true, true) if expected == observed => TargetComparison::Same,
+        (true, true) => TargetComparison::Changed,
+        (true, false) => TargetComparison::UnavailableOrAmbiguous,
+        (false, _) => TargetComparison::Same,
     }
 }
 
@@ -369,16 +369,57 @@ mod tests {
     }
 
     #[test]
-    fn degraded_tokens_compare_only_stable_top_level_identity() {
+    fn detailed_expected_fails_closed_when_observed_evidence_weakens() {
+        let original = token(10, 11);
+        for observed_strength in [EvidenceStrength::TopLevelTarget, EvidenceStrength::Degraded] {
+            assert_eq!(
+                compare_tokens(
+                    &original,
+                    EvidenceStrength::NativeFocusedControl,
+                    &token(10, 0),
+                    observed_strength,
+                ),
+                TargetComparison::UnavailableOrAmbiguous
+            );
+        }
+        assert_eq!(
+            compare_tokens(
+                &original,
+                EvidenceStrength::RenderHostLimited,
+                &token(10, 0),
+                EvidenceStrength::TopLevelTarget,
+            ),
+            TargetComparison::UnavailableOrAmbiguous
+        );
+    }
+
+    #[test]
+    fn initially_weaker_evidence_keeps_only_its_original_guarantee() {
+        let original = token(10, 11);
+        for expected_strength in [EvidenceStrength::TopLevelTarget, EvidenceStrength::Degraded] {
+            assert_eq!(
+                compare_tokens(
+                    &original,
+                    expected_strength,
+                    &token(10, 99),
+                    EvidenceStrength::NativeFocusedControl,
+                ),
+                TargetComparison::Same
+            );
+        }
+    }
+
+    #[test]
+    fn stable_identity_changes_are_detected_even_from_weaker_evidence() {
         let original = token(10, 11);
         assert_eq!(
             compare_tokens(
                 &original,
                 EvidenceStrength::Degraded,
-                &token(10, 99),
-                EvidenceStrength::NativeFocusedControl,
+                &token(20, 99),
+                EvidenceStrength::Degraded,
             ),
-            TargetComparison::Same
+            TargetComparison::Changed
         );
     }
 
