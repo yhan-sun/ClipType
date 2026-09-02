@@ -37,8 +37,10 @@ pub enum SessionPhase {
 /// Content-free failures that can occur before native dispatch begins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreparationFailure {
+    Disabled,
     Busy,
     ClipboardUnavailable,
+    ClipboardRevisionUnavailable,
     ClipboardEmpty,
     ClipboardNonText,
     ClipboardMalformed,
@@ -52,11 +54,12 @@ pub enum PreparationFailure {
     InternalInvariant,
 }
 
-/// Terminal result of a P1 keyboard injection attempt.
+/// Terminal result of one bounded injection attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalOutcome {
     Completed,
     Cancelled,
+    ClipboardChanged,
     TargetChanged,
     TargetDisappeared,
     TargetEvidenceUnavailable,
@@ -70,7 +73,7 @@ pub enum TerminalOutcome {
     InternalInvariant,
 }
 
-/// P1 never retries synthetic input after an observed native result.
+/// ClipType never retries synthetic input after an observed native result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryDisposition {
     Never,
@@ -95,6 +98,10 @@ mod tests {
         );
         assert_eq!(
             TerminalOutcome::ProgressUnknown.retry_disposition(),
+            RetryDisposition::Never
+        );
+        assert_eq!(
+            TerminalOutcome::ClipboardChanged.retry_disposition(),
             RetryDisposition::Never
         );
     }

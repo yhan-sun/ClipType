@@ -1,233 +1,149 @@
-# Security and Privacy Model
+# Security and Privacy
 
 ## Security posture
 
-ClipType handles data that may contain passwords, API tokens, private messages, source code, personal information, and one-time codes. Clipboard and injected text are therefore classified as **sensitive by default**.
+ClipType handles clipboard text that may contain credentials, private communications, source code, personal data, or operational commands. The product therefore treats plaintext as ephemeral user-owned data and native input as a safety-sensitive side effect.
 
-Privacy and user-control constraints are architecture requirements, not optional settings.
+ClipType is a local, single-user, normal-integrity desktop process. It is not a security boundary and does not attempt to defeat Windows protections.
 
 ## Data lifecycle
 
-Default flow:
+### Clipboard acquisition
 
-```text
-explicit trigger
-  -> capture destination evidence
-  -> OS clipboard
-  -> bounded ephemeral process memory
-  -> bounded native input batches
-  -> target application
-```
+- Clipboard text is read only after an explicit trigger has reserved a session and captured destination evidence.
+- Reads are bounded by a native byte limit and an application semantic-element limit.
+- The Windows adapter copies `CF_UNICODETEXT` into owned memory while the clipboard is open, then releases native ownership promptly.
+- Busy/temporary failures are retried only within a configured attempt/time budget.
+- A content-blind clipboard sequence number is used as revision evidence. Its numeric value is redacted from diagnostics.
 
-Clipboard text MUST NOT enter persistent storage unless a future explicitly scoped feature and accepted decision changes this model. V1 has no clipboard history.
+### Clipboard mode
 
-P1 captures the destination before clipboard acquisition so a contended clipboard read cannot silently retarget the operation to whichever application happens to be focused later.
+Clipboard mode uses the clipboard value that is already current. It never writes, clears, owns, replaces, snapshots for restoration, or restores clipboard contents.
 
-## Data bounds
+The flow is:
 
-Clipboard data and native metadata are untrusted inputs.
+1. capture destination evidence;
+2. read bounded current text and a stable revision;
+3. freeze the clipboard backend only if revision guarding is available;
+4. revalidate destination, integrity, modifiers, cancellation, and revision;
+5. send one balanced `Ctrl+V` chord;
+6. classify native progress conservatively and stop.
 
-P1 requires:
+A changed revision aborts before paste. Because ClipType never restores an earlier value, it cannot overwrite a newer external clipboard change.
 
-- a configured maximum payload size/length;
-- scans and copies bounded by the native allocation size;
-- bounded clipboard contention/retry;
-- bounded native input batches;
-- bounded modifier-settle and cancellation/focus checkpoints;
-- explicit failure for malformed or excessive data.
+### Keyboard mode
 
-The application must not search indefinitely for terminators, allocate from unchecked native lengths, wait forever for clipboard ownership, or submit the whole unbounded payload as one uncancellable native operation.
+Keyboard mode normalizes text into semantic atoms and sends bounded Unicode/key batches. Plaintext lives only in the active plan and worker lifetime. Batches are not retried after partial or unknown progress.
 
-## Logging rules
+### End of session
 
-### Forbidden
+Owned plaintext is dropped when the plan/session ends. Rust and the operating system do not guarantee immediate physical memory zeroization; the product therefore does not claim forensic memory erasure. The stronger guarantee is architectural: no history, cache, persistence, network transport, crash upload, or diagnostic echo of plaintext is created.
 
-- clipboard/injected plaintext;
-- prefixes, suffixes, or samples of content;
-- focused field contents;
-- window titles by default;
-- raw or unrelated user keystroke capture;
-- long-lived content hashes/fingerprints intended to correlate clipboard values;
-- secrets in panic/crash annotations;
-- serialized sensitive-text wrappers in ordinary diagnostics.
+## Data that is not collected
 
-### Allowed
+ClipType does not intentionally collect or persist:
 
-- payload length or coarse bucket;
-- platform/backend;
-- non-sensitive application/process identity;
-- timing/duration and batch/checkpoint counts;
-- capability/permission/integrity evidence state;
-- result/error category;
-- cancellation/target/modifier abort flags.
+- clipboard history;
+- clipboard/injected text, substrings, samples, prefixes, suffixes, hashes, or fingerprints;
+- focused-field contents;
+- window titles or document names;
+- arbitrary keyboard activity;
+- application usage history;
+- analytics, telemetry, identifiers, or network requests;
+- screenshots or accessibility-tree content;
+- memory dumps or automatic crash uploads.
 
-## Network rule
+## Destination safety
 
-V1 core functionality requires no network access. Clipboard/injected text may not be transmitted. Update checks, telemetry, crash upload, or remote features require separate review and remain content-blind unless a new explicit product/security decision says otherwise.
+### Capture before clipboard work
 
-## Threat model
+The intended destination is captured before plaintext acquisition. Content-free evidence can include opaque process/window/focus identity and integrity relation.
 
-### Accidental injection into the wrong target
+### Revalidation
 
-Mitigations:
+Before native dispatch, and between keyboard batches, ClipType re-captures evidence and compares it with the original. It stops when the target changed, disappeared, became ambiguous, or lost detail required by the original guarantee.
 
-- explicit manual trigger by default;
-- atomically reserve one active session;
-- capture destination evidence immediately at trigger time;
-- revalidate before first and later bounded batches;
-- stop on known change, disappearance, or strict evidence loss;
-- never refocus an old target or adopt a new target to finish;
-- immediate cancellation path.
+ClipType never refocuses the old target and never redirects remaining input to a new target.
 
-Limitation: platform evidence may not distinguish two logical text fields inside one native render host. ClipType documents this limitation and does not make an unsupported exact-caret guarantee.
+### Shared render hosts
 
-### Trigger/modifier contamination
+Some browsers, editors, terminals, and framework applications expose several logical fields through one render host. When Windows does not expose a stable child/focus identity, ClipType cannot promise exact logical-field or caret identity. The compatibility documentation states this limitation instead of inferring field contents.
 
-A global hotkey's modifiers may still be physically held when injection begins, or a user may press a conflicting modifier mid-session.
+## Native input safety
 
-Mitigations:
+- Trigger modifiers must become clear within a bounded settle window.
+- Physical Ctrl/Alt/Shift/Win state is observed; ClipType never emits releases for keys it did not press.
+- Each keyboard batch and paste chord is bounded.
+- Complete, partial, none-accepted, and progress-unknown native results remain distinct.
+- Partial and progress-unknown results are terminal and never automatically retried.
+- Cancellation is checked before dispatch and at safe boundaries; it cannot retract events Windows already accepted.
+- Terminal newlines can execute commands. Users must review multiline clipboard content before triggering in shells, consoles, or administrative tools.
 
-- bounded pre-dispatch modifier-release gate;
-- checks at later batch boundaries when needed;
-- typed conflict/timeout result;
-- ClipType never releases arbitrary physical user keys;
-- no broad global keyboard hook merely to observe unrelated input.
+## Privilege boundary
 
-### Partial or ambiguous synthetic input
+ClipType runs as one unprivileged per-user process by default.
 
-A native input API may accept only part of an event batch, and event counts may not identify a valid Unicode-text prefix.
+- no service;
+- no driver;
+- no privileged helper;
+- no automatic elevation;
+- no UIPI bypass;
+- no cross-session injection;
+- no hidden fallback that weakens integrity checks.
 
-Mitigations:
+A normal-integrity ClipType process does not inject into a higher-integrity target. Users should normally run both applications at the same integrity level rather than elevating ClipType.
 
-- bounded batches;
-- complete/none/partial/progress-unknown outcomes;
-- no automatic retry after partial or unknown input;
-- content-free progress metadata only;
-- stop future batches on ambiguous native progress.
+## Global command privacy
 
-### Clipboard acquisition race/contention
+Global commands use reviewed `RegisterHotKey` combinations with no-repeat behavior. ClipType does not install a low-level keyboard hook and does not observe arbitrary keys. Trigger and cancel commands are typed messages owned by the product's message queue.
 
-Another process may hold or change the clipboard while ClipType prepares an operation.
+## Settings and startup
 
-Mitigations:
+Settings contain only product configuration: mode, enabled state, threshold, speed, notifications, startup selection, and reviewed hotkey preset. The strict parser rejects unknown, duplicate, missing, or invalid values without echoing untrusted content.
 
-- destination captured before acquisition;
-- current-text read only after explicit trigger;
-- bounded retry budget external to the low-level FFI wrapper so cancellation remains observable;
-- copy borrowed native data before releasing the clipboard;
-- payload/allocation bounds;
-- no continuous plaintext watcher or history in P1.
+Writes use a temporary file, flush/sync, validated backup, and replacement flow. Start-at-login uses only the current user's ClipType value under the standard Run key. Installation and startup require no elevation.
 
-### Future clipboard-paste restoration race
+## Logging and user feedback
 
-Another actor may change the clipboard between temporary write and restoration.
+Normal output and notifications contain only content-free fields such as:
 
-Future mitigations:
-
-- generation/ownership evidence;
-- never overwrite a newer external clipboard merely to restore an older snapshot;
-- typed cleanup errors;
-- bounded transaction timing.
-
-This is P2 scope.
-
-### Sensitive-data leakage through diagnostics
-
-Mitigations:
-
-- structured allowlist logging;
-- redacted/content-free `Debug` and error representations for sensitive wrappers;
-- privacy-sentinel tests;
-- content-free crash context;
-- independent review of logs, snapshots, and artifacts.
-
-### Privilege abuse
-
-Mitigations:
-
-- main application runs unprivileged;
-- do not bypass Windows UIPI, macOS consent, or Wayland policy;
-- distinguish known security restriction from blocked cause unknown;
-- do not elevate automatically;
-- isolate any future Linux input privilege into a minimal helper only if approved;
-- minimal local protocol and caller authorization for such a helper.
-
-### Synthetic input surprise or denial of control
-
-Mitigations:
-
-- manual activation;
-- visible non-sensitive active state;
-- independent cancellation event path;
-- responsive message-loop owner;
-- bounded event batches;
-- one active worker;
-- fail closed on target or modifier uncertainty according to policy.
-
-### Malicious clipboard content
-
-Clipboard text is data, not code.
-
-Mitigations:
-
-- no shell evaluation;
-- no template/macro evaluation in V1;
-- explicit control-character handling;
-- no construction of shell command strings from clipboard data;
-- native events produced from validated semantic text elements.
-
-Target applications can still assign operational meaning to intentionally emitted keys. For example, a terminal may treat a line break as command submission. Tests use benign fixtures, and product messaging must not claim that arbitrary multiline terminal injection is inert or universally safe.
-
-## OS permission behavior
-
-Permissions are explained and requested only when needed. Denial is a valid state. ClipType remains controllable and provides remediation guidance without coercive repeated prompts.
-
-For Windows, evidence that a target is higher integrity may produce a known restriction before dispatch. A zero native insertion result without sufficient integrity evidence is not automatically labelled UIPI.
-
-## Memory handling
-
-Rust reduces accidental memory-safety bugs but does not guarantee secret erasure. V1 minimizes plaintext lifetime, copies, serialization, and ownership scope. Sensitive text wrappers should avoid ordinary diagnostic output and casual cloning.
-
-Explicit zeroization may be evaluated for bounded owned buffers, but the project must not claim elimination of copies held by OS clipboard APIs, allocator/runtime behavior, GUI frameworks, crash dumps, or target applications.
-
-## Crash handling
-
-Crash reports and minidumps can contain process memory. Distribution builds should configure crash collection conservatively, document captured data, and never automatically upload raw dumps containing process memory without explicit informed consent.
-
-P1 diagnostics do not deliberately include the active sensitive payload in panic annotations or status snapshots.
-
-## Supply chain
-
-Dependencies touching clipboard, input, FFI, serialization, logging, crash handling, or privileged helpers receive heightened review. Lockfiles, license compatibility, reproducible practices where practical, provenance/signing, and vulnerability checks become release requirements as implementation matures.
-
-Project licensing/contribution terms must be decided before P1 production code is merged.
-
-## P1 security invariants checklist
-
-P1 is blocked if any are false:
-
-- [ ] explicit-trigger default preserved;
-- [ ] destination captured before clipboard acquisition;
-- [ ] only one active session/worker can exist;
-- [ ] hotkey/message-loop owner remains responsive;
-- [ ] payload, clipboard retry, modifier wait, and native dispatch are bounded;
-- [ ] no clipboard/injected plaintext persistence or ordinary logging;
-- [ ] no continuous clipboard history/listener/write/restore path;
-- [ ] physical user modifiers are never forcibly released;
-- [ ] cancellation stops later batches within the measured bound;
-- [ ] known target change stops later batches;
-- [ ] focus-evidence limitations are documented honestly;
-- [ ] partial/unknown native input is never automatically retried;
-- [ ] no security-boundary bypass or false UIPI certainty;
-- [ ] native data/pointers/lengths/handles are validated and cleaned up;
-- [ ] privacy sentinel is absent from ordinary logs/artifacts.
-
-## Long-term release invariants
-
-A release remains blocked if:
-
-- clipboard/injected plaintext is persisted or transmitted by default;
-- privileged helpers are broader than necessary;
-- future clipboard restoration can overwrite a newer external value;
-- compatibility/security claims exceed evidence;
-- crash/telemetry paths expose sensitive process memory without informed consent.
+- generation and phase;
+- selected backend;
+- completed batch count;
+- outcome/remediation category;
+- settings source;
+- capability or native-error category;
+- test counts and artifact digests.
+
+They must not include clipboard text, revision values, window handles, titles, focused-field contents, or test sentinels. Privacy tests deliberately place recognizable generated markers in fixtures and assert that markers do not escape into diagnostics or distributable files.
+
+## Packaging and release integrity
+
+Public beta assets are built from an exact `main` commit in GitHub Actions. The release provides:
+
+- SHA-256 manifest;
+- Sigstore keyless signatures authenticated by the release workflow's GitHub OIDC identity;
+- verification of every signature before publication;
+- GitHub artifact attestations binding assets to repository/workflow/source commit;
+- dependency/license metadata and build information;
+- immutable versioned release assets.
+
+The first beta is not represented as Authenticode publisher-signed because no trusted Windows certificate is configured. Sigstore and GitHub provenance prove workflow identity and integrity, but Windows may still display reputation or SmartScreen warnings.
+
+## Threats and mitigations
+
+| Threat | Mitigation | Residual risk |
+|---|---|---|
+| Clipboard changes between read and paste | stable revision read and immediate pre-dispatch verification | changes after verification but before destination consumption remain an OS/application timing boundary |
+| Focus changes during a session | capture before read and revalidate before/between dispatch | shared render hosts may not expose logical-field identity |
+| Elevated destination | fail/stop at known higher integrity; no elevation bypass | user may manually run both processes elevated, increasing risk |
+| Held trigger modifiers | bounded settle and per-dispatch modifier checks | hardware/driver state can be unavailable or change after observation |
+| Partial native input | conservative terminal outcome; no retry | destination may have consumed a prefix |
+| Clipboard plaintext in logs/artifacts | redacted types, content-free outputs, sentinels, package scans | process memory can still contain active plaintext temporarily |
+| Malicious/corrupt settings | strict fixed schema, validation, backup recovery | local user can intentionally alter their own configuration |
+| Compromised release asset | checksums, keyless signatures, attestations, immutable versioning | endpoint compromise can still replace local files after download |
+| Untrusted destination behavior | explicit trigger and documented application semantics | destination may interpret paste/newlines as commands |
+
+## Vulnerability reporting
+
+Report security issues privately according to `SECURITY.md`. Do not include real clipboard contents, credentials, private documents, or memory dumps. Reproduce with generated placeholders and content-free environment/outcome information.

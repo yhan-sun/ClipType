@@ -1,94 +1,93 @@
-# Compatibility Model
+# Compatibility
 
-ClipType reports compatibility by **capability and evidence**, not merely by operating-system name.
+## Current release channel
 
-## Support labels
+ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibility promise is evidence-based and narrower than “all Windows applications.”
 
-- **Supported:** release-gated and continuously verified for the stated environment/capability.
-- **Degraded:** usable with a weaker explicitly documented guarantee.
-- **Experimental:** implementation exists but is not part of the stable contract.
-- **Unavailable:** the environment lacks the capability or ClipType does not implement it.
-- **Planned:** not implemented.
+## Supported Windows environments
 
-## Evidence labels
+| Environment | Support level | Evidence and conditions |
+|---|---|---|
+| Windows 11 x64, interactive desktop | **Supported beta / recommended** | Uses stable Win32 clipboard, foreground-target, global-hotkey, registry, tray, and `SendInput` APIs. Normal-integrity process and an unlocked interactive desktop are required. |
+| Windows 10 22H2 x64, interactive desktop | **Best-effort compatibility** | Uses the same Win32 API surface, but Windows 10 is outside standard Microsoft support. Use only on a system receiving applicable security updates. |
+| Windows Server 2022 x64 with Desktop Experience | **Mechanism-compatible** | Full workspace, controlled Unicode keyboard/clipboard/auto E2E, release build, and privacy checks run on the `windows-2022` hosted image. Hosted CI is not a physical-user hotkey claim. |
+| Windows Server 2025 x64 with Desktop Experience | **Mechanism-compatible / CI reference** | Full workspace, controlled E2E, host lifecycle, install/startup/uninstall, packaging, and release build run on the `windows-2025` hosted image. |
+| Windows on ARM64 | **Not supported in this release** | No ARM64 release artifact or compatibility gate. |
+| 32-bit Windows | **Not supported** | No x86 artifact or test matrix. |
+| Server Core, services, locked/non-interactive sessions | **Not supported** | ClipType is an interactive per-user tray application, not a service. |
 
-- **Contract:** behavior guaranteed by an official API or deterministic internal contract.
-- **Automated runner:** exercised on an OS runner, without implying an unlocked representative desktop.
-- **Controlled interactive:** exercised against the P1 test target in an unlocked desktop session.
-- **Representative observation:** manually exercised against a named application/version/category.
+“Supported beta” means the shipped x86_64 binary and documented native mechanisms are supported within the constraints below. It does not assert that every application exposes sufficient focus evidence or consumes synthetic input identically.
 
-Automated runner success does not by itself create a support label.
+## Application compatibility
 
-## Capability dimensions
+### Supported application category
 
-Each environment is evaluated for:
+ClipType supports ordinary editable desktop targets that accept at least one of:
 
-1. current clipboard text read;
-2. clipboard temporary write;
-3. safe clipboard restoration;
-4. global trigger;
-5. Unicode keyboard/text injection;
-6. multiline injection;
-7. target/focus evidence strength;
-8. cancellation;
-9. privileged setup requirement;
-10. packaging/signing maturity.
+- Unicode-oriented Win32 `SendInput` keyboard events; or
+- the standard current-clipboard `Ctrl+V` command.
 
-## Current matrix
+This category includes many native and framework-based desktop applications, browsers, editors, chat clients, office applications, and terminal front ends, but category membership alone is not a per-product certification. Destination applications own their paste, formatting, shortcut, and command-submission semantics.
 
-No end-user environment is currently `Supported`. P1-S01 has only established official-contract and automated-runner evidence for a Windows thread-owned hotkey registration/message-queue probe.
+### Backend behavior
 
-| Environment | Keyboard mode | Clipboard mode | Focus guard | Current evidence | Target milestone |
-|---|---|---|---|---|---|
-| Windows 11 | Planned/P1 implementation | Planned/P2 | Planned/P1 | Contract + limited automated probe | P1/P2 |
-| Windows 10 | Planned | Planned | Planned | None yet | P2 |
-| macOS current releases | Planned | Planned | Planned | None yet | P3 |
-| Linux X11 mainstream desktops | Planned | Planned | Planned | None yet | P4 |
-| Wayland wlroots-family | Capability-dependent | Capability-dependent | Capability-dependent | None yet | P5 |
-| Wayland GNOME/Mutter | Capability-dependent | Capability-dependent | Capability-dependent | None yet | P5 |
-| Wayland KDE/KWin | Capability-dependent | Capability-dependent | Capability-dependent | None yet | P5 |
+| Backend | Compatibility contract |
+|---|---|
+| `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
+| `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
+| `auto` | Freezes one backend at session start from payload size and proven capabilities. Explicit modes never silently fall back. |
 
-## Target application categories
+## Known boundaries
 
-Compatibility must be tested across:
+### Elevated targets
 
-- controlled native text target;
-- Chromium-based browser;
-- Firefox;
-- VS Code/Electron editor;
-- terminal emulator;
-- office-style rich editor;
-- remote desktop client;
-- VM console where practical;
-- elevated/admin target on Windows, where a security restriction is expected.
+A normal-integrity ClipType process does not inject into a higher-integrity application. ClipType does not auto-elevate or bypass Windows User Interface Privilege Isolation. Run both applications at the same integrity level instead of elevating ClipType merely to bypass this protection.
 
-Specific applications become named support claims only after repeatable controlled and representative evidence.
+### Focus evidence
 
-## Focus evidence vocabulary
+ClipType captures and revalidates non-content destination evidence. Native controls can usually be distinguished. Applications that host multiple logical fields inside one shared render surface may expose only a top-level/render-host identity. In that case ClipType does not claim an exact logical-field or caret guarantee.
 
-Record the strongest actual guarantee:
+### Terminals and operational input
 
-- top-level target identity;
-- native focused-control identity;
-- render-host-limited identity;
-- degraded/ambiguous evidence;
-- unavailable evidence.
+A terminal may execute a pasted or injected line break. Multiline clipboard content must be reviewed before use in terminals, shells, database consoles, remote-management tools, or administrative interfaces.
 
-Do not describe render-host-limited evidence as exact logical-field or caret tracking.
+### Global hotkeys
 
-## Compatibility record
+Global trigger and cancel commands use reviewed `RegisterHotKey` presets with no-repeat behavior. Registration can fail because another application owns the combination. The tray remains the control surface. A preset change is persisted immediately and becomes active after a controlled restart.
 
-Each observation should include:
+### Rich clipboard formats
 
-- ClipType commit/version;
-- OS version/build/architecture;
-- session and evidence class;
-- backend/capability path;
-- configured bounds;
-- target application/version/category;
-- Unicode/multiline/cancel/focus/modifier results;
-- known limitations and skips.
+Clipboard mode leaves all formats unchanged and invokes ordinary paste. Rich targets may prefer HTML, RTF, image, or application-specific formats already present beside `CF_UNICODETEXT`. Use keyboard mode when Unicode text-event semantics are required.
 
-## Wayland rule
+### Remote and virtual desktops
 
-Never collapse Wayland into one checkbox. A successful wlroots test does not imply GNOME or KDE compatibility, and clipboard availability does not imply synthetic-input availability.
+RDP, VDI, automation agents, secure desktops, and virtualization layers can change foreground, clipboard, and input routing. They are not included in the public beta support promise unless a named environment has separate evidence.
+
+## Evidence classes
+
+Compatibility statements distinguish:
+
+1. deterministic native-neutral policy tests;
+2. Windows adapter contract tests;
+3. hosted Windows controlled E2E using a purpose-built native edit target;
+4. package install/startup/uninstall smoke;
+5. user-reported or maintainer-observed named applications on physical interactive desktops.
+
+Hosted Windows runners prove build, native API, controlled-target, and lifecycle behavior. They do not prove a human physically pressed a global hotkey in every client OS or application. Named reports can expand the application matrix without weakening the underlying safety rules.
+
+## Reporting a compatibility result
+
+Include only content-free information:
+
+- ClipType release and source/release asset digest;
+- Windows edition, version, build, and architecture;
+- application name/version and whether it was elevated;
+- selected backend and outcome category;
+- whether the issue involved hotkey registration, focus evidence, modifiers, clipboard revision, partial input, or destination semantics.
+
+Never attach real clipboard contents, credentials, private messages, focused-field contents, or raw crash dumps containing sensitive process memory.
+
+
+## Pre-beta regression gate
+
+The current public-beta candidate remains blocked by Issue #41 until Chinese input reliability, per-action pacing, tray controls, and a replacement exact-SHA interactive validation are complete. Earlier Issue #33 beta-ready wording is superseded and must not be used as a release authorization.

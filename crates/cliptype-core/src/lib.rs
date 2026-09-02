@@ -1,4 +1,4 @@
-//! Platform-independent domain values and pure P1 policy for ClipType.
+//! Platform-independent domain values and pure product policy for ClipType.
 //!
 //! This crate contains no operating-system API types. Clipboard text is
 //! sensitive by default, native work is bounded, and uncertain platform
@@ -12,7 +12,9 @@ mod limits;
 mod normalization;
 mod outcome;
 mod plan;
+mod product;
 mod sensitive;
+mod settings;
 mod state;
 mod text;
 
@@ -32,7 +34,16 @@ pub use outcome::{
 pub use plan::{
     CapabilityRequirement, KeyboardPlan, PlanCapabilities, PlanError, build_keyboard_plan,
 };
+pub use product::{
+    AutoClipboardThreshold, ClipboardPlan, InjectionBackend, InjectionMode, InjectionPlan,
+    ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, build_injection_plan,
+};
 pub use sensitive::SensitiveText;
+pub use settings::{
+    HotkeyPreset, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
+    MIN_CHARACTERS_PER_SECOND, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError,
+    SpeedPreset,
+};
 pub use state::{
     DispatchDecision, DispatchObservation, FlowEvent, FlowState, NoInputReason, PreparationStage,
     TransitionError, TriggerDecision, classify_dispatch, decide_trigger, transition,

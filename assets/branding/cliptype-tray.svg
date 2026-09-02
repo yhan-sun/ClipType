@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">ClipType notification-area icon</title>
+  <desc id="desc">A simplified blue circular clipboard and insertion caret.</desc>
+  <defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#14d9ff"/><stop offset=".42" stop-color="#0878ff"/><stop offset="1" stop-color="#1234d8"/></linearGradient></defs>
+  <circle cx="128" cy="128" r="122" fill="url(#b)"/>
+  <rect x="54" y="58" width="132" height="150" rx="28" fill="#fff"/>
+  <path d="M92 62V49c0-20 16-36 36-36s36 16 36 36v13c0 10-8 18-18 18h-36c-10 0-18-8-18-18Z" fill="#fff"/>
+  <circle cx="128" cy="48" r="12" fill="#1254dd"/>
+  <rect x="78" y="104" width="72" height="14" rx="7" fill="#129ee9"/>
+  <rect x="78" y="136" width="64" height="14" rx="7" fill="#287ceb"/>
+  <rect x="78" y="168" width="52" height="14" rx="7" fill="#4698ef"/>
+  <path d="M174 108h22v82h-22m-10-82h42m-42 82h42" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+</svg>

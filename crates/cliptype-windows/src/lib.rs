@@ -13,7 +13,13 @@ mod command_host;
 #[cfg(windows)]
 mod keyboard;
 #[cfg(windows)]
+mod paste;
+#[cfg(windows)]
+mod startup;
+#[cfg(windows)]
 mod target;
+#[cfg(windows)]
+mod tray;
 
 #[cfg(windows)]
 pub use clipboard::WindowsClipboard;
@@ -24,4 +30,10 @@ pub use command::{CANCEL_HOTKEY, TRIGGER_HOTKEY, WindowsCommandSignal, WindowsCo
 #[cfg(windows)]
 pub use keyboard::WindowsKeyboard;
 #[cfg(windows)]
+pub use paste::WindowsPaste;
+#[cfg(windows)]
+pub use startup::{StartupError, StartupStatus, WindowsStartup};
+#[cfg(windows)]
 pub use target::WindowsTarget;
+#[cfg(windows)]
+pub use tray::{TrayError, TrayEvent, TrayNotice, WindowsTrayHandle, WindowsTraySignal};

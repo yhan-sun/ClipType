@@ -1,93 +1,8 @@
 # Architecture
 
-## Architectural style
+## Style
 
-ClipType uses **ports and adapters (hexagonal architecture)** around a small Rust application/core layer.
-
-The design separates:
-
-- **policy**: when and how to inject;
-- **capabilities/evidence**: what the current platform can prove and perform;
-- **mechanism**: native clipboard, hotkey, focus, and input APIs;
-- **runtime orchestration**: one-session lifecycle, cancellation, worker ownership;
-- **presentation**: tray/settings/onboarding or a minimal development host.
-
-## Logical system
-
-```text
-                  +-----------------------+
-                  | Native UI / Host      |
-                  +-----------+-----------+
-                              |
-                     Commands / Status
-                              |
-                  +-----------v-----------+
-                  |  Application Service  |
-                  | trigger, cancel, cfg  |
-                  +-----------+-----------+
-                              |
-             +----------------+----------------+
-             |                |                |
-      +------v------+  +------v------+  +------v------+
-      | Clipboard   |  | Target/Focus |  | Capability  |
-      | Port        |  | Port         |  | Provider    |
-      +------+------+  +------+------+  +------+------+
-             |                |                |
-             +--------+-------+----------------+
-                      |
-              +-------v--------+
-              | Injection      |
-              | Planner        |
-              +-------+--------+
-                      |
-              +-------v--------+
-              | Session /      |
-              | Injection Loop |
-              +---+---------+--+
-                  |         |
-          +-------v--+   +--v-------------+
-          | Keyboard |   | ClipboardPaste |
-          | Port     |   | Mechanism      |
-          +----------+   +----------------+
-```
-
-Platform adapters implement the ports:
-
-```text
-Windows: Win32 clipboard / SendInput / hotkey / foreground and GUI-thread evidence
-macOS:   NSPasteboard / CGEvent / Accessibility / app focus APIs
-X11:     selections / XFixes / XTest / X11 focus
-Wayland: capability-dependent data-control/portal + virtual keyboard/uinput
-```
-
-## Repository layout
-
-The target multi-platform layout is:
-
-```text
-ClipType/
-  crates/
-    cliptype-core/         # domain values, normalization, planner, pure policy
-    cliptype-platform/     # native-neutral ports/capability/evidence types
-    cliptype-app/          # application use cases and live session coordination
-    cliptype-windows/      # Win32 adapter
-    cliptype-macos/        # macOS adapter, only in its roadmap phase
-    cliptype-x11/          # X11 adapter, only in its roadmap phase
-    cliptype-wayland/      # Wayland capability/adapters, only in its roadmap phase
-    cliptype-ui/           # shell contracts only if later evidence justifies it
-  apps/
-    cliptype/              # normal user process / platform composition root
-  helpers/
-    cliptype-uinput/       # optional Linux helper only if required and approved
-  docs/
-  tests/
-```
-
-This is a target boundary, not permission to pre-create empty crates before their roadmap phase.
-
-### P1 dependency graph
-
-P1 creates only `cliptype-core`, `cliptype-platform`, `cliptype-app`, `cliptype-windows`, and `apps/cliptype`.
+ClipType uses ports and adapters around a platform-independent Rust core. Policy, native capability/evidence, runtime coordination, platform mechanism, presentation, and release automation are separate boundaries.
 
 ```text
                   cliptype-core
@@ -102,183 +17,176 @@ P1 creates only `cliptype-core`, `cliptype-platform`, `cliptype-app`, `cliptype-
                apps/cliptype
 ```
 
-- `cliptype-platform` depends on core domain types.
-- `cliptype-app` depends on core policy and native-neutral ports.
-- `cliptype-windows` depends on core/native-neutral contracts, not on app orchestration.
-- the executable is the composition root that depends on app plus the Windows adapter.
-- `cliptype-core` MUST remain free of platform APIs.
+- `cliptype-core` owns domain values, normalization, limits, state transitions, outcomes, product configuration, and pure backend selection.
+- `cliptype-platform` owns native-neutral clipboard, target, keyboard, modifier, paste, command, capability, and dispatch-result contracts.
+- `cliptype-app` owns the live one-session coordinator, immutable session/configuration snapshots, cancellation, settings parsing, persistence, and recovery.
+- `cliptype-windows` owns Win32 clipboard, target/integrity evidence, keyboard dispatch, paste, hotkey/message loop, tray, and startup adapters.
+- `apps/cliptype` is the Windows composition root and owns process lifecycle, settings application, content-free status, and user command wiring.
+- packaging/release workflows own reproducible assets, compatibility checks, signatures, attestations, and public publication.
 
-## Core ports
+Core never imports platform APIs. Platform adapters do not choose product policy. Presentation does not implement injection policy directly.
 
-Exact Rust signatures are designed during P1 after the Windows native-mechanism spike. The semantic contracts below are fixed unless changed through the repository decision process.
+## Product runtime
+
+```text
+tray / reviewed global trigger
+  -> atomically reserve one session
+  -> snapshot validated product settings
+  -> capture initial destination evidence
+  -> wait boundedly for physical trigger modifiers to clear
+  -> read bounded current clipboard text and revision
+  -> build and freeze keyboard or clipboard plan
+  -> reject known higher-integrity target
+  -> revalidate destination and modifiers
+  -> dispatch bounded keyboard batches or one guarded Paste chord
+  -> classify complete / none / partial / unknown result
+  -> publish content-free completion
+  -> release session slot
+```
+
+The destination is captured before clipboard work. A second trigger is Busy, not queued. Cancellation is cooperative and checked at safe bounded points. An active session keeps its original settings/backend snapshot even when future settings change.
+
+## Core plans
+
+### Keyboard plan
+
+The core normalizes the owned clipboard text into semantic atoms. A validated plan contains bounded slices and immutable safety configuration. Windows converts those atoms into Unicode or explicit control-key events.
+
+### Clipboard plan
+
+The clipboard plan is content-free except for element count and backend identity. It refers to the already-current OS clipboard and requires both paste capability and a known revision witness. No text is written into a paste plan for later clipboard restoration.
+
+### Auto selection
+
+Auto uses pure policy and current capability evidence. It can select clipboard only when paste and revision guarding are fully available. It selects one backend before dispatch and never changes backend mid-session. Explicit modes never silently fall back.
+
+## Native-neutral ports
 
 ### ClipboardPort
 
 Responsibilities:
 
-- obtain current text and metadata needed for the active operation;
-- later, write temporary text and restore a prior clipboard only when clipboard-paste mode enters scope;
-- expose capability and typed error information.
+- perform one bounded current-text acquisition;
+- return owned text after releasing native clipboard locks/handles;
+- expose a content-blind revision witness;
+- reject a known change across snapshot acquisition.
 
-It MUST NOT implement clipboard history. P1 uses current-text read only and does not require a clipboard listener.
+It does not provide history, continuous observation, write, clear, ownership, or restore operations for the current product.
 
-### HotkeyPort / command event source
-
-Responsibilities:
-
-- register/unregister explicit global commands;
-- report conflicts and unsupported combinations;
-- deliver typed trigger/cancel/shutdown events to the application layer;
-- preserve platform thread/message-loop requirements without invoking policy directly.
-
-It MUST NOT become a general key capture interface.
-
-### FocusPort / TargetEvidencePort
+### TargetPort
 
 Responsibilities:
 
-- capture the strongest practical non-content destination evidence;
-- compare/re-capture evidence to detect meaningful changes;
-- report safe target metadata such as process/application identity;
-- surface unknown/degraded evidence honestly.
+- capture the strongest practical non-content destination identity;
+- compare new evidence with the original;
+- report disappearance, ambiguity, degradation, and integrity relation;
+- redact opaque handles/tokens from diagnostics.
 
-It MUST NOT read focused text. The contract describes evidence, not a universal guarantee of exact logical-field identity.
+It never reads focused-field text or window titles. Shared render hosts may not expose exact logical-field identity.
 
-### KeyboardInjectionPort
-
-Responsibilities:
-
-- accept bounded semantic text batches rather than leaking native event arrays into policy;
-- emit native synthetic text/key input;
-- expose supported Unicode/control/modifier semantics;
-- return typed complete/none/partial/unknown results;
-- avoid retry policy, which belongs to application/core and is conservative.
-
-### ModifierStatePort or equivalent capability
-
-The Windows P1 design may expose modifier safety through the keyboard adapter or a separate native-neutral contract. It must support a bounded pre-dispatch safety check without releasing physical user keys.
-
-### CapabilityProvider
+### KeyboardPort and ModifierPort
 
 Responsibilities:
 
-- detect available APIs, permissions, protocols, integrity/security relation, and degraded states;
-- distinguish known facts from unknown evidence;
-- drive planner eligibility and user explanations.
+- advertise Unicode/line-break/Tab/modifier capabilities;
+- observe conflicting physical modifiers;
+- accept bounded semantic batches;
+- return complete, none, partial, or progress-unknown native results.
 
-## Application services
+The adapter never releases physical keys owned by the user. Retry policy remains in core/application and forbids retry after partial/unknown progress.
 
-### TriggerInjection
+### PastePort
 
-The destination intended by the trigger is captured before potentially contended clipboard work.
+Responsibilities:
 
-Conceptual sequence:
+- advertise ordinary paste and revision-guard capabilities;
+- verify the expected revision immediately before dispatch;
+- send one balanced native Paste chord;
+- return conservative native progress.
 
-1. atomically reserve the single session slot or return busy;
-2. capture initial target evidence immediately;
-3. create cancellation/status state and start the bounded worker;
-4. wait for trigger modifiers to settle within a bound;
-5. acquire current clipboard text;
-6. obtain capabilities/security evidence and create an immutable plan;
-7. revalidate target evidence;
-8. dispatch bounded batches with cancellation/focus/modifier checks;
-9. publish a content-free result and release the session slot.
+It never rewrites or restores clipboard contents.
 
-### CancelInjection
+### Command source
 
-Signals the active cancellation token with bounded delivery latency. It does not wait for the entire payload to finish and does not destroy cleanup state.
+The command source registers reviewed trigger/cancel hotkey pairs with no-repeat behavior, owns its Windows message queue, and delivers only typed product commands. It is not a general keyboard-capture port.
 
-### UpdateConfiguration
+## Windows adapters
 
-Validates and applies supported configuration without weakening mandatory security invariants. P1 may expose only an in-memory/development configuration surface.
+### Clipboard
 
-### QueryStatus
+`CF_UNICODETEXT` is copied from clipboard-owned global memory within configured byte limits. Sequence-number checks are content-blind. Clipboard contention is mapped to bounded retryable categories; malformed, non-text, empty, or oversized data fails clearly.
 
-Provides non-sensitive status: idle, ready, preparing, injecting, cancelling, busy, completed, target-changed, modifier-conflict, blocked, permission-required, unsupported, partial, or native failure.
+### Keyboard and paste
 
-## Pure policy versus runtime coordination
+`SendInput` is used for bounded Unicode/key events and for one balanced `Ctrl+V` chord. Accepted native event counts are preserved. Zero accepted events are not automatically labelled UIPI unless integrity evidence independently proves that boundary.
 
-The project intentionally separates:
+### Destination and integrity
 
-- **pure core policy**: text validation/normalization, plan construction, state-transition decisions, retry rules;
-- **application runtime**: session slot, channels/worker, port calls, cancellation token, focus checks, terminal cleanup;
-- **platform mechanism**: Win32 or other native calls.
+Foreground top-level window, process/thread identity, GUI-thread active/focus evidence, and integrity relation form the destination witness. Detailed original evidence that later weakens fails closed. The normal process does not inject into a known higher-integrity target.
 
-Do not implement two competing state machines in core and app. Core provides deterministic transition/policy functions; app owns the live execution instance.
+### Tray and startup
 
-## Injection session model
+A dedicated Win32 tray thread owns the hidden window, notification icon, menu, and message loop. The host coordinates tray events with the coordinator and settings store. Start-at-login uses one product-owned value under the current user's Run key and a quoted executable command.
 
-Every attempt gets an in-memory session ID and immutable initial context:
+## Settings
 
-- trigger/start timestamp;
-- initial target evidence;
-- clipboard snapshot metadata and ephemeral text;
-- configuration snapshot;
-- capability/security-evidence snapshot;
-- selected plan.
+The fixed versioned schema includes enabled state, mode, auto threshold, speed, notifications, start-at-login, and reviewed hotkey preset. Parsing rejects unknown, duplicate, missing, malformed, or unsupported fields without echoing their values.
 
-The active plan does not silently switch backend mid-session. Clipboard plaintext exists only in memory required for the action and MUST NOT be added to diagnostics.
+Saving uses an adjacent temporary file, durable flush, validated backup rotation, and replacement. A missing file loads safe defaults; a corrupt primary may recover from a valid backup. Settings never contain clipboard contents or target data.
 
-## Concurrency model
+## Process and concurrency
 
-V1 permits at most one active injection session. The session slot must be reserved atomically before a worker is created. A second trigger returns busy; it is not queued.
+The default product is one normal-integrity per-user process. Native message-loop threads communicate with the application through typed channels/signals; the bounded injection worker is separate so hotkey/tray queues remain responsive.
 
-Cancellation is cooperative but checked between bounded native dispatch batches. Focus and conflicting modifier evidence are also checked at bounded points.
+Poisoned synchronization primitives are recovered without exposing plaintext. Worker panics are caught at the session boundary and mapped to an internal-invariant outcome. Shutdown requests cancellation, waits within a configured grace period, joins completed workers, removes tray state, and unregisters commands.
 
-Platform event loops run on platform-required threads and communicate through narrow commands/events. The Windows hotkey/message-loop owner must remain responsive while the injection worker runs. Do not add a full async runtime merely for architectural symmetry; use the smallest concurrency mechanism proven sufficient by platform evidence.
-
-## Process model
-
-Default architecture: **one unprivileged user process** containing core, application services, platform adapter, and shell/host.
-
-An additional process/helper is allowed only when an OS capability requires a privilege or lifecycle boundary. The expected first case is Linux `/dev/uinput`. Such a helper:
-
-- MUST have a minimal, versioned local protocol;
-- MUST NOT receive configuration unrelated to input emission;
-- MUST NOT store clipboard history;
-- SHOULD receive only the minimal current operation plan/events;
-- MUST authenticate/limit local callers appropriately for the platform.
-
-Do not introduce a general daemon/client split merely for symmetry.
+No service, driver, privileged helper, automatic elevation, or general daemon/client split is used on Windows.
 
 ## Error and outcome model
 
-Errors/outcomes are typed for UI and diagnostics:
+Preparation failures and terminal outcomes remain typed and content-free, including:
 
-- busy;
+- disabled, busy, shutting down;
 - unsupported/degraded capability;
-- permission required/denied;
-- known security-boundary restriction;
-- blocked/native cause unknown;
-- target changed/disappeared/evidence unavailable;
-- modifier conflict or settle timeout;
-- clipboard unavailable/busy;
-- empty/non-text/malformed clipboard;
-- injection complete;
-- injection partially completed/progress unknown;
-- cancellation;
-- temporary backend failure;
-- internal invariant failure.
+- empty, non-text, malformed, oversized, unavailable, or changed clipboard;
+- target changed, disappeared, ambiguous, or evidence unavailable;
+- modifier conflict/settle timeout;
+- known security restriction versus blocked cause unknown;
+- complete, cancelled, partial input, progress unknown, native failure, or internal invariant.
 
-A zero native dispatch result must not automatically be labelled UIPI when the OS evidence cannot prove that cause. Do not collapse outcomes into a generic `failed` message.
+UI/logging maps these categories to fixed remediation text. It does not include clipboard text, window title/content, raw handles, or revision numbers.
 
-## Observability
+## Compatibility and release architecture
 
-Allowed diagnostics include backend, platform, safe target application identifier, payload length/count bucket, duration, result category, cancellation/focus flags, and capability state.
+Compatibility is stated by evidence class and mechanism, not by universal application branding. The matrix runs the complete x86_64 product on Windows Server 2022 and 2025 hosted images. Client support and limitations are defined separately in `docs/COMPATIBILITY.md`.
 
-Forbidden diagnostics include clipboard/injected plaintext, focused-field contents, raw key capture, window titles by default, secrets, or persistent content fingerprints.
+The public release workflow:
 
-## Architecture invariants
+- rebuilds from the exact `main` commit;
+- reruns check/test/Clippy;
+- creates versioned ZIP and portable executable assets;
+- embeds licenses, configuration, release notes, dependency/license inventory, and build metadata;
+- generates SHA-256 checksums;
+- signs assets with Sigstore keyless GitHub OIDC identity;
+- verifies signatures before publication;
+- creates GitHub artifact attestations;
+- creates an immutable prerelease only when the tag does not already exist.
+
+Authenticode trusted-publisher signing is a separate future boundary because it requires a trusted certificate or managed signing service.
+
+## Invariants
 
 1. Core policy is platform-independent.
-2. Platform adapters do not decide product policy.
-3. Presentation does not directly implement injection policy.
-4. Destination evidence is captured at explicit trigger time before contended preparation.
+2. Native adapters do not decide product policy.
+3. Destination evidence is captured before clipboard acquisition and revalidated before dispatch.
+4. Detailed evidence degradation fails closed.
 5. Injection is explicit, one-session, bounded, and cancellable.
-6. Focus safety uses the strongest available evidence and reports its limitations.
-7. Physical user modifiers are not released by ClipType.
-8. Partial/unknown synthetic input is never blindly retried.
-9. Clipboard plaintext is ephemeral.
-10. Wayland support is capability-driven, not session-name-driven.
-11. Privilege is isolated and minimized.
-12. Architecture changes require ADRs when defined by repository policy.
+6. Physical modifiers are observed, never released.
+7. Partial/unknown native input is never blindly retried.
+8. Clipboard plaintext is ephemeral and absent from persistence/diagnostics/network transport.
+9. Clipboard mode never writes, clears, owns, or restores the clipboard.
+10. Active plans and settings snapshots are immutable.
+11. Privilege is not escalated or bypassed.
+12. Compatibility wording cannot exceed evidence.
+13. Public assets are versioned, checksummed, signed, attested, and never silently replaced.
+14. Cross-cutting changes require an ADR.

@@ -41,10 +41,13 @@ ADRs capture decisions that should not be changed silently by implementation wor
 ## Follow-up
 ```
 
-## Initial ADRs
+## Accepted ADRs
 
-- ADR-0001 — Rust as the primary systems language.
-- ADR-0002 — Ports and adapters around a platform-independent core.
-- ADR-0003 — Keyboard, clipboard, and auto injection modes.
-- ADR-0004 — Clipboard plaintext is ephemeral and not persisted by default.
-- ADR-0005 — Single unprivileged user process by default; privileged helpers only when required.
+- [`ADR-0001`](0001-rust-primary-language.md) — Rust as the primary systems language.
+- [`ADR-0002`](0002-ports-and-adapters.md) — Ports and adapters around a platform-independent core.
+- [`ADR-0003`](0003-injection-modes.md) — Keyboard, clipboard, and auto injection modes.
+- [`ADR-0004`](0004-ephemeral-clipboard-data.md) — Clipboard plaintext is ephemeral and not persisted by default.
+- [`ADR-0005`](0005-process-and-privilege-boundary.md) — Single unprivileged user process by default.
+- [`ADR-0006`](0006-current-clipboard-paste-with-revision-guard.md) — Revision-guarded current-clipboard paste without rewrite/restore.
+- [`ADR-0007`](0007-native-win32-tray-shell.md) — Native Win32 tray-first product shell and persistent settings boundary.
+- [`ADR-0008`](0008-windows-beta-compatibility-and-release-provenance.md) — Windows beta compatibility, Sigstore signing, and GitHub provenance.

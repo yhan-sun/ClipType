@@ -1,0 +1,262 @@
+name: Windows Public Release
+
+on:
+  pull_request:
+    paths:
+      - "release/**"
+      - "docs/releases/**"
+      - "docs/COMPATIBILITY.md"
+      - "docs/RELEASE.md"
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/windows-release.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "release/VERSION"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-public-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-validate:
+    name: Build releasable Windows x86_64 assets
+    runs-on: windows-2025
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      archive: ${{ steps.version.outputs.archive }}
+      executable: ${{ steps.version.outputs.executable }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate declared release version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content "release\VERSION" -Raw).Trim()
+          if ($version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$') {
+            throw "release/VERSION must be a beta semantic version"
+          }
+          $notes = "docs\releases\$version.md"
+          if (-not (Test-Path $notes)) {
+            throw "release notes missing for $version"
+          }
+          $archive = "ClipType-$version-windows-x86_64.zip"
+          $executable = "ClipType-$version-windows-x86_64.exe"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "archive=$archive" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "executable=$executable" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "CLIPTYPE_RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CLIPTYPE_RELEASE_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CLIPTYPE_RELEASE_EXECUTABLE=$executable" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component clippy
+      - name: Re-run release quality gate
+        run: |
+          cargo check --workspace --all-targets --locked
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build optimized GUI-subsystem executable
+        run: cargo build --release --locked -p cliptype
+      - name: Assemble release assets and dependency inventory
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD "dist"
+          $stage = Join-Path $dist "ClipType"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          Copy-Item "target\release\cliptype.exe" (Join-Path $dist $env:CLIPTYPE_RELEASE_EXECUTABLE)
+          Copy-Item "target\release\cliptype.exe" (Join-Path $stage "cliptype.exe")
+          Copy-Item "packaging\windows\install.ps1" $stage
+          Copy-Item "packaging\windows\uninstall.ps1" $stage
+          Copy-Item "packaging\windows\README.md" $stage
+          Copy-Item "docs\CONFIGURATION.md" (Join-Path $stage "CONFIGURATION.md")
+          Copy-Item "docs\releases\$env:CLIPTYPE_RELEASE_VERSION.md" (Join-Path $stage "RELEASE-NOTES.md")
+          Copy-Item "LICENSE-APACHE" $stage
+          Copy-Item "LICENSE-MIT" $stage
+
+          $metadata = cargo metadata --locked --format-version 1
+          if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed" }
+          $metadataText = ($metadata -join "`n") + "`n"
+          [IO.File]::WriteAllText(
+            (Join-Path $dist "DEPENDENCIES.json"),
+            $metadataText,
+            [Text.UTF8Encoding]::new($false)
+          )
+          Copy-Item (Join-Path $dist "DEPENDENCIES.json") $stage
+
+          $buildInfo = @(
+            "release=$env:CLIPTYPE_RELEASE_VERSION",
+            "source_commit=$env:GITHUB_SHA",
+            "target=x86_64-pc-windows-msvc",
+            "runner_image=$env:ImageOS",
+            "rustc=$(rustc --version)",
+            "cargo=$(cargo --version)",
+            "authenticode=not-configured",
+            "artifact_signing=sigstore-keyless-after-build",
+            "provenance=github-artifact-attestation-after-build"
+          ) -join "`n"
+          [IO.File]::WriteAllText(
+            (Join-Path $dist "BUILD-INFO.txt"),
+            $buildInfo + "`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          Copy-Item (Join-Path $dist "BUILD-INFO.txt") $stage
+
+          Compress-Archive `
+            -Path "$stage\*" `
+            -DestinationPath (Join-Path $dist $env:CLIPTYPE_RELEASE_ARCHIVE) `
+            -CompressionLevel Optimal `
+            -Force
+
+          foreach ($required in @(
+            $env:CLIPTYPE_RELEASE_ARCHIVE,
+            $env:CLIPTYPE_RELEASE_EXECUTABLE,
+            "DEPENDENCIES.json",
+            "BUILD-INFO.txt"
+          )) {
+            if (-not (Test-Path (Join-Path $dist $required))) {
+              throw "release asset missing: $required"
+            }
+          }
+      - name: Enforce distributable privacy boundary
+        shell: pwsh
+        run: |
+          $sentinels = @(
+            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265",
+            "P2_COORDINATOR_PRIVATE_SENTINEL",
+            "SETTINGS_PRIVATE_SENTINEL"
+          )
+          $files = Get-ChildItem "dist\ClipType" -File -Recurse
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+            $unicode = [Text.Encoding]::Unicode.GetString($bytes)
+            foreach ($sentinel in $sentinels) {
+              if ($ascii.Contains($sentinel) -or $unicode.Contains($sentinel)) {
+                throw "privacy sentinel entered $($file.Name)"
+              }
+            }
+          }
+          $signature = Get-AuthenticodeSignature "dist\$env:CLIPTYPE_RELEASE_EXECUTABLE"
+          Write-Output "cliptype_release authenticode_status=$($signature.Status)"
+          Get-ChildItem dist -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Output "cliptype_release asset=$($_.Name) sha256=$hash"
+          }
+      - name: Upload validated assets for publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-release-${{ steps.version.outputs.version }}
+          path: |
+            dist/${{ steps.version.outputs.archive }}
+            dist/${{ steps.version.outputs.executable }}
+            dist/DEPENDENCIES.json
+            dist/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-attest-and-publish:
+    name: Sign, attest, and publish public beta
+    needs: build-and-validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build-and-validate.outputs.version }}
+      ARCHIVE: ${{ needs.build-and-validate.outputs.archive }}
+      EXECUTABLE: ${{ needs.build-and-validate.outputs.executable }}
+    steps:
+      - name: Check out release notes from exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse an existing release or tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "tag $VERSION already exists"
+            exit 1
+          fi
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $VERSION already exists"
+            exit 1
+          fi
+      - name: Download exact validated assets
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: windows-release-${{ needs.build-and-validate.outputs.version }}
+          path: release-assets
+      - name: Create deterministic SHA-256 manifest
+        shell: bash
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          test -f "$ARCHIVE"
+          test -f "$EXECUTABLE"
+          test -f DEPENDENCIES.json
+          test -f BUILD-INFO.txt
+          sha256sum "$ARCHIVE" "$EXECUTABLE" DEPENDENCIES.json BUILD-INFO.txt > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        with:
+          cosign-release: v3.0.3
+      - name: Sign assets using GitHub OIDC and Sigstore
+        shell: bash
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          for asset in "$ARCHIVE" "$EXECUTABLE" DEPENDENCIES.json BUILD-INFO.txt SHA256SUMS.txt; do
+            cosign sign-blob --yes --bundle "$asset.sigstore.json" "$asset"
+          done
+      - name: Verify every Sigstore bundle before publication
+        shell: bash
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/windows-release.yml@refs/heads/main"
+          for asset in "$ARCHIVE" "$EXECUTABLE" DEPENDENCIES.json BUILD-INFO.txt SHA256SUMS.txt; do
+            cosign verify-blob \
+              --bundle "$asset.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$asset"
+          done
+      - name: Generate GitHub artifact attestations
+        id: attest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            release-assets/${{ needs.build-and-validate.outputs.archive }}
+            release-assets/${{ needs.build-and-validate.outputs.executable }}
+            release-assets/DEPENDENCIES.json
+            release-assets/BUILD-INFO.txt
+            release-assets/SHA256SUMS.txt
+      - name: Publish immutable public prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$VERSION" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ClipType $VERSION" \
+            --notes-file "docs/releases/$VERSION.md" \
+            --prerelease \
+            --verify-tag=false
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json tagName,targetCommitish,isPrerelease,url

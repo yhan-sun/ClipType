@@ -1,0 +1,62 @@
+name: P2 Backend Benchmark
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/examples/p2_backend_benchmark.rs"
+      - "crates/cliptype-core/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p2-backend-benchmark.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/examples/p2_backend_benchmark.rs"
+      - "crates/cliptype-core/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-windows/**"
+      - ".github/workflows/p2-backend-benchmark.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CLIPTYPE_RUN_P2_BENCHMARK: "1"
+
+jobs:
+  crossover:
+    name: Derive automatic backend crossover
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Build controlled benchmark
+        run: cargo build --locked -p cliptype --example p2_backend_benchmark
+      - name: Measure explicit keyboard and clipboard paths
+        shell: pwsh
+        run: |
+          $log = "p2-backend-benchmark.log"
+          cargo run --locked --quiet -p cliptype --example p2_backend_benchmark 2>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $rows = (Select-String -Path $log -SimpleMatch "p2_backend_benchmark result=ok").Count
+          if ($rows -ne 4) {
+            throw "expected four benchmark rows"
+          }
+          foreach ($elements in @(16, 64, 256, 1024)) {
+            if (-not (Select-String -Path $log -SimpleMatch "elements=$elements " -Quiet)) {
+              throw "missing benchmark point $elements"
+            }
+          }
+          $recommendations = Select-String -Path $log -Pattern "p2_backend_benchmark recommendation=(16|64|256|1024) "
+          if ($recommendations.Count -ne 1) {
+            throw "benchmark did not emit one supported recommendation"
+          }

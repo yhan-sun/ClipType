@@ -109,10 +109,25 @@ pub trait ModifierPort: Send + Sync {
 }
 
 /// Dispatches one already-validated, already-bounded semantic text batch.
+///
+/// Product orchestration treats each scalar, line break, Tab, simulated wrong
+/// key, corrective Backspace, and corrected key as a separate paced action.
+/// Cancellation, target evidence, and modifier state are therefore checked at
+/// every action boundary rather than only once for a multi-character batch.
 pub trait KeyboardPort: Send + Sync {
     fn capabilities(&self) -> KeyboardCapabilities;
 
     fn dispatch(&self, batch: TextBatch<'_>) -> Result<DispatchResult, KeyboardError>;
+
+    /// Dispatches exactly one corrective Backspace action.
+    ///
+    /// The default keeps existing test/fake ports source-compatible. Product
+    /// implementations that enable typo correction must override it. The
+    /// coordinator applies the same delay, jitter, cancellation, focus, and
+    /// modifier checks to this action as it does to ordinary text actions.
+    fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
+        Err(KeyboardError::UnsupportedSemanticElement)
+    }
 }
 
 #[cfg(test)]

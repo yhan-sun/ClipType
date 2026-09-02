@@ -8,9 +8,13 @@
 
 mod cancellation;
 mod coordinator;
+mod settings;
 
 pub use cancellation::CancellationFlag;
 pub use coordinator::{
     CancelResult, Coordinator, SessionCompletion, ShutdownResult, StatusSnapshot, TriggerResult,
     WaitResult,
+};
+pub use settings::{
+    SettingsError, SettingsLoad, SettingsSource, SettingsStore, parse_settings, serialize_settings,
 };

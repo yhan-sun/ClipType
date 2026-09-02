@@ -3,7 +3,9 @@
 use std::{mem::size_of, ptr::null_mut, slice};
 
 use cliptype_core::{ByteCount, NativeByteLimit, SensitiveText};
-use cliptype_platform::{ClipboardError, ClipboardPort, NativeError, NativeErrorKind};
+use cliptype_platform::{
+    ClipboardError, ClipboardPort, ClipboardRevision, NativeError, NativeErrorKind,
+};
 use windows_sys::Win32::{
     Foundation::{ERROR_ACCESS_DENIED, GetLastError, HGLOBAL},
     System::{
@@ -14,6 +16,12 @@ use windows_sys::Win32::{
         Memory::{GlobalLock, GlobalSize, GlobalUnlock},
     },
 };
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    #[link_name = "GetClipboardSequenceNumber"]
+    fn get_clipboard_sequence_number() -> u32;
+}
 
 // `CF_UNICODETEXT` is the stable Win32 standard clipboard-format identifier.
 // windows-sys 0.61 keeps this winuser constant outside DataExchange while the
@@ -72,6 +80,17 @@ impl ClipboardPort for WindowsClipboard {
         let text = decode_utf16_units(units)?;
 
         Ok(text)
+    }
+
+    fn current_revision(&self) -> ClipboardRevision {
+        // SAFETY: `GetClipboardSequenceNumber` has no pointer, ownership, or
+        // thread-affinity preconditions and does not expose clipboard content.
+        let value = unsafe { get_clipboard_sequence_number() };
+        if value == 0 {
+            ClipboardRevision::Unavailable
+        } else {
+            ClipboardRevision::Known(u64::from(value))
+        }
     }
 }
 

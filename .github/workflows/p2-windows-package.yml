@@ -1,0 +1,175 @@
+name: P2 Windows Package
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/p2-windows-package.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/p2-windows-package.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package-smoke:
+    name: Build, package, install, run, uninstall
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Build release executable
+        run: cargo build --release --locked -p cliptype
+      - name: Assemble unsigned development package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD "dist\ClipType"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\release\cliptype.exe" $stage
+          Copy-Item "packaging\windows\install.ps1" $stage
+          Copy-Item "packaging\windows\uninstall.ps1" $stage
+          Copy-Item "packaging\windows\README.md" $stage
+          Copy-Item "LICENSE-APACHE" $stage
+          Copy-Item "LICENSE-MIT" $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\ClipType-windows-x86_64-unsigned.zip" -Force
+          if (-not (Test-Path "dist\ClipType-windows-x86_64-unsigned.zip")) {
+            throw "development archive was not created"
+          }
+      - name: Parse installation scripts
+        shell: pwsh
+        run: |
+          foreach ($script in @("packaging\windows\install.ps1", "packaging\windows\uninstall.ps1")) {
+            $tokens = $null
+            $errors = $null
+            [void][Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+          }
+      - name: Install, run headless, preserve startup choice, and fully roll back
+        shell: pwsh
+        run: |
+          function Invoke-ClipTypeHeadless {
+            param(
+              [Parameter(Mandatory = $true)][string]$Executable,
+              [Parameter(Mandatory = $true)][string]$Label
+            )
+
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $Executable
+            $startInfo.Arguments = "--headless"
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardInput = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            if (-not $process.Start()) {
+              throw "$Label did not start"
+            }
+            try {
+              $process.StandardInput.WriteLine("shutdown")
+              $process.StandardInput.Close()
+              $stdout = $process.StandardOutput.ReadToEnd()
+              $stderr = $process.StandardError.ReadToEnd()
+              $process.WaitForExit()
+
+              if ($stdout) { Write-Output $stdout.TrimEnd() }
+              if ($stderr) { Write-Output $stderr.TrimEnd() }
+              if ($process.ExitCode -ne 0) {
+                throw "$Label exited with code $($process.ExitCode)"
+              }
+              if (-not $stdout.Contains("cliptype status=stopped")) {
+                throw "$Label did not report controlled shutdown"
+              }
+            } finally {
+              $process.Dispose()
+            }
+          }
+
+          $installRoot = Join-Path $env:RUNNER_TEMP "ClipType Product Install"
+          $localData = Join-Path $env:RUNNER_TEMP "ClipType Local Data"
+          $configPath = Join-Path $localData "ClipType\config.toml"
+          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          $env:LOCALAPPDATA = $localData
+          $env:CLIPTYPE_HEADLESS = "1"
+          try {
+            & "packaging\windows\install.ps1" `
+              -SourceExe "target\release\cliptype.exe" `
+              -InstallRoot $installRoot `
+              -NoLaunch
+            $installed = Join-Path $installRoot "cliptype.exe"
+            if (-not (Test-Path $installed)) { throw "installed executable missing" }
+            if (-not (Test-Path $configPath)) { throw "installer did not create settings" }
+            if (-not (Select-String -Path $configPath -SimpleMatch "start_at_login = false" -Quiet)) {
+              throw "initial settings do not disable startup"
+            }
+            Invoke-ClipTypeHeadless -Executable $installed -Label "installed host smoke"
+
+            & "packaging\windows\install.ps1" `
+              -SourceExe "target\release\cliptype.exe" `
+              -InstallRoot $installRoot `
+              -StartAtLogin `
+              -NoLaunch
+            if (-not (Select-String -Path $configPath -SimpleMatch "start_at_login = true" -Quiet)) {
+              throw "installer did not persist startup choice"
+            }
+            $runValue = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
+            if (-not $runValue.Contains($installed)) { throw "startup registration mismatch" }
+
+            Invoke-ClipTypeHeadless -Executable $installed -Label "startup-enabled host smoke"
+            $runAfterHost = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction Stop).ClipType
+            if (-not $runAfterHost.Contains($installed)) {
+              throw "application startup synchronization removed the installer choice"
+            }
+
+            & "packaging\windows\uninstall.ps1" `
+              -InstallRoot $installRoot `
+              -RemoveSettings
+            if (Test-Path $installRoot) { throw "install root was not removed" }
+            if (Test-Path (Join-Path $localData "ClipType")) { throw "settings root was not removed" }
+            $remaining = (Get-ItemProperty -Path $runKey -Name ClipType -ErrorAction SilentlyContinue).ClipType
+            if ($remaining) { throw "startup registration was not removed" }
+          } finally {
+            Remove-ItemProperty -Path $runKey -Name ClipType -ErrorAction SilentlyContinue
+            Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $localData -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Scan staged distributable files for generated privacy sentinels
+        shell: pwsh
+        run: |
+          $sentinels = @(
+            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265",
+            "P2_COORDINATOR_PRIVATE_SENTINEL",
+            "SETTINGS_PRIVATE_SENTINEL"
+          )
+          $files = Get-ChildItem "dist\ClipType" -File -Recurse
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+            $unicode = [Text.Encoding]::Unicode.GetString($bytes)
+            foreach ($sentinel in $sentinels) {
+              if ($ascii.Contains($sentinel) -or $unicode.Contains($sentinel)) {
+                throw "privacy sentinel entered staged distributable file $($file.Name)"
+              }
+            }
+          }
+          Write-Output "p2_package result=ok kind=unsigned_development_archive files=$($files.Count)"

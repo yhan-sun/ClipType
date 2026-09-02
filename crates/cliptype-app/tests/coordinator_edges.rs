@@ -391,7 +391,7 @@ fn degraded_required_capability_fails_closed() {
 #[test]
 fn target_change_between_batches_stops_later_dispatch() {
     let target = ScriptedTarget::new(
-        [Ok(1), Ok(1), Ok(2)],
+        [Ok(1), Ok(1), Ok(1), Ok(2)],
         Ok(2),
         IntegrityRelation::KnownNotRestricted,
     );
@@ -443,6 +443,7 @@ fn modifier_conflict_between_batches_stops_later_dispatch() {
     let keyboard = ScriptedKeyboard::complete();
     let modifiers = ScriptedModifiers::new(
         [
+            ModifierObservation::Clear,
             ModifierObservation::Clear,
             ModifierObservation::Clear,
             ModifierObservation::Held(ModifierMask::SHIFT),

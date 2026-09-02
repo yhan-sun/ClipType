@@ -1,0 +1,45 @@
+name: Branding Preparation Cleanup
+
+on:
+  push:
+    branches:
+      - automation/cliptype-branding-release-prep
+    paths:
+      - ".github/workflows/branding-cleanup.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/cliptype-branding-release-prep
+          fetch-depth: 0
+      - name: Remove preparation-only files
+        run: python .github/scripts/branding_cleanup.py
+      - name: Verify retained release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f assets/branding/README.md
+          test -f assets/branding/NOTICE.md
+          test -f assets/branding/RELEASE_ASSET_POLICY.md
+          test -f assets/branding/cliptype-primary.svg
+          test -f assets/branding/cliptype-tray.svg
+          test -f apps/cliptype/build.rs
+          test ! -e .github/scripts/branding_cleanup.py
+          test ! -e .github/workflows/branding-cleanup.yml
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: trim branding preparation artifacts"
+          git push origin HEAD:automation/cliptype-branding-release-prep
