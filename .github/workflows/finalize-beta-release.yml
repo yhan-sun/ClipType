@@ -1,0 +1,114 @@
+name: Finalize ClipType Beta Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/finalize-beta-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify merged release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f apps/cliptype/build.rs
+          test -f assets/branding/cliptype-primary.svg
+          test -f assets/branding/cliptype-tray.svg
+          test -f .github/workflows/windows-release.yml
+          test -f release/VERSION
+          version="$(tr -d '\r\n' < release/VERSION)"
+          test "$version" = "v0.1.0-beta.1"
+          test -f "docs/releases/$version.md"
+          grep -F 'public Windows **prerelease**' "docs/releases/$version.md"
+          test ! -e .github/workflows/p2-b02-apply.yml
+          test ! -e .github/scripts/p2_b02_patch.py
+          test ! -e .github/workflows/promote-windows-beta.yml
+      - name: Remove this one-time finalizer before selecting release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/finalize-beta-release.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(release): remove one-time beta finalizer"
+          git push origin HEAD:main
+          echo "FINAL_MAIN_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "VERSION=$(tr -d '\r\n' < release/VERSION)" >> "$GITHUB_ENV"
+      - name: Dispatch release workflow only when release is absent
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; verification only."
+            echo "RELEASE_ALREADY_EXISTED=true" >> "$GITHUB_ENV"
+          else
+            gh workflow run windows-release.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "RELEASE_ALREADY_EXISTED=false" >> "$GITHUB_ENV"
+          fi
+      - name: Wait for exact-source release when newly dispatched
+        if: env.RELEASE_ALREADY_EXISTED == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in $(seq 1 40); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow windows-release.yml --branch main --limit 30 --json databaseId,headSha --jq ".[] | select(.headSha == \"$FINAL_MAIN_SHA\") | .databaseId" | head -n1)"
+            if [ -n "$run_id" ]; then break; fi
+            sleep 5
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+      - name: Verify immutable public prerelease assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json tagName,targetCommitish,isPrerelease,url,assets)"
+          echo "$release_json"
+          test "$(jq -r .isPrerelease <<<"$release_json")" = "true"
+          asset_count="$(jq '.assets | length' <<<"$release_json")"
+          test "$asset_count" -ge 8
+          for required in \
+            "ClipType-$VERSION-windows-x86_64.zip" \
+            "ClipType-$VERSION-windows-x86_64.exe" \
+            "SHA256SUMS.txt" \
+            "DEPENDENCIES.json" \
+            "BUILD-INFO.txt"; do
+            jq -e --arg name "$required" '.assets[] | select(.name == $name)' <<<"$release_json" >/dev/null
+          done
+          sigstore_count="$(jq '[.assets[] | select(.name | endswith(".sigstore.json"))] | length' <<<"$release_json")"
+          test "$sigstore_count" -ge 5
+      - name: Record publication without closing compatibility follow-ups
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          url="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          body="ClipType $VERSION has been published as a GitHub **prerelease** with SHA-256 manifest, Sigstore keyless bundles, GitHub artifact attestations, dependency inventory, and the branded Windows executable/package. Release: $url
+
+The executable is not Authenticode publisher-signed, and issues #33/#41 remain open for post-fix named-client Chinese, timing/jitter, typo/Backspace, and tray-target evidence. Publication does not imply universal per-application compatibility."
+          gh issue comment 33 --repo "$GITHUB_REPOSITORY" --body "$body"
+          gh issue comment 41 --repo "$GITHUB_REPOSITORY" --body "$body"
+          gh issue comment 36 --repo "$GITHUB_REPOSITORY" --body "$body"
