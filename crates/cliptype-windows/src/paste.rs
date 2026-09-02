@@ -47,18 +47,13 @@ impl PastePort for WindowsPaste {
     ) -> Result<DispatchResult, PasteError> {
         verify_revision(expected_revision)?;
         let inputs = paste_inputs();
-        let input_size = i32::try_from(size_of::<INPUT>()).map_err(|_| PasteError::InvalidRequest)?;
+        let input_size =
+            i32::try_from(size_of::<INPUT>()).map_err(|_| PasteError::InvalidRequest)?;
 
         // SAFETY: `inputs` contains exactly four initialized keyboard INPUT
         // records and remains alive throughout the call. One call preserves the
         // intended chord ordering without interleaving ClipType events.
-        let accepted = unsafe {
-            SendInput(
-                PASTE_EVENT_COUNT,
-                inputs.as_ptr(),
-                input_size,
-            )
-        };
+        let accepted = unsafe { SendInput(PASTE_EVENT_COUNT, inputs.as_ptr(), input_size) };
         let native = if accepted == 0 {
             // `SendInput` does not identify UIPI as the cause. Preserve only a
             // numeric code and classify the cause as unknown.
