@@ -315,8 +315,8 @@ mod tests {
     use cliptype_platform::{CommandEvent, CommandEventSource};
 
     use super::{
-        CANCEL_ID, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, TRIGGER_ID,
-        WM_CLIPTYPE_SHUTDOWN, WM_HOTKEY, WindowsCommandSource, decode_message, preset_modifiers,
+        CANCEL_ID, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, TRIGGER_ID, WM_CLIPTYPE_SHUTDOWN,
+        WM_HOTKEY, WindowsCommandSource, decode_message, preset_modifiers,
     };
 
     #[test]
