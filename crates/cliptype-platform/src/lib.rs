@@ -12,9 +12,7 @@ mod native;
 mod paste;
 mod target;
 
-pub use clipboard::{
-    ClipboardError, ClipboardPort, ClipboardRevision, ClipboardSnapshot,
-};
+pub use clipboard::{ClipboardError, ClipboardPort, ClipboardRevision, ClipboardSnapshot};
 pub use command::{CommandEvent, CommandEventSource, CommandSourceError, CommandSourceErrorKind};
 pub use keyboard::{
     DispatchResult, KeyboardCapabilities, KeyboardError, KeyboardPort, ModifierMask,

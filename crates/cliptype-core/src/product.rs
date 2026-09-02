@@ -99,7 +99,9 @@ impl fmt::Display for ProductConfigError {
             Self::ZeroAutoClipboardThreshold => {
                 formatter.write_str("auto clipboard threshold must be non-zero")
             }
-            Self::InvalidSafety(error) => write!(formatter, "invalid safety configuration: {error}"),
+            Self::InvalidSafety(error) => {
+                write!(formatter, "invalid safety configuration: {error}")
+            }
         }
     }
 }
@@ -183,7 +185,9 @@ impl fmt::Display for ProductPlanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => formatter.write_str("ClipType is disabled"),
-            Self::InvalidConfiguration(error) => write!(formatter, "invalid configuration: {error}"),
+            Self::InvalidConfiguration(error) => {
+                write!(formatter, "invalid configuration: {error}")
+            }
             Self::Empty => formatter.write_str("clipboard text is empty"),
             Self::PayloadTooLarge { limit } => {
                 write!(formatter, "semantic payload exceeds limit {}", limit.get())

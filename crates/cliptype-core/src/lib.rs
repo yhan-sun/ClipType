@@ -35,8 +35,7 @@ pub use plan::{
 };
 pub use product::{
     AutoClipboardThreshold, ClipboardPlan, InjectionBackend, InjectionMode, InjectionPlan,
-    ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError,
-    build_injection_plan,
+    ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, build_injection_plan,
 };
 pub use sensitive::SensitiveText;
 pub use state::{

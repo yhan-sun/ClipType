@@ -280,12 +280,7 @@ impl Coordinator {
     ) -> Result<Self, ProductConfigError> {
         let config = config.validate()?;
         Ok(Self::from_validated_ports(
-            clipboard,
-            target,
-            keyboard,
-            modifiers,
-            paste,
-            config,
+            clipboard, target, keyboard, modifiers, paste, config,
         ))
     }
 
@@ -700,11 +695,7 @@ fn wait_for_modifier_clear(context: &SessionContext) -> Result<(), SessionComple
         }
         if sleep_interruptibly(
             &context.cancellation,
-            context
-                .config
-                .safety
-                .modifier_poll_interval
-                .min(remaining),
+            context.config.safety.modifier_poll_interval.min(remaining),
             context.config.safety.modifier_poll_interval,
         ) {
             return Err(SessionCompletion::PreparationFailed(
@@ -786,9 +777,9 @@ const fn clipboard_error_is_retryable(error: ClipboardError) -> bool {
 
 const fn map_clipboard_error(error: ClipboardError) -> PreparationFailure {
     match error {
-        ClipboardError::Busy
-        | ClipboardError::ChangedDuringRead
-        | ClipboardError::Native(_) => PreparationFailure::ClipboardUnavailable,
+        ClipboardError::Busy | ClipboardError::ChangedDuringRead | ClipboardError::Native(_) => {
+            PreparationFailure::ClipboardUnavailable
+        }
         ClipboardError::Empty => PreparationFailure::ClipboardEmpty,
         ClipboardError::NonText => PreparationFailure::ClipboardNonText,
         ClipboardError::Malformed => PreparationFailure::ClipboardMalformed,
@@ -861,9 +852,7 @@ fn verify_target(ports: &SessionPorts, original: &TargetEvidence) -> Result<(), 
         TargetComparison::Same => Ok(()),
         TargetComparison::Changed => Err(TerminalOutcome::TargetChanged),
         TargetComparison::Disappeared => Err(TerminalOutcome::TargetDisappeared),
-        TargetComparison::UnavailableOrAmbiguous => {
-            Err(TerminalOutcome::TargetEvidenceUnavailable)
-        }
+        TargetComparison::UnavailableOrAmbiguous => Err(TerminalOutcome::TargetEvidenceUnavailable),
     }
 }
 
