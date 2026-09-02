@@ -1,0 +1,89 @@
+name: Windows Compatibility Matrix
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/windows-compatibility.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cliptype/**"
+      - "crates/cliptype-*/**"
+      - "packaging/windows/**"
+      - ".github/workflows/windows-compatibility.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CLIPTYPE_RUN_CONTROLLED_E2E: "1"
+  CLIPTYPE_RUN_P2_CONTROLLED_E2E: "1"
+
+jobs:
+  supported-runner-family:
+    name: ${{ matrix.os }} / x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record operating-system evidence
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          Write-Output "cliptype_compat os_caption=$($os.Caption) os_version=$($os.Version) os_build=$($os.BuildNumber) arch=$env:PROCESSOR_ARCHITECTURE"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component clippy
+      - name: Check complete workspace
+        run: cargo check --workspace --all-targets --locked
+      - name: Test complete workspace
+        run: cargo test --workspace --locked
+      - name: Lint complete workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Exercise controlled keyboard and product paths
+        shell: pwsh
+        run: |
+          $p1 = cargo run --locked --quiet -p cliptype --example p1_controlled_e2e 2>&1
+          $p1Code = $LASTEXITCODE
+          $p1 | Write-Output
+          if ($p1Code -ne 0 -or ($p1 | Select-String -SimpleMatch "p1_controlled_e2e result=ok").Count -ne 1) {
+            throw "P1 controlled compatibility path failed"
+          }
+
+          $p2 = cargo run --locked --quiet -p cliptype --example p2_controlled_e2e 2>&1
+          $p2Code = $LASTEXITCODE
+          $p2 | Write-Output
+          if ($p2Code -ne 0 -or ($p2 | Select-String -SimpleMatch "p2_controlled_e2e result=ok").Count -ne 4) {
+            throw "P2 controlled compatibility paths failed"
+          }
+
+          $combined = ($p1 + $p2) -join "`n"
+          foreach ($sentinel in @(
+            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265"
+          )) {
+            if ($combined.Contains($sentinel)) {
+              throw "privacy sentinel escaped into compatibility output"
+            }
+          }
+      - name: Build distribution executable
+        run: cargo build --release --locked -p cliptype
+      - name: Verify expected release artifact
+        shell: pwsh
+        run: |
+          $exe = "target\release\cliptype.exe"
+          if (-not (Test-Path $exe)) { throw "release executable missing" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "cliptype_compat result=ok runner=${{ matrix.os }} sha256=$hash"
