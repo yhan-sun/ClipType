@@ -17,13 +17,8 @@ use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
     System::Threading::GetCurrentThreadId,
     UI::{
-        Shell::{NOTIFYICONDATAW, Shell_NotifyIconW},
-        WindowsAndMessaging::{
-            AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-            DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, MSG, PostQuitMessage,
-            PostThreadMessageW, RegisterClassW, SetForegroundWindow, TrackPopupMenu,
-            TranslateMessage, WNDCLASSW,
-        },
+        Shell::NOTIFYICONDATAW,
+        WindowsAndMessaging::{MSG, WNDCLASSW},
     },
 };
 
@@ -74,16 +69,95 @@ const CMD_QUIT: usize = 1999;
 
 const IDI_APPLICATION: *const u16 = 32_512_usize as *const u16;
 
+type NativeHandle = *mut core::ffi::c_void;
+
 #[link(name = "kernel32")]
 unsafe extern "system" {
     #[link_name = "GetModuleHandleW"]
-    fn get_module_handle_w(module_name: *const u16) -> *mut core::ffi::c_void;
+    fn get_module_handle_w(module_name: *const u16) -> NativeHandle;
 }
 
 #[link(name = "user32")]
 unsafe extern "system" {
+    #[link_name = "AppendMenuW"]
+    fn append_menu_w(menu: NativeHandle, flags: u32, identifier: usize, text: *const u16) -> i32;
+
+    #[link_name = "CreatePopupMenu"]
+    fn create_popup_menu() -> NativeHandle;
+
+    #[link_name = "CreateWindowExW"]
+    fn create_window_ex_w(
+        extended_style: u32,
+        class_name: *const u16,
+        window_name: *const u16,
+        style: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        parent: HWND,
+        menu: NativeHandle,
+        instance: NativeHandle,
+        parameter: *const core::ffi::c_void,
+    ) -> HWND;
+
+    #[link_name = "DefWindowProcW"]
+    fn def_window_proc_w(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+
+    #[link_name = "DestroyMenu"]
+    fn destroy_menu(menu: NativeHandle) -> i32;
+
+    #[link_name = "DestroyWindow"]
+    fn destroy_window(window: HWND) -> i32;
+
+    #[link_name = "DispatchMessageW"]
+    fn dispatch_message_w(message: *const MSG) -> LRESULT;
+
+    #[link_name = "GetCursorPos"]
+    fn get_cursor_pos(point: *mut POINT) -> i32;
+
+    #[link_name = "GetMessageW"]
+    fn get_message_w(message: *mut MSG, window: HWND, minimum: u32, maximum: u32) -> i32;
+
     #[link_name = "LoadIconW"]
-    fn load_icon_w(instance: *mut core::ffi::c_void, name: *const u16) -> *mut core::ffi::c_void;
+    fn load_icon_w(instance: NativeHandle, name: *const u16) -> NativeHandle;
+
+    #[link_name = "PostQuitMessage"]
+    fn post_quit_message(exit_code: i32);
+
+    #[link_name = "PostThreadMessageW"]
+    fn post_thread_message_w(
+        thread_id: u32,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> i32;
+
+    #[link_name = "RegisterClassW"]
+    fn register_class_w(window_class: *const WNDCLASSW) -> u16;
+
+    #[link_name = "SetForegroundWindow"]
+    fn set_foreground_window(window: HWND) -> i32;
+
+    #[link_name = "TrackPopupMenu"]
+    fn track_popup_menu(
+        menu: NativeHandle,
+        flags: u32,
+        x: i32,
+        y: i32,
+        reserved: i32,
+        window: HWND,
+        rectangle: *const core::ffi::c_void,
+    ) -> i32;
+
+    #[link_name = "TranslateMessage"]
+    fn translate_message(message: *const MSG) -> i32;
+}
+
+#[link(name = "shell32")]
+unsafe extern "system" {
+    #[link_name = "Shell_NotifyIconW"]
+    fn shell_notify_icon_w(message: u32, data: *const NOTIFYICONDATAW) -> i32;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,7 +304,7 @@ fn tray_thread(
         Ok(icon) => icon,
         Err(error) => {
             // SAFETY: the window is owned by this thread and not yet destroyed.
-            let _ = unsafe { DestroyWindow(window) };
+            let _ = unsafe { destroy_window(window) };
             *lock_unpoisoned(context()) = None;
             let _ = ready.send(Err(error));
             return;
@@ -245,7 +319,7 @@ fn tray_thread(
     let mut message = MSG::default();
     loop {
         // SAFETY: `message` is writable and this thread owns its queue/window.
-        let status = unsafe { GetMessageW(&raw mut message, null_mut(), 0, 0) };
+        let status = unsafe { get_message_w(&raw mut message, null_mut(), 0, 0) };
         if status == -1 {
             break;
         }
@@ -259,14 +333,14 @@ fn tray_thread(
             continue;
         }
         // SAFETY: `message` was initialized by `GetMessageW`.
-        let _ = unsafe { TranslateMessage(&raw const message) };
+        let _ = unsafe { translate_message(&raw const message) };
         // SAFETY: same initialized-message invariant.
-        let _ = unsafe { DispatchMessageW(&raw const message) };
+        let _ = unsafe { dispatch_message_w(&raw const message) };
     }
 
     icon.remove();
     // SAFETY: the hidden window is owned by this thread.
-    let _ = unsafe { DestroyWindow(window) };
+    let _ = unsafe { destroy_window(window) };
     *lock_unpoisoned(context()) = None;
 }
 
@@ -287,14 +361,14 @@ fn create_hidden_window() -> Result<HWND, TrayError> {
     };
     // SAFETY: the class structure and its name remain valid for the call. A
     // process creates only one tray shell.
-    if unsafe { RegisterClassW(&raw const window_class) } == 0 {
+    if unsafe { register_class_w(&raw const window_class) } == 0 {
         return Err(TrayError::WindowClass);
     }
 
     // SAFETY: class/title are nul-terminated; the hidden top-level window owns
     // no external pointers and is destroyed on the same thread.
     let window = unsafe {
-        CreateWindowExW(
+        create_window_ex_w(
             0,
             class_name.as_ptr(),
             title.as_ptr(),
@@ -333,13 +407,13 @@ unsafe extern "system" fn tray_window_proc(
         }
         WM_DESTROY => {
             // SAFETY: posts quit to the current tray thread.
-            unsafe { PostQuitMessage(0) };
+            unsafe { post_quit_message(0) };
             0
         }
         _ => {
             // SAFETY: unhandled messages are delegated to the default window
             // procedure with the original parameters.
-            unsafe { DefWindowProcW(window, message, wparam, lparam) }
+            unsafe { def_window_proc_w(window, message, wparam, lparam) }
         }
     }
 }
@@ -351,7 +425,7 @@ fn show_context_menu(window: HWND) {
         .unwrap_or_default();
 
     // SAFETY: creates a process-owned menu released before returning.
-    let menu = unsafe { CreatePopupMenu() };
+    let menu = unsafe { create_popup_menu() };
     if menu.is_null() {
         return;
     }
@@ -427,13 +501,13 @@ fn show_context_menu(window: HWND) {
 
     let mut point = POINT::default();
     // SAFETY: `point` is writable.
-    if unsafe { GetCursorPos(&raw mut point) } != 0 {
+    if unsafe { get_cursor_pos(&raw mut point) } != 0 {
         // SAFETY: the hidden tray window is live and owned by this process.
-        let _ = unsafe { SetForegroundWindow(window) };
+        let _ = unsafe { set_foreground_window(window) };
         // SAFETY: menu/window/coordinates are valid; RETURNCMD makes this call
         // return a command id instead of dispatching an unchecked WM_COMMAND.
         let command = unsafe {
-            TrackPopupMenu(
+            track_popup_menu(
                 menu,
                 TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
                 point.x,
@@ -443,11 +517,13 @@ fn show_context_menu(window: HWND) {
                 null(),
             )
         };
-        apply_command(command as usize, settings);
+        if command > 0 {
+            apply_command(command as usize, settings);
+        }
     }
 
     // SAFETY: this function owns the popup menu.
-    let _ = unsafe { DestroyMenu(menu) };
+    let _ = unsafe { destroy_menu(menu) };
 }
 
 fn apply_command(command: usize, mut settings: ProductSettings) {
@@ -541,7 +617,7 @@ impl TrayIcon {
         copy_wide("ClipType — ready", &mut data.szTip);
         // SAFETY: `data` is initialized for NIM_ADD and references a live window
         // and stock icon.
-        if unsafe { Shell_NotifyIconW(NIM_ADD, &raw const data) } == 0 {
+        if unsafe { shell_notify_icon_w(NIM_ADD, &raw const data) } == 0 {
             return Err(TrayError::IconRegistration);
         }
         Ok(Self {
@@ -558,13 +634,13 @@ impl TrayIcon {
         copy_wide(message, &mut self.data.szInfo);
         // SAFETY: the icon was added using this id/window and the fixed strings
         // fit the bounded NOTIFYICONDATAW buffers.
-        let _ = unsafe { Shell_NotifyIconW(NIM_MODIFY, &raw const self.data) };
+        let _ = unsafe { shell_notify_icon_w(NIM_MODIFY, &raw const self.data) };
     }
 
     fn remove(&mut self) {
         if self.present {
             // SAFETY: this deletes only the icon id owned by this guard.
-            let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &raw const self.data) };
+            let _ = unsafe { shell_notify_icon_w(NIM_DELETE, &raw const self.data) };
             self.present = false;
         }
     }
@@ -625,7 +701,7 @@ const fn notice_text(notice: TrayNotice) -> (&'static str, &'static str, u32) {
     }
 }
 
-fn append(menu: *mut core::ffi::c_void, id: usize, label: &str, checked: bool, disabled: bool) {
+fn append(menu: NativeHandle, id: usize, label: &str, checked: bool, disabled: bool) {
     let label = wide(label);
     let mut flags = MF_STRING;
     if checked {
@@ -636,12 +712,12 @@ fn append(menu: *mut core::ffi::c_void, id: usize, label: &str, checked: bool, d
     }
     // SAFETY: menu is live; the nul-terminated label is copied by Win32 during
     // this call and the command identifier is process-local.
-    let _ = unsafe { AppendMenuW(menu, flags, id, label.as_ptr()) };
+    let _ = unsafe { append_menu_w(menu, flags, id, label.as_ptr()) };
 }
 
-fn append_separator(menu: *mut core::ffi::c_void) {
+fn append_separator(menu: NativeHandle) {
     // SAFETY: menu is live and separators carry no string pointer.
-    let _ = unsafe { AppendMenuW(menu, MF_SEPARATOR, 0, null()) };
+    let _ = unsafe { append_menu_w(menu, MF_SEPARATOR, 0, null()) };
 }
 
 fn copy_wide<const N: usize>(value: &str, target: &mut [u16; N]) {
@@ -658,7 +734,7 @@ fn copy_wide<const N: usize>(value: &str, target: &mut [u16; N]) {
 fn post_thread_message(thread_id: u32, message: u32) -> Result<(), TrayError> {
     // SAFETY: the id belongs to the tray owner thread; private messages carry no
     // pointers or content.
-    if unsafe { PostThreadMessageW(thread_id, message, 0, 0) } == 0 {
+    if unsafe { post_thread_message_w(thread_id, message, 0, 0) } == 0 {
         Err(TrayError::EventLoop)
     } else {
         Ok(())
