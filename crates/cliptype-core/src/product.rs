@@ -53,6 +53,8 @@ pub struct ProductConfig {
     pub enabled: bool,
     pub mode: InjectionMode,
     pub auto_clipboard_threshold: AutoClipboardThreshold,
+    pub jitter_percent: u8,
+    pub typo_probability_percent: u8,
     pub safety: P1Config,
 }
 
@@ -61,6 +63,12 @@ impl ProductConfig {
         self.safety
             .validate()
             .map_err(ProductConfigError::InvalidSafety)?;
+        if self.jitter_percent > crate::MAX_JITTER_PERCENT {
+            return Err(ProductConfigError::JitterOutOfRange);
+        }
+        if self.typo_probability_percent > crate::MAX_TYPO_PROBABILITY_PERCENT {
+            return Err(ProductConfigError::TypoProbabilityOutOfRange);
+        }
         Ok(self)
     }
 
@@ -69,6 +77,8 @@ impl ProductConfig {
             enabled: true,
             mode: InjectionMode::Keyboard,
             auto_clipboard_threshold: AutoClipboardThreshold::new(256)?,
+            jitter_percent: 0,
+            typo_probability_percent: 0,
             safety,
         }
         .validate()
@@ -82,6 +92,8 @@ impl Default for ProductConfig {
             mode: InjectionMode::Auto,
             auto_clipboard_threshold: AutoClipboardThreshold::new(256)
                 .expect("P2 auto clipboard threshold is non-zero"),
+            jitter_percent: 0,
+            typo_probability_percent: 0,
             safety: P1Config::default(),
         }
     }
@@ -90,6 +102,8 @@ impl Default for ProductConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProductConfigError {
     ZeroAutoClipboardThreshold,
+    JitterOutOfRange,
+    TypoProbabilityOutOfRange,
     InvalidSafety(ConfigError),
 }
 
@@ -98,6 +112,10 @@ impl fmt::Display for ProductConfigError {
         match self {
             Self::ZeroAutoClipboardThreshold => {
                 formatter.write_str("auto clipboard threshold must be non-zero")
+            }
+            Self::JitterOutOfRange => formatter.write_str("jitter percent is out of range"),
+            Self::TypoProbabilityOutOfRange => {
+                formatter.write_str("typo probability percent is out of range")
             }
             Self::InvalidSafety(error) => {
                 write!(formatter, "invalid safety configuration: {error}")

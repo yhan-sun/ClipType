@@ -40,7 +40,9 @@ pub use product::{
 };
 pub use sensitive::SensitiveText;
 pub use settings::{
-    HotkeyPreset, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError, SpeedPreset,
+    HotkeyPreset, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
+    MIN_CHARACTERS_PER_SECOND, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError,
+    SpeedPreset,
 };
 pub use state::{
     DispatchDecision, DispatchObservation, FlowEvent, FlowState, NoInputReason, PreparationStage,

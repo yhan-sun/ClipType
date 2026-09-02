@@ -316,7 +316,7 @@ fn multi_batch_unicode_path_is_ordered_and_content_correct() {
         status.completion,
         Some(SessionCompletion::Finished(TerminalOutcome::Completed))
     );
-    assert_eq!(status.batches_completed, 5);
+    assert_eq!(status.batches_completed, 9);
     assert_eq!(keyboard.output(), "A中😀e\u{301}\nB\tC");
 
     let trace = trace.snapshot();

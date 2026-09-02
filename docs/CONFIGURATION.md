@@ -20,12 +20,15 @@ enabled = true
 mode = "auto"
 auto_clipboard_threshold = 256
 speed = "normal"
+characters_per_second = 40
+jitter_percent = 0
+typo_probability_percent = 0
 notifications = true
 start_at_login = false
 hotkey = "ctrl-alt-shift-function"
 ```
 
-The parser is strict. Every field is required in an existing file. Unknown keys, duplicate keys, inline/untrusted trailing text, malformed quoting, invalid booleans/numbers, unsupported enum values, zero threshold, or unsupported schema version fail visibly rather than being ignored.
+The parser is strict. Existing files may omit the three human-typing fields for backward compatibility; they are migrated in memory from the legacy speed preset and written on the next settings save. All other documented fields are required. Unknown keys, duplicate keys, inline/untrusted trailing text, malformed quoting, invalid booleans/numbers, unsupported enum values, zero threshold, or unsupported schema version fail visibly rather than being ignored.
 
 ## Fields
 
@@ -55,15 +58,21 @@ The default is `256`. It is a policy crossover covered by the backend benchmark,
 
 ### `speed`
 
-Accepted values and current keyboard pacing:
+Accepted values are `"slow"`, `"normal"`, `"fast"`, and `"custom"`. The three presets map to 8, 40, and 120 characters per second. Selecting a tray adjustment sets the value to `"custom"`.
 
-| Value | Inter-batch interval |
-|---|---:|
-| `"slow"` | 12 ms |
-| `"normal"` | 5 ms |
-| `"fast"` | 1 ms |
+### `characters_per_second`
 
-The interval is applied between bounded keyboard batches. Clipboard mode sends one bounded Paste chord and does not use keyboard pacing.
+The exact keyboard-mode target pacing rate, from 1 through 250 actions per second. Operating-system scheduling and destination processing can make the measured rate lower. One Unicode scalar, line break, Tab, wrong adjacent character, corrective Backspace, or corrected character consumes one timing slot. The configured value is therefore an action rate; enabling corrected typos intentionally reduces the throughput of original text.
+
+### `jitter_percent`
+
+Independent bounded timing jitter from 0 through 95 percent. Jitter is sampled for every emitted keyboard action, including corrective Backspace. Clipboard paste remains one atomic destination-owned action and is not stretched into artificial per-character timing.
+
+### `typo_probability_percent`
+
+An opt-in corrected-typo probability from 0 through 25 percent. The default is 0. Eligible ASCII characters may be replaced by a US-QWERTY adjacent character, followed by Backspace and the intended character. CJK, emoji, combining marks, whitespace, line breaks, and Tab are never mutated.
+
+Do not enable typo simulation for passwords, source code, terminals, commands, identifiers, checksums, or exact-data entry. Clipboard mode never applies typo simulation.
 
 ### `notifications`
 

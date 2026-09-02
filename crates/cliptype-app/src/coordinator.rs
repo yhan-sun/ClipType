@@ -4,10 +4,10 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use cliptype_core::{
@@ -15,7 +15,7 @@ use cliptype_core::{
     FlowEvent, FlowState, InjectionBackend, InjectionPlan, IntegrityRelation, NoInputReason,
     NormalizationError, P1Config, PlanCapabilities, PlanError, PreparationFailure,
     ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, SessionPhase,
-    TerminalOutcome, TextBatch, build_injection_plan, classify_dispatch, transition,
+    TerminalOutcome, TextAtom, TextBatch, build_injection_plan, classify_dispatch, transition,
 };
 use cliptype_platform::{
     ClipboardError, ClipboardPort, ClipboardRevision, ClipboardSnapshot, DispatchResult,
@@ -25,6 +25,8 @@ use cliptype_platform::{
 };
 
 use crate::CancellationFlag;
+
+static TYPING_SEED_COUNTER: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionCompletion {
@@ -204,6 +206,8 @@ impl Coordinator {
             mode: cliptype_core::InjectionMode::Keyboard,
             auto_clipboard_threshold: AutoClipboardThreshold::new(256)
                 .expect("legacy keyboard threshold is non-zero"),
+            jitter_percent: 0,
+            typo_probability_percent: 0,
             safety: config,
         };
 
@@ -231,6 +235,8 @@ impl Coordinator {
             mode: cliptype_core::InjectionMode::Keyboard,
             auto_clipboard_threshold: AutoClipboardThreshold::new(256)
                 .expect("legacy keyboard threshold is non-zero"),
+            jitter_percent: 0,
+            typo_probability_percent: 0,
             safety: config,
         };
 
@@ -385,6 +391,7 @@ impl Coordinator {
             cancellation,
             original_target: target,
             flow,
+            typing_seed: next_typing_seed(generation),
         };
         let shared = Arc::clone(&self.shared);
         let spawn = thread::Builder::new()
@@ -471,6 +478,7 @@ struct SessionContext {
     cancellation: Arc<CancellationFlag>,
     original_target: TargetEvidence,
     flow: FlowState,
+    typing_seed: u64,
 }
 
 fn worker_entry(mut context: SessionContext, shared: Arc<SharedRuntime>) {
@@ -546,44 +554,221 @@ fn run_keyboard_plan(
     context: &mut SessionContext,
     plan: &cliptype_core::KeyboardPlan,
 ) -> SessionCompletion {
-    let batch_count = plan.batch_slices().len();
-    for (index, atoms) in plan.batch_slices().enumerate() {
-        if context.cancellation.is_requested() {
-            return SessionCompletion::Finished(TerminalOutcome::Cancelled);
-        }
-        if let Err(outcome) = verify_target(&context.ports, &context.original_target) {
-            return SessionCompletion::Finished(outcome);
-        }
-        if context.ports.modifiers.observe_modifiers() != ModifierObservation::Clear {
-            return SessionCompletion::Finished(TerminalOutcome::ModifierConflict);
-        }
+    let mut random = TypingRandom::new(context.typing_seed);
 
-        let batch = match TextBatch::new(atoms, plan.config().dispatch_batch_limit) {
-            Ok(batch) => batch,
-            Err(_) => {
-                return SessionCompletion::Finished(TerminalOutcome::InternalInvariant);
-            }
-        };
-        let native = match context.ports.keyboard.dispatch(batch) {
-            Ok(result) => result,
-            Err(error) => return SessionCompletion::Finished(map_keyboard_error(error)),
-        };
-        if let Err(outcome) = accept_dispatch(context, native) {
-            return SessionCompletion::Finished(outcome);
-        }
-
-        if index + 1 < batch_count
-            && sleep_interruptibly(
-                &context.cancellation,
-                context.config.safety.keyboard_interval,
-                context.config.safety.modifier_poll_interval,
-            )
+    for atom in plan.text().atoms().iter().copied() {
+        if let Some(wrong) =
+            adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
         {
-            return SessionCompletion::Finished(TerminalOutcome::Cancelled);
+            if let Err(outcome) =
+                dispatch_timed_action(context, plan, KeyboardAction::Atom(wrong), &mut random)
+            {
+                return SessionCompletion::Finished(outcome);
+            }
+            if let Err(outcome) =
+                dispatch_timed_action(context, plan, KeyboardAction::Backspace, &mut random)
+            {
+                return SessionCompletion::Finished(outcome);
+            }
+        }
+
+        if let Err(outcome) =
+            dispatch_timed_action(context, plan, KeyboardAction::Atom(atom), &mut random)
+        {
+            return SessionCompletion::Finished(outcome);
         }
     }
 
     complete_flow(context)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyboardAction {
+    Atom(TextAtom),
+    Backspace,
+}
+
+fn dispatch_timed_action(
+    context: &mut SessionContext,
+    plan: &cliptype_core::KeyboardPlan,
+    action: KeyboardAction,
+    random: &mut TypingRandom,
+) -> Result<(), TerminalOutcome> {
+    verify_action_preconditions(context)?;
+
+    let delay = jittered_delay(
+        context.config.safety.keyboard_interval,
+        context.config.jitter_percent,
+        random,
+    );
+    if sleep_interruptibly(
+        &context.cancellation,
+        delay,
+        context.config.safety.modifier_poll_interval,
+    ) {
+        return Err(TerminalOutcome::Cancelled);
+    }
+
+    // The target and physical modifiers can change while the humanized delay
+    // elapses, so re-check immediately before every native action.
+    verify_action_preconditions(context)?;
+
+    let native = match action {
+        KeyboardAction::Atom(atom) => {
+            let batch = TextBatch::new(
+                std::slice::from_ref(&atom),
+                plan.config().dispatch_batch_limit,
+            )
+            .map_err(|_| TerminalOutcome::InternalInvariant)?;
+            context
+                .ports
+                .keyboard
+                .dispatch(batch)
+                .map_err(map_keyboard_error)?
+        }
+        KeyboardAction::Backspace => context
+            .ports
+            .keyboard
+            .dispatch_backspace()
+            .map_err(map_keyboard_error)?,
+    };
+    accept_dispatch(context, native)
+}
+
+fn verify_action_preconditions(context: &SessionContext) -> Result<(), TerminalOutcome> {
+    if context.cancellation.is_requested() {
+        return Err(TerminalOutcome::Cancelled);
+    }
+    verify_target(&context.ports, &context.original_target)?;
+    if context.ports.modifiers.observe_modifiers() != ModifierObservation::Clear {
+        return Err(TerminalOutcome::ModifierConflict);
+    }
+    Ok(())
+}
+
+fn adjacent_typo(
+    atom: TextAtom,
+    probability_percent: u8,
+    random: &mut TypingRandom,
+) -> Option<TextAtom> {
+    if probability_percent == 0 || random.below(100) >= u64::from(probability_percent) {
+        return None;
+    }
+    let TextAtom::Scalar(value) = atom else {
+        return None;
+    };
+    if !value.is_ascii() {
+        return None;
+    }
+
+    let lower = value.to_ascii_lowercase();
+    let candidates: &[u8] = match lower {
+        '1' => b"2q",
+        '2' => b"13qw",
+        '3' => b"24we",
+        '4' => b"35er",
+        '5' => b"46rt",
+        '6' => b"57ty",
+        '7' => b"68yu",
+        '8' => b"79ui",
+        '9' => b"80io",
+        '0' => b"9-op",
+        'q' => b"12wa",
+        'w' => b"23qesa",
+        'e' => b"34wrsd",
+        'r' => b"45etdf",
+        't' => b"56ryfg",
+        'y' => b"67tugh",
+        'u' => b"78yihj",
+        'i' => b"89uojk",
+        'o' => b"90ipkl",
+        'p' => b"0-[ol",
+        'a' => b"qwsz",
+        's' => b"weadzx",
+        'd' => b"ersfxc",
+        'f' => b"rtdgcv",
+        'g' => b"tyfhvb",
+        'h' => b"yugjbn",
+        'j' => b"uihknm",
+        'k' => b"iojlm,",
+        'l' => b"opk;.,",
+        'z' => b"asx",
+        'x' => b"zsdc",
+        'c' => b"xdfv",
+        'v' => b"cfgb",
+        'b' => b"vghn",
+        'n' => b"bhjm",
+        'm' => b"njk,",
+        '-' => b"0=p",
+        '=' => b"-[",
+        '[' => b"p];",
+        ']' => b"[\'",
+        ';' => b"lp.'",
+        '\'' => b";]/",
+        ',' => b"mkl.",
+        '.' => b",l;/",
+        '/' => b".;'",
+        _ => return None,
+    };
+    let selected = char::from(candidates[random.below(candidates.len() as u64) as usize]);
+    let selected = if value.is_ascii_uppercase() {
+        selected.to_ascii_uppercase()
+    } else {
+        selected
+    };
+    Some(TextAtom::Scalar(selected))
+}
+
+fn jittered_delay(base: Duration, jitter_percent: u8, random: &mut TypingRandom) -> Duration {
+    if jitter_percent == 0 || base.is_zero() {
+        return base;
+    }
+
+    let spread = i64::from(jitter_percent);
+    let width = u64::try_from(spread.saturating_mul(2).saturating_add(1)).unwrap_or(1);
+    let offset = i64::try_from(random.below(width)).unwrap_or(0) - spread;
+    let factor = u128::try_from(100_i64.saturating_add(offset)).unwrap_or(1);
+    let nanos = base.as_nanos().saturating_mul(factor) / 100;
+    Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+}
+
+struct TypingRandom {
+    state: u64,
+}
+
+impl TypingRandom {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 {
+                0xA076_1D64_78BD_642F
+            } else {
+                seed
+            },
+        }
+    }
+
+    fn next(&mut self) -> u64 {
+        let mut value = self.state;
+        value ^= value >> 12;
+        value ^= value << 25;
+        value ^= value >> 27;
+        self.state = value;
+        value.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, upper: u64) -> u64 {
+        if upper <= 1 { 0 } else { self.next() % upper }
+    }
+}
+
+fn next_typing_seed(generation: u64) -> u64 {
+    let clock = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(0);
+    clock
+        ^ generation.rotate_left(17)
+        ^ TYPING_SEED_COUNTER.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed)
 }
 
 fn run_clipboard_plan(
@@ -946,5 +1131,55 @@ impl PastePort for UnavailablePaste {
         _expected_revision: ClipboardRevision,
     ) -> Result<DispatchResult, PasteError> {
         Err(PasteError::Unsupported)
+    }
+}
+
+#[cfg(test)]
+mod human_typing_tests {
+    use std::time::Duration;
+
+    use cliptype_core::TextAtom;
+
+    use super::{TypingRandom, adjacent_typo, jittered_delay};
+
+    #[test]
+    fn jitter_is_bounded_around_every_base_interval() {
+        let base = Duration::from_millis(100);
+        let mut random = TypingRandom::new(7);
+
+        for _ in 0..1_000 {
+            let delay = jittered_delay(base, 20, &mut random);
+            assert!(delay >= Duration::from_millis(80));
+            assert!(delay <= Duration::from_millis(120));
+        }
+    }
+
+    #[test]
+    fn adjacent_typos_are_ascii_only_and_preserve_case() {
+        let mut random = TypingRandom::new(11);
+        let lower = adjacent_typo(TextAtom::Scalar('g'), 100, &mut random);
+        let mut random = TypingRandom::new(11);
+        let upper = adjacent_typo(TextAtom::Scalar('G'), 100, &mut random);
+
+        assert_eq!(
+            lower
+                .and_then(TextAtom::exposed_scalar)
+                .map(|value| value.to_ascii_uppercase()),
+            upper.and_then(TextAtom::exposed_scalar)
+        );
+        let mut random = TypingRandom::new(1);
+        assert_eq!(adjacent_typo(TextAtom::Scalar('你'), 25, &mut random), None);
+        assert_eq!(adjacent_typo(TextAtom::LineBreak, 25, &mut random), None);
+        assert_eq!(adjacent_typo(TextAtom::Tab, 25, &mut random), None);
+    }
+
+    #[test]
+    fn zero_probability_and_zero_jitter_are_exact() {
+        let mut random = TypingRandom::new(3);
+        assert_eq!(adjacent_typo(TextAtom::Scalar('a'), 0, &mut random), None);
+        assert_eq!(
+            jittered_delay(Duration::from_millis(37), 0, &mut random),
+            Duration::from_millis(37)
+        );
     }
 }

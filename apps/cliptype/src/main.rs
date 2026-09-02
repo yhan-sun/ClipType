@@ -158,9 +158,12 @@ mod windows_host {
         }
 
         println!(
-            "cliptype status=ready mode={:?} enabled={} trigger={} cancel={} tray={} settings_source={:?}",
+            "cliptype status=ready mode={:?} enabled={} cps={} jitter_percent={} typo_percent={} trigger={} cancel={} tray={} settings_source={:?}",
             settings.mode,
             settings.enabled,
+            settings.characters_per_second,
+            settings.jitter_percent,
+            settings.typo_probability_percent,
             commands.trigger_hotkey(),
             commands.cancel_hotkey(),
             !options.headless,
@@ -304,10 +307,13 @@ mod windows_host {
         tray.update_settings(proposed);
         notify(Some(tray), TrayNotice::SettingsSaved);
         println!(
-            "cliptype event=settings_saved mode={:?} enabled={} speed={:?} startup={} hotkey_restart_required={}",
+            "cliptype event=settings_saved mode={:?} enabled={} speed={:?} cps={} jitter_percent={} typo_percent={} startup={} hotkey_restart_required={}",
             proposed.mode,
             proposed.enabled,
             proposed.speed,
+            proposed.characters_per_second,
+            proposed.jitter_percent,
+            proposed.typo_probability_percent,
             proposed.start_at_login,
             proposed.hotkey != current.hotkey,
         );

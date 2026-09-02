@@ -242,6 +242,8 @@ mod windows_e2e {
                 mode: case.mode,
                 auto_clipboard_threshold: AutoClipboardThreshold::new(case.threshold)
                     .map_err(|_| E2eError::CoordinatorConfiguration)?,
+                jitter_percent: 0,
+                typo_probability_percent: 0,
                 safety: P1Config {
                     keyboard_interval: Duration::from_millis(1),
                     ..P1Config::default()

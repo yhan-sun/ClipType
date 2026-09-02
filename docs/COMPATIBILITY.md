@@ -86,3 +86,8 @@ Include only content-free information:
 - whether the issue involved hotkey registration, focus evidence, modifiers, clipboard revision, partial input, or destination semantics.
 
 Never attach real clipboard contents, credentials, private messages, focused-field contents, or raw crash dumps containing sensitive process memory.
+
+
+## Pre-beta regression gate
+
+The current public-beta candidate remains blocked by Issue #41 until Chinese input reliability, per-action pacing, tray controls, and a replacement exact-SHA interactive validation are complete. Earlier Issue #33 beta-ready wording is superseded and must not be used as a release authorization.

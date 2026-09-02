@@ -193,6 +193,8 @@ mod benchmark {
                     mode,
                     auto_clipboard_threshold: AutoClipboardThreshold::new(256)
                         .map_err(|_| BenchmarkError::CoordinatorConfiguration)?,
+                    jitter_percent: 0,
+                    typo_probability_percent: 0,
                     safety: P1Config {
                         keyboard_interval: Duration::from_millis(1),
                         ..P1Config::default()

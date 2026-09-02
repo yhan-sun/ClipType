@@ -29,6 +29,7 @@ const WM_APP: u32 = 0x8000;
 const WM_TRAY_CALLBACK: u32 = WM_APP + 0x520;
 const WM_TRAY_NOTICE: u32 = WM_APP + 0x521;
 const WM_TRAY_SHUTDOWN: u32 = WM_APP + 0x522;
+const WM_NULL: u32 = 0x0000;
 const WM_DESTROY: u32 = 0x0002;
 const WM_CONTEXTMENU: u32 = 0x007B;
 const WM_LBUTTONDBLCLK: u32 = 0x0203;
@@ -63,6 +64,17 @@ const CMD_MODE_CLIPBOARD: usize = 1202;
 const CMD_SPEED_SLOW: usize = 1300;
 const CMD_SPEED_NORMAL: usize = 1301;
 const CMD_SPEED_FAST: usize = 1302;
+const CMD_SPEED_MINUS_TEN: usize = 1303;
+const CMD_SPEED_MINUS_ONE: usize = 1304;
+const CMD_SPEED_PLUS_ONE: usize = 1305;
+const CMD_SPEED_PLUS_TEN: usize = 1306;
+const CMD_SPEED_HEADER: usize = 1307;
+const CMD_JITTER_MINUS_FIVE: usize = 1310;
+const CMD_JITTER_PLUS_FIVE: usize = 1311;
+const CMD_JITTER_HEADER: usize = 1312;
+const CMD_TYPO_MINUS_ONE: usize = 1320;
+const CMD_TYPO_PLUS_ONE: usize = 1321;
+const CMD_TYPO_HEADER: usize = 1322;
 const CMD_STARTUP: usize = 1400;
 const CMD_HOTKEY: usize = 1500;
 const CMD_QUIT: usize = 1999;
@@ -116,11 +128,17 @@ unsafe extern "system" {
     #[link_name = "GetCursorPos"]
     fn get_cursor_pos(point: *mut POINT) -> i32;
 
+    #[link_name = "GetForegroundWindow"]
+    fn get_foreground_window() -> HWND;
+
     #[link_name = "GetMessageW"]
     fn get_message_w(message: *mut MSG, window: HWND, minimum: u32, maximum: u32) -> i32;
 
     #[link_name = "LoadIconW"]
     fn load_icon_w(instance: NativeHandle, name: *const u16) -> NativeHandle;
+
+    #[link_name = "PostMessageW"]
+    fn post_message_w(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> i32;
 
     #[link_name = "PostQuitMessage"]
     fn post_quit_message(exit_code: i32);
@@ -458,27 +476,47 @@ fn show_context_menu(window: HWND) {
         false,
     );
     append_separator(menu);
+    let speed_label = format!("Typing speed: {} chars/s", settings.characters_per_second);
+    append(menu, CMD_SPEED_HEADER, &speed_label, false, true);
     append(
         menu,
         CMD_SPEED_SLOW,
-        "Speed: Slow",
+        "Preset: Slow (8 chars/s)",
         settings.speed == SpeedPreset::Slow,
         false,
     );
     append(
         menu,
         CMD_SPEED_NORMAL,
-        "Speed: Normal",
+        "Preset: Normal (40 chars/s)",
         settings.speed == SpeedPreset::Normal,
         false,
     );
     append(
         menu,
         CMD_SPEED_FAST,
-        "Speed: Fast",
+        "Preset: Fast (120 chars/s)",
         settings.speed == SpeedPreset::Fast,
         false,
     );
+    append(menu, CMD_SPEED_MINUS_TEN, "Speed -10 chars/s", false, false);
+    append(menu, CMD_SPEED_MINUS_ONE, "Speed -1 char/s", false, false);
+    append(menu, CMD_SPEED_PLUS_ONE, "Speed +1 char/s", false, false);
+    append(menu, CMD_SPEED_PLUS_TEN, "Speed +10 chars/s", false, false);
+
+    let jitter_label = format!("Timing jitter: +/-{}%", settings.jitter_percent);
+    append(menu, CMD_JITTER_HEADER, &jitter_label, false, true);
+    append(menu, CMD_JITTER_MINUS_FIVE, "Jitter -5%", false, false);
+    append(menu, CMD_JITTER_PLUS_FIVE, "Jitter +5%", false, false);
+
+    let typo_label = format!(
+        "Corrected typo chance: {}%",
+        settings.typo_probability_percent
+    );
+    append(menu, CMD_TYPO_HEADER, &typo_label, false, true);
+    append(menu, CMD_TYPO_MINUS_ONE, "Typo chance -1%", false, false);
+    append(menu, CMD_TYPO_PLUS_ONE, "Typo chance +1%", false, false);
+    append_separator(menu);
     append(
         menu,
         CMD_STARTUP,
@@ -494,6 +532,9 @@ fn show_context_menu(window: HWND) {
     append_separator(menu);
     append(menu, CMD_QUIT, "Quit ClipType", false, false);
 
+    // Preserve the user's target before the hidden tray owner temporarily
+    // becomes foreground for correct popup-menu dismissal.
+    let previous_foreground = unsafe { get_foreground_window() };
     let mut point = POINT::default();
     // SAFETY: `point` is writable.
     if unsafe { get_cursor_pos(&raw mut point) } != 0 {
@@ -512,9 +553,24 @@ fn show_context_menu(window: HWND) {
                 null(),
             )
         };
-        if command > 0 {
-            apply_command(command as usize, settings);
+        // Required by the Win32 notification-area popup contract so the
+        // menu reliably dismisses after outside clicks.
+        let _ = unsafe { post_message_w(window, WM_NULL, 0, 0) };
+        let mut command = command as usize;
+        if !previous_foreground.is_null() && previous_foreground != window {
+            // The hidden owner must never remain the user's destination after
+            // the popup closes. Refuse tray-triggered injection when Windows
+            // will not restore the prior foreground window.
+            let restored = unsafe { set_foreground_window(previous_foreground) } != 0;
+            if command == CMD_TRIGGER {
+                if restored {
+                    thread::sleep(Duration::from_millis(40));
+                } else {
+                    command = 0;
+                }
+            }
         }
+        apply_command(command, settings);
     }
 
     // SAFETY: this function owns the popup menu.
@@ -547,16 +603,58 @@ fn apply_command(command: usize, mut settings: ProductSettings) {
         }
         CMD_SPEED_SLOW => {
             settings.speed = SpeedPreset::Slow;
+            settings.characters_per_second = SpeedPreset::Slow.default_characters_per_second();
             Some(TrayEvent::SettingsChanged(settings))
         }
         CMD_SPEED_NORMAL => {
             settings.speed = SpeedPreset::Normal;
+            settings.characters_per_second = SpeedPreset::Normal.default_characters_per_second();
             Some(TrayEvent::SettingsChanged(settings))
         }
         CMD_SPEED_FAST => {
             settings.speed = SpeedPreset::Fast;
+            settings.characters_per_second = SpeedPreset::Fast.default_characters_per_second();
             Some(TrayEvent::SettingsChanged(settings))
         }
+        CMD_SPEED_MINUS_TEN => {
+            adjust_speed(&mut settings, -10);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_SPEED_MINUS_ONE => {
+            adjust_speed(&mut settings, -1);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_SPEED_PLUS_ONE => {
+            adjust_speed(&mut settings, 1);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_SPEED_PLUS_TEN => {
+            adjust_speed(&mut settings, 10);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_JITTER_MINUS_FIVE => {
+            settings.jitter_percent = settings.jitter_percent.saturating_sub(5);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_JITTER_PLUS_FIVE => {
+            settings.jitter_percent = settings
+                .jitter_percent
+                .saturating_add(5)
+                .min(cliptype_core::MAX_JITTER_PERCENT);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_TYPO_MINUS_ONE => {
+            settings.typo_probability_percent = settings.typo_probability_percent.saturating_sub(1);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_TYPO_PLUS_ONE => {
+            settings.typo_probability_percent = settings
+                .typo_probability_percent
+                .saturating_add(1)
+                .min(cliptype_core::MAX_TYPO_PROBABILITY_PERCENT);
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_SPEED_HEADER | CMD_JITTER_HEADER | CMD_TYPO_HEADER => None,
         CMD_STARTUP => {
             settings.start_at_login = !settings.start_at_login;
             Some(TrayEvent::SettingsChanged(settings))
@@ -577,6 +675,17 @@ fn send_event(event: TrayEvent) {
     if let Some(context) = lock_unpoisoned(context()).as_ref() {
         let _ = context.events.send(event);
     }
+}
+
+fn adjust_speed(settings: &mut ProductSettings, delta: i16) {
+    let current = i32::from(settings.characters_per_second);
+    let next = current.saturating_add(i32::from(delta)).clamp(
+        i32::from(cliptype_core::MIN_CHARACTERS_PER_SECOND),
+        i32::from(cliptype_core::MAX_CHARACTERS_PER_SECOND),
+    );
+    settings.characters_per_second =
+        u16::try_from(next).unwrap_or(cliptype_core::MAX_CHARACTERS_PER_SECOND);
+    settings.speed = SpeedPreset::Custom;
 }
 
 const fn next_hotkey(current: HotkeyPreset) -> HotkeyPreset {
@@ -756,8 +865,8 @@ mod tests {
     use cliptype_core::{HotkeyPreset, InjectionMode, ProductSettings, SpeedPreset};
 
     use super::{
-        CMD_ENABLED, CMD_HOTKEY, CMD_MODE_CLIPBOARD, CMD_SPEED_FAST, TrayEvent, apply_command,
-        next_hotkey,
+        CMD_ENABLED, CMD_HOTKEY, CMD_MODE_CLIPBOARD, CMD_SPEED_FAST, CMD_SPEED_PLUS_ONE, TrayEvent,
+        adjust_speed, apply_command, next_hotkey,
     };
 
     #[test]
@@ -791,12 +900,15 @@ mod tests {
         fast.speed = SpeedPreset::Fast;
         let mut hotkey = settings;
         hotkey.hotkey = HotkeyPreset::CtrlAltFunction;
+        let mut faster = settings;
+        adjust_speed(&mut faster, 1);
 
         for (command, expected) in [
             (CMD_ENABLED, TrayEvent::SettingsChanged(enabled)),
             (CMD_MODE_CLIPBOARD, TrayEvent::SettingsChanged(clipboard)),
             (CMD_SPEED_FAST, TrayEvent::SettingsChanged(fast)),
             (CMD_HOTKEY, TrayEvent::SettingsChanged(hotkey)),
+            (CMD_SPEED_PLUS_ONE, TrayEvent::SettingsChanged(faster)),
         ] {
             let _ = (command, expected);
         }

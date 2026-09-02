@@ -11,8 +11,8 @@ use windows_sys::Win32::{
     Foundation::GetLastError,
     UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN, VK_SHIFT,
-        VK_TAB,
+        KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN,
+        VK_SHIFT, VK_TAB,
     },
 };
 
@@ -41,36 +41,11 @@ impl KeyboardPort for WindowsKeyboard {
     }
 
     fn dispatch(&self, batch: TextBatch<'_>) -> Result<DispatchResult, KeyboardError> {
-        let encoded = encode_batch(batch)?;
-        let requested = NativeEventCount::try_from(encoded.inputs.len())
-            .map_err(|_| KeyboardError::InvalidBatch)?;
-        let input_size =
-            i32::try_from(size_of::<INPUT>()).map_err(|_| KeyboardError::InvalidBatch)?;
+        dispatch_encoded(encode_batch(batch)?)
+    }
 
-        // SAFETY: `encoded.inputs` is initialized and remains alive for the
-        // whole call, `requested` exactly matches its length, and `input_size`
-        // is the ABI size of one `INPUT` value.
-        let accepted = unsafe { SendInput(requested.get(), encoded.inputs.as_ptr(), input_size) };
-
-        let zero_reason = if accepted == 0 {
-            // `SendInput` does not identify UIPI as the cause of a zero result.
-            // Preserve only a numeric code, when present, and classify the cause
-            // as unknown rather than asserting a security-boundary diagnosis.
-            let code = unsafe { GetLastError() };
-            Some(NativeError::new(
-                NativeErrorKind::BlockedCauseUnknown,
-                (code != 0).then_some(code),
-            ))
-        } else {
-            None
-        };
-
-        classify_accepted(
-            requested,
-            accepted,
-            &encoded.semantic_boundaries,
-            zero_reason,
-        )
+    fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
+        dispatch_encoded(encode_backspace())
     }
 }
 
@@ -106,6 +81,45 @@ fn key_is_down(key: u16) -> bool {
 struct EncodedBatch {
     inputs: Vec<INPUT>,
     semantic_boundaries: Vec<u32>,
+}
+
+fn dispatch_encoded(encoded: EncodedBatch) -> Result<DispatchResult, KeyboardError> {
+    let requested = NativeEventCount::try_from(encoded.inputs.len())
+        .map_err(|_| KeyboardError::InvalidBatch)?;
+    let input_size = i32::try_from(size_of::<INPUT>()).map_err(|_| KeyboardError::InvalidBatch)?;
+
+    // SAFETY: `encoded.inputs` is initialized and remains alive for the whole
+    // call, `requested` exactly matches its length, and `input_size` is the ABI
+    // size of one `INPUT` value.
+    let accepted = unsafe { SendInput(requested.get(), encoded.inputs.as_ptr(), input_size) };
+
+    let zero_reason = if accepted == 0 {
+        // `SendInput` does not identify UIPI as the cause of a zero result.
+        let code = unsafe { GetLastError() };
+        Some(NativeError::new(
+            NativeErrorKind::BlockedCauseUnknown,
+            (code != 0).then_some(code),
+        ))
+    } else {
+        None
+    };
+
+    classify_accepted(
+        requested,
+        accepted,
+        &encoded.semantic_boundaries,
+        zero_reason,
+    )
+}
+
+fn encode_backspace() -> EncodedBatch {
+    EncodedBatch {
+        inputs: vec![
+            keyboard_input(VK_BACK, 0, 0),
+            keyboard_input(VK_BACK, 0, KEYEVENTF_KEYUP),
+        ],
+        semantic_boundaries: vec![2],
+    }
 }
 
 fn encode_batch(batch: TextBatch<'_>) -> Result<EncodedBatch, KeyboardError> {
@@ -204,7 +218,7 @@ mod tests {
     use cliptype_core::{DispatchBatchLimit, NativeEventCount, TextAtom, TextBatch};
     use cliptype_platform::{DispatchResult, KeyboardError};
 
-    use super::{classify_accepted, encode_batch};
+    use super::{classify_accepted, encode_backspace, encode_batch};
 
     fn batch<'a>(atoms: &'a [TextAtom]) -> TextBatch<'a> {
         TextBatch::new(
@@ -221,6 +235,23 @@ mod tests {
 
         assert_eq!(encoded.inputs.len(), 6);
         assert_eq!(encoded.semantic_boundaries, vec![2, 6]);
+    }
+
+    #[test]
+    fn cjk_scalar_is_one_complete_unicode_action() {
+        let atoms = [TextAtom::scalar('你')];
+        let encoded = encode_batch(batch(&atoms)).expect("supported batch");
+
+        assert_eq!(encoded.inputs.len(), 2);
+        assert_eq!(encoded.semantic_boundaries, vec![2]);
+    }
+
+    #[test]
+    fn corrective_backspace_is_one_complete_key_pair() {
+        let encoded = encode_backspace();
+
+        assert_eq!(encoded.inputs.len(), 2);
+        assert_eq!(encoded.semantic_boundaries, vec![2]);
     }
 
     #[test]

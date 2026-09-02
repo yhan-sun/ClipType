@@ -173,6 +173,9 @@ pub fn serialize_settings(settings: ProductSettings) -> String {
             "mode = \"{}\"\n",
             "auto_clipboard_threshold = {}\n",
             "speed = \"{}\"\n",
+            "characters_per_second = {}\n",
+            "jitter_percent = {}\n",
+            "typo_probability_percent = {}\n",
             "notifications = {}\n",
             "start_at_login = {}\n",
             "hotkey = \"{}\"\n"
@@ -182,6 +185,9 @@ pub fn serialize_settings(settings: ProductSettings) -> String {
         mode_name(settings.mode),
         settings.auto_clipboard_threshold.get(),
         speed_name(settings.speed),
+        settings.characters_per_second,
+        settings.jitter_percent,
+        settings.typo_probability_percent,
         settings.notifications,
         settings.start_at_login,
         hotkey_name(settings.hotkey),
@@ -195,6 +201,9 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
     let mut mode = None;
     let mut threshold = None;
     let mut speed = None;
+    let mut characters_per_second = None;
+    let mut jitter_percent = None;
+    let mut typo_probability_percent = None;
     let mut notifications = None;
     let mut start_at_login = None;
     let mut hotkey = None;
@@ -229,6 +238,11 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
                 );
             }
             "speed" => speed = Some(parse_speed(value, line_number)?),
+            "characters_per_second" => characters_per_second = Some(parse_u16(value, line_number)?),
+            "jitter_percent" => jitter_percent = Some(parse_u8(value, line_number)?),
+            "typo_probability_percent" => {
+                typo_probability_percent = Some(parse_u8(value, line_number)?)
+            }
             "notifications" => notifications = Some(parse_bool(value, line_number)?),
             "start_at_login" => start_at_login = Some(parse_bool(value, line_number)?),
             "hotkey" => hotkey = Some(parse_hotkey(value, line_number)?),
@@ -236,13 +250,18 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
         }
     }
 
+    let speed = speed.ok_or(SettingsError::MissingKey("speed"))?;
     ProductSettings {
         version: version.ok_or(SettingsError::MissingKey("version"))?,
         enabled: enabled.ok_or(SettingsError::MissingKey("enabled"))?,
         mode: mode.ok_or(SettingsError::MissingKey("mode"))?,
         auto_clipboard_threshold: threshold
             .ok_or(SettingsError::MissingKey("auto_clipboard_threshold"))?,
-        speed: speed.ok_or(SettingsError::MissingKey("speed"))?,
+        speed,
+        characters_per_second: characters_per_second
+            .unwrap_or_else(|| speed.default_characters_per_second()),
+        jitter_percent: jitter_percent.unwrap_or(0),
+        typo_probability_percent: typo_probability_percent.unwrap_or(0),
         notifications: notifications.ok_or(SettingsError::MissingKey("notifications"))?,
         start_at_login: start_at_login.ok_or(SettingsError::MissingKey("start_at_login"))?,
         hotkey: hotkey.ok_or(SettingsError::MissingKey("hotkey"))?,
@@ -258,6 +277,18 @@ fn parse_u32(value: &str, line: usize) -> Result<u32, SettingsError> {
 }
 
 fn parse_usize(value: &str, line: usize) -> Result<usize, SettingsError> {
+    value
+        .parse()
+        .map_err(|_| SettingsError::InvalidValue { line })
+}
+
+fn parse_u16(value: &str, line: usize) -> Result<u16, SettingsError> {
+    value
+        .parse()
+        .map_err(|_| SettingsError::InvalidValue { line })
+}
+
+fn parse_u8(value: &str, line: usize) -> Result<u8, SettingsError> {
     value
         .parse()
         .map_err(|_| SettingsError::InvalidValue { line })
@@ -293,6 +324,7 @@ fn parse_speed(value: &str, line: usize) -> Result<SpeedPreset, SettingsError> {
         "slow" => Ok(SpeedPreset::Slow),
         "normal" => Ok(SpeedPreset::Normal),
         "fast" => Ok(SpeedPreset::Fast),
+        "custom" => Ok(SpeedPreset::Custom),
         _ => Err(SettingsError::InvalidValue { line }),
     }
 }
@@ -319,6 +351,7 @@ const fn speed_name(speed: SpeedPreset) -> &'static str {
         SpeedPreset::Slow => "slow",
         SpeedPreset::Normal => "normal",
         SpeedPreset::Fast => "fast",
+        SpeedPreset::Custom => "custom",
     }
 }
 
@@ -397,6 +430,28 @@ mod tests {
             parse_settings(&valid.replace("speed = \"normal\"", "speed = \"warp\"")),
             Err(SettingsError::InvalidValue { .. })
         ));
+    }
+
+    #[test]
+    fn legacy_speed_only_file_migrates_to_safe_typing_defaults() {
+        let legacy = serialize_settings(ProductSettings::default())
+            .lines()
+            .filter(|line| {
+                !line.starts_with("characters_per_second")
+                    && !line.starts_with("jitter_percent")
+                    && !line.starts_with("typo_probability_percent")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let parsed = parse_settings(&legacy).expect("legacy settings migrate");
+
+        assert_eq!(
+            parsed.characters_per_second,
+            parsed.speed.default_characters_per_second()
+        );
+        assert_eq!(parsed.jitter_percent, 0);
+        assert_eq!(parsed.typo_probability_percent, 0);
     }
 
     #[test]

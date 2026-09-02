@@ -113,6 +113,14 @@ pub trait KeyboardPort: Send + Sync {
     fn capabilities(&self) -> KeyboardCapabilities;
 
     fn dispatch(&self, batch: TextBatch<'_>) -> Result<DispatchResult, KeyboardError>;
+
+    /// Dispatches exactly one corrective Backspace action.
+    ///
+    /// The default keeps existing test/fake ports source-compatible. Product
+    /// implementations that enable typo correction must override it.
+    fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
+        Err(KeyboardError::UnsupportedSemanticElement)
+    }
 }
 
 #[cfg(test)]
