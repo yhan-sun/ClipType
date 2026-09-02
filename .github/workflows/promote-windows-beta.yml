@@ -1,0 +1,183 @@
+name: Promote Windows Beta Prerelease
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+    paths:
+      - ".github/workflows/promote-windows-beta.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CLIPTYPE_RUN_CONTROLLED_E2E: "1"
+  CLIPTYPE_RUN_P2_CONTROLLED_E2E: "1"
+
+jobs:
+  promote:
+    name: Validate exact candidate, merge PR 37, and publish prerelease
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact P2 candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+      - name: Verify candidate shape before any promotion
+        shell: pwsh
+        run: |
+          $required = @(
+            "apps\cliptype\build.rs",
+            "assets\branding\cliptype-primary.svg",
+            "assets\branding\cliptype-tray.svg",
+            "assets\branding\README.md",
+            "release\VERSION",
+            "docs\releases\v0.1.0-beta.1.md",
+            ".github\workflows\windows-release.yml"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "required release input missing: $path" }
+          }
+          $forbidden = @(
+            ".github\workflows\p2-b02-apply.yml",
+            ".github\scripts\p2_b02_patch.py",
+            ".github\workflows\branding-release-prep.yml",
+            ".github\workflows\branding-release-prep-v2.yml",
+            ".github\workflows\branding-cleanup.yml",
+            ".github\workflows\branding-windows-gate.yml"
+          )
+          foreach ($path in $forbidden) {
+            if (Test-Path $path) { throw "maintenance-only file remains: $path" }
+          }
+          $version = (Get-Content "release\VERSION" -Raw).Trim()
+          if ($version -ne "v0.1.0-beta.1") { throw "unexpected version: $version" }
+          if (-not (Select-String -Path "docs\releases\$version.md" -SimpleMatch "public Windows **prerelease**" -Quiet)) {
+            throw "release notes do not carry the prerelease evidence boundary"
+          }
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Run full exact-source Rust quality gate
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Run controlled Windows input paths
+        shell: pwsh
+        run: |
+          $p1 = cargo run --locked --quiet -p cliptype --example p1_controlled_e2e 2>&1
+          $p1Code = $LASTEXITCODE
+          $p1 | Write-Output
+          if ($p1Code -ne 0 -or ($p1 | Select-String -SimpleMatch "p1_controlled_e2e result=ok").Count -ne 1) {
+            throw "P1 controlled E2E failed"
+          }
+          $p2 = cargo run --locked --quiet -p cliptype --example p2_controlled_e2e 2>&1
+          $p2Code = $LASTEXITCODE
+          $p2 | Write-Output
+          if ($p2Code -ne 0 -or ($p2 | Select-String -SimpleMatch "p2_controlled_e2e result=ok").Count -lt 4) {
+            throw "P2 controlled E2E failed"
+          }
+          $combined = ($p1 + $p2) -join "`n"
+          foreach ($sentinel in @(
+            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265"
+          )) {
+            if ($combined.Contains($sentinel)) { throw "privacy sentinel escaped into output" }
+          }
+      - name: Build and inspect branded GUI executable
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p cliptype
+          $exe = Resolve-Path "target\release\cliptype.exe"
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+          if ($null -eq $icon -or $icon.Width -lt 16 -or $icon.Height -lt 16) {
+            throw "application icon extraction failed"
+          }
+          try {
+            $bitmap = $icon.ToBitmap()
+            $center = $bitmap.GetPixel([Math]::Floor($bitmap.Width / 2), [Math]::Floor($bitmap.Height / 2))
+            if ($center.A -eq 0) { throw "application icon center is transparent" }
+            Write-Output "cliptype_promotion icon=$($icon.Width)x$($icon.Height) center_alpha=$($center.A)"
+          } finally {
+            if ($null -ne $bitmap) { $bitmap.Dispose() }
+            $icon.Dispose()
+          }
+          if (-not (Select-String -Path "crates\cliptype-windows\src\tray.rs" -SimpleMatch "load_icon_w(instance, IDI_CLIPTYPE_TRAY)" -Quiet)) {
+            throw "tray does not load embedded resource id 2"
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "cliptype_promotion candidate_sha=$env:GITHUB_SHA exe_sha256=$hash"
+      - name: Remove one-time promotion workflow from candidate tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/promote-windows-beta.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(release): remove one-time beta promotion gate"
+          git push origin HEAD:feat/p2-windows-productization
+      - name: Mark PR 37 ready and merge exact candidate
+        id: merge
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr ready 37 --repo $env:GITHUB_REPOSITORY
+          $head = gh pr view 37 --repo $env:GITHUB_REPOSITORY --json headRefOid --jq .headRefOid
+          $branchHead = git rev-parse HEAD
+          if ($head -ne $branchHead) { throw "PR #37 head drifted before merge" }
+          gh pr merge 37 --repo $env:GITHUB_REPOSITORY --merge --subject "P2: release ClipType Windows beta prerelease" --body "Exact-source Windows quality gates, controlled E2E, branded resource extraction, packaging prerequisites, and prerelease disclosures passed. Issues #33 and #41 remain visible for post-fix named-client evidence."
+          $mergeCommit = gh pr view 37 --repo $env:GITHUB_REPOSITORY --json mergeCommit --jq .mergeCommit.oid
+          if (-not $mergeCommit) { throw "PR #37 did not report a merge commit" }
+          "merge_commit=$mergeCommit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Dispatch public prerelease workflow when no merge run exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_COMMIT: ${{ steps.merge.outputs.merge_commit }}
+        run: |
+          Start-Sleep -Seconds 10
+          $existing = gh run list --repo $env:GITHUB_REPOSITORY --workflow windows-release.yml --branch main --limit 20 --json databaseId,headSha,status,event --jq ".[] | select(.headSha == `"$env:MERGE_COMMIT`") | .databaseId" | Select-Object -First 1
+          if (-not $existing) {
+            gh workflow run windows-release.yml --repo $env:GITHUB_REPOSITORY --ref main
+          }
+      - name: Wait for exact-main release workflow
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_COMMIT: ${{ steps.merge.outputs.merge_commit }}
+        run: |
+          $runId = $null
+          for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            $runId = gh run list --repo $env:GITHUB_REPOSITORY --workflow windows-release.yml --branch main --limit 20 --json databaseId,headSha,status --jq ".[] | select(.headSha == `"$env:MERGE_COMMIT`") | .databaseId" | Select-Object -First 1
+            if ($runId) { break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $runId) { throw "release workflow did not start for merged main commit" }
+          gh run watch $runId --repo $env:GITHUB_REPOSITORY --exit-status
+      - name: Verify published prerelease and record open evidence gates
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_COMMIT: ${{ steps.merge.outputs.merge_commit }}
+        run: |
+          $release = gh release view v0.1.0-beta.1 --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,isPrerelease,url,assets
+          $release | Write-Output
+          $prerelease = $release | ConvertFrom-Json
+          if (-not $prerelease.isPrerelease) { throw "published release is not marked prerelease" }
+          if ($prerelease.assets.Count -lt 8) { throw "published release asset set is incomplete" }
+          $comment = @"
+          `v0.1.0-beta.1` has been published as an explicit GitHub **prerelease** from merged commit `$env:MERGE_COMMIT` after the exact-source Windows quality, controlled E2E, icon-resource, and release-build gates passed.
+
+          This publication does not close the post-fix named-client evidence obligation. Issue #33/#41 remain open for the previously failing Chinese target, physical timing/jitter, typo/Backspace observation, and tray foreground retest. Release notes preserve those limitations and disclose that the executable is not Authenticode publisher-signed.
+          "@
+          gh issue comment 33 --repo $env:GITHUB_REPOSITORY --body $comment
+          gh issue comment 41 --repo $env:GITHUB_REPOSITORY --body $comment
