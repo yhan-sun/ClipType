@@ -14,6 +14,7 @@ cliptype-windows.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
 cliptype-core.workspace = true
+cliptype-platform.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",
