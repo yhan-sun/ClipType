@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! Windows product composition root for ClipType.
 
 #[cfg(not(windows))]
