@@ -1,0 +1,57 @@
+name: P2 B02 Apply And Verify
+
+on:
+  push:
+    branches:
+      - feat/p2-windows-productization
+    paths:
+      - ".github/workflows/p2-b02-apply.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apply:
+    name: Apply release-blocker patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out product branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p2-windows-productization
+          fetch-depth: 0
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+      - name: Apply P2-B02 patch
+        run: python .github/scripts/p2_b02_patch.py
+      - name: Format source
+        run: cargo fmt --all
+      - name: Check and test native-neutral crates
+        run: |
+          cargo check --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+      - name: Cross-check Windows workspace
+        run: cargo check --workspace --all-targets --locked --target x86_64-pc-windows-msvc
+      - name: Remove one-time maintenance files
+        run: |
+          git rm .github/scripts/p2_b02_patch.py
+          git rm .github/workflows/p2-b02-apply.yml
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 1
+          fi
+          git commit -m "P2-B02: add reliable human-paced keyboard actions"
+          git push origin HEAD:feat/p2-windows-productization
