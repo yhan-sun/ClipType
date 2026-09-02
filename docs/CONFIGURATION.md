@@ -1,168 +1,157 @@
-# Configuration Model
+# Configuration
 
-This document defines configuration semantics and safety constraints, not final Rust names or every default value.
+## Location
 
-## Principles
+The Windows product stores one per-user settings file:
 
-- Safe defaults require no configuration.
-- Manual explicit trigger remains the default activation model.
-- Configuration cannot disable mandatory privacy, security-boundary, one-session, or fail-safe behavior silently.
-- Invalid security-sensitive values fail clearly rather than being ignored.
-- All timing, payload, retry, and batch values have validated lower/upper bounds.
-- Platform-specific options live under explicit namespaces only when truly needed.
-- Stable persistence and migration are introduced during productization, not assumed in P1.
+```text
+%LOCALAPPDATA%\ClipType\config.toml
+```
 
-## P1 configuration posture
+If `LOCALAPPDATA` is unavailable, the host may use the current user's roaming application-data root. Clipboard text and target data are never stored beside the configuration.
 
-P1 is a Windows development vertical slice and implements the `keyboard` path only. It may use validated compiled defaults, a narrow development CLI, or an in-memory configuration snapshot. A persistent settings file and settings UI are not P1 requirements.
+## Current schema
 
-P1 MUST NOT expose working `clipboard` or `auto` settings before those mechanisms exist. It also MUST NOT persist clipboard text as configuration, cache, recent values, or diagnostics.
-
-### Conceptual P1 snapshot
+The public beta uses schema version `1` and a deliberately small, flat TOML vocabulary:
 
 ```toml
 version = 1
 enabled = true
-
-[trigger]
-hotkey = "development-default"
-cancel_hotkey = "development-default"
-
-[injection]
-mode = "keyboard"
-keyboard_interval_ms = 2
-max_batch_elements = 32
-max_payload_elements = 100000
-focus_policy = "strict-to-available-evidence"
-modifier_settle_timeout_ms = 500
-clipboard_retry_budget_ms = 100
-
-[diagnostics]
-level = "info"
-content_logging = false             # immutable false in P1
+mode = "auto"
+auto_clipboard_threshold = 256
+speed = "normal"
+notifications = true
+start_at_login = false
+hotkey = "ctrl-alt-shift-function"
 ```
 
-The values above illustrate the shape only. #13 measures native behavior and #3 freezes actual P1 defaults/ranges. Agents must not treat the example numbers as accepted constants.
+The parser is strict. Every field is required in an existing file. Unknown keys, duplicate keys, inline/untrusted trailing text, malformed quoting, invalid booleans/numbers, unsupported enum values, zero threshold, or unsupported schema version fail visibly rather than being ignored.
 
-## P1 stable semantics
+## Fields
+
+### `version`
+
+Must be `1`. Unknown versions fail closed. A future migration requires an explicit schema/migration implementation and tests.
 
 ### `enabled`
 
-Controls whether new trigger commands are accepted. Disabling does not weaken cleanup or leave native registrations/session state inconsistent.
+Controls acceptance of new trigger commands. `false` rejects new sessions before target or clipboard work. It does not weaken cleanup, cancellation, command registration, or shutdown behavior.
 
-### `trigger.hotkey`
+### `mode`
 
-An explicit global trigger. Registration conflicts produce a typed visible state. P1 uses one reviewed development combination with no-repeat behavior where supported.
+Accepted values:
 
-### `trigger.cancel_hotkey`
+- `"keyboard"` — bounded Unicode-oriented keyboard batches;
+- `"clipboard"` — one revision-guarded ordinary paste command;
+- `"auto"` — freeze one eligible backend from payload size and capabilities.
 
-An explicit cancellation command available while a session is active. P1 does not permanently hijack bare `Esc` or capture unrelated keys.
+Explicit modes do not silently fall back. Clipboard mode requires both Paste and a known content-blind revision witness. Auto uses clipboard only when both are fully available.
 
-### `injection.mode`
+### `auto_clipboard_threshold`
 
-P1 accepts only `keyboard`. `clipboard` and `auto` are rejected as unsupported rather than silently mapped to keyboard.
+A non-zero semantic-element count. In auto mode, clipboard becomes preferred at or above this point when its capabilities are fully available. Auto can also choose clipboard for text that the keyboard planner cannot safely represent.
 
-### `keyboard_interval_ms`
+The default is `256`. It is a policy crossover covered by the backend benchmark, not a universal statement about every destination's performance.
 
-Delay policy between semantic elements or native batches as defined by the plan. Values are bounded so they cannot create effectively infinite operations or zero-delay event floods without explicit review.
+### `speed`
 
-### `max_batch_elements`
+Accepted values and current keyboard pacing:
 
-Maximum native-neutral semantic elements submitted in one bounded dispatch. It defines a cancellation/target/modifier checkpoint boundary; the Windows adapter may produce multiple native events for one element.
+| Value | Inter-batch interval |
+|---|---:|
+| `"slow"` | 12 ms |
+| `"normal"` | 5 ms |
+| `"fast"` | 1 ms |
 
-The batch limit is not the total payload limit and is not expressed as raw `INPUT` event count in core policy.
+The interval is applied between bounded keyboard batches. Clipboard mode sends one bounded Paste chord and does not use keyboard pacing.
 
-### `max_payload_elements`
+### `notifications`
 
-Maximum validated semantic text elements accepted for one operation. Exceeding it produces a typed `payload too large` outcome before injection.
+Controls fixed content-free tray balloon notifications. Disabling notifications does not disable safety checks or internal content-free status.
 
-A separate hard native acquisition cap also bounds clipboard allocation scanning/copying before complete semantic validation. The native cap is an implementation safety boundary, not necessarily a user-facing setting. #13/#3 must define exact units and conversions without unchecked allocation.
+### `start_at_login`
 
-### `focus_policy`
+Controls the product-owned current-user Run value. The command contains the quoted executable path plus `--background`. No administrator privilege, service, scheduled task, or machine-wide registry write is used.
 
-P1 uses `strict-to-available-evidence`: capture destination evidence at trigger time, revalidate before and between batches, and stop on known change, disappearance, or evidence becoming unavailable/ambiguous after dispatch begins.
+Installer and tray changes update both the setting and startup registration with rollback on failure. Uninstall removes only product-owned state.
 
-This does not promise exact logical-field/caret identity when an application exposes only one native render host.
+### `hotkey`
 
-### `modifier_settle_timeout_ms`
+Accepted reviewed presets:
 
-Maximum bounded wait for trigger/conflicting physical modifiers to become safe before first dispatch. Timeout fails explicitly. ClipType never releases the user's physical keys.
+| Value | Trigger | Cancel |
+|---|---|---|
+| `"ctrl-alt-shift-function"` | Ctrl+Alt+Shift+F12 | Ctrl+Alt+Shift+F11 |
+| `"ctrl-alt-function"` | Ctrl+Alt+F12 | Ctrl+Alt+F11 |
+| `"ctrl-shift-function"` | Ctrl+Shift+F12 | Ctrl+Shift+F11 |
 
-### `clipboard_retry_budget_ms`
+The Windows adapter uses `RegisterHotKey` with no-repeat behavior; it does not install a low-level keyboard hook. Another application can own the combination. A changed preset is saved immediately and becomes active after a controlled restart in this beta.
 
-Total bounded budget for transient current-clipboard acquisition contention. The live coordinator owns retry timing so cancellation and the originally captured target remain observable. The low-level adapter performs one bounded attempt.
+## Compiled safety configuration
 
-### Diagnostics
+The file intentionally does not expose every safety bound. The validated runtime configuration retains compiled finite defaults for:
 
-`content_logging` is shown only to make the invariant visible; it is not a switch users or agents may turn on in P1. Clipboard/injected text, samples, fingerprints, focused contents, and window titles remain forbidden in ordinary diagnostics.
+- native clipboard byte limit;
+- total semantic payload limit;
+- dispatch batch limit;
+- clipboard retry attempt/window budget;
+- modifier settle timeout and poll interval;
+- worker shutdown grace;
+- Tab/control normalization policy;
+- target/integrity evidence policy;
+- no-retry handling after partial or unknown native progress.
 
-## Internal validation requirements
+These are mandatory safety invariants, not user switches. A later version may expose a bounded subset only after adding validation, migration, UI, and regression tests.
 
-A validated P1 snapshot must guarantee:
+## Persistence and recovery
 
-- batch size is non-zero and below an implementation-safe maximum;
-- total payload and native acquisition limits are finite;
-- interval, modifier wait, clipboard retry, and shutdown/join budgets are finite;
-- retry counts/durations cannot overflow when converted to platform timing units;
-- explicit keyboard mode is supported by current capabilities;
-- strict target policy is not silently downgraded;
-- content logging remains disabled;
-- invalid values never fall back to unsafe unbounded behavior.
+Saving uses adjacent files:
 
-## P2 conceptual product configuration
-
-Windows productization may extend the schema after the clipboard transaction and UI are designed:
-
-```toml
-version = 1
-enabled = true
-
-[trigger]
-hotkey = "platform-default"
-cancel_hotkey = "platform-default"
-
-[injection]
-mode = "auto"                     # auto | keyboard | clipboard
-keyboard_interval_ms = 2
-max_batch_elements = 32
-max_payload_elements = 100000
-clipboard_threshold = 0            # use benchmark-derived default
-restore_clipboard = true
-focus_policy = "strict-to-available-evidence"
-modifier_settle_timeout_ms = 500
-clipboard_retry_budget_ms = 100
-
-[ui]
-show_status_notifications = true
-start_at_login = false
+```text
+config.toml.tmp
+config.toml.bak
 ```
 
-This remains illustrative until P2 contracts/tests freeze exact field names and defaults.
+The store:
 
-## Future semantics
+1. validates the proposed settings;
+2. creates the parent directory;
+3. writes/truncates the temporary file;
+4. flushes and syncs it;
+5. preserves a valid prior primary as the backup;
+6. renames the temporary file into the primary location;
+7. attempts rollback if replacement fails.
 
-### `clipboard` mode
+Loading order:
 
-Requires temporary clipboard write, paste action, and safe conditional restoration. A newer external clipboard value is never overwritten merely to restore an old snapshot.
+1. valid primary;
+2. valid backup when the primary is missing/corrupt;
+3. safe compiled defaults when both files are missing.
 
-### `auto` mode and `clipboard_threshold`
+A corrupt primary is not silently interpreted with partially applied values. Diagnostics expose only error category and line/key category; they do not echo untrusted values.
 
-The planner selects only eligible mechanisms. Threshold defaults are benchmark/compatibility driven. An explicit user mode does not silently fall back to another mode.
+## Privacy boundary
 
-### Persistent storage and migration
+The schema has no field for:
 
-When persistent configuration enters scope:
+- clipboard text/history/cache;
+- transformed or generated text;
+- target title/content;
+- content samples, prefixes, suffixes, hashes, or fingerprints;
+- arbitrary key capture;
+- telemetry, account, or network configuration;
+- elevation or security-boundary bypass.
 
-- schema versioning and migration tests are required;
-- atomic write/recovery behavior is defined;
-- security-sensitive invalid values fail visibly;
-- configuration and backups contain no clipboard text;
-- permissions follow platform conventions.
+Clipboard mode does not use a `restore_clipboard` option because the product never rewrites or restores the clipboard.
 
-### App profiles
+## Manual recovery
 
-Target-specific profiles remain deferred until compatibility evidence justifies them. Profiles may later select mode, interval, or threshold by safe application identity, but they do not weaken mandatory target/cancellation/privacy rules.
+When configuration is invalid:
 
-## Platform namespaces
+1. close ClipType through the tray when possible;
+2. preserve the invalid file only if needed for debugging and it contains no manually added secrets;
+3. replace it with the complete version-1 example above or remove both primary and backup to regenerate defaults;
+4. restart ClipType;
+5. reapply the desired reviewed settings through the tray.
 
-Platform-specific settings are added only when portable semantics cannot express the actual capability. They must not be used to force unsupported behavior or convert one compositor/application observation into a general compatibility claim.
+Do not attach a real settings file to a public issue if it has been manually edited to contain private data. Reproduce with generated values and report only the content-free error category.
