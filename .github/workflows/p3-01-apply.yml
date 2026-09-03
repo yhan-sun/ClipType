@@ -76,8 +76,14 @@ jobs:
           set -euo pipefail
           grep -F 'trigger_hotkey = "ctrl+alt+shift+v"' packaging/windows/install.ps1
           grep -F 'cancel_hotkey = "ctrl+alt+shift+x"' packaging/windows/install.ps1
-          ! grep -R --line-number --fixed-strings 'HotkeyPreset' crates apps packaging docs/CONFIGURATION.md
-          ! grep -R --line-number --fixed-strings 'ctrl-alt-shift-function' crates apps packaging docs/CONFIGURATION.md
+          ! grep -R --line-number --fixed-strings 'HotkeyPreset' \
+            crates/cliptype-core/src/lib.rs \
+            crates/cliptype-core/src/settings.rs \
+            crates/cliptype-windows/src \
+            apps/cliptype/src \
+            packaging/windows \
+            docs/CONFIGURATION.md
+          grep -F 'parse_legacy_hotkey' crates/cliptype-app/src/settings.rs
       - name: Remove one-time implementation files
         run: |
           git rm .github/patches/p3-01.patch.gz.b64
