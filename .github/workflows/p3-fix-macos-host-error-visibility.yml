@@ -1,0 +1,56 @@
+name: P3 One-Time macOS Host Error Visibility Fix
+
+on:
+  push:
+    branches: [fix/p3-macos-candidate-compile-8c52a74]
+    paths: [".github/workflows/p3-fix-macos-host-error-visibility.yml"]
+
+permissions:
+  contents: write
+
+env:
+  EXPECTED_PARENT: ba0b724cfd96bba2161518d50197358b7df35b57
+
+jobs:
+  patch:
+    name: Restrict host result surface to the parent module
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Patch, format, scope-check, and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/cliptype-macos/src/main.rs')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              '    enum HostError {': '    pub(super) enum HostError {',
+              '    pub fn run() -> Result<(), HostError> {': '    pub(super) fn run() -> Result<(), HostError> {',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise RuntimeError(f'unexpected source for {old!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo +1.98.0 fmt --all
+          git rm .github/workflows/p3-fix-macos-host-error-visibility.yml
+          mapfile -t changed < <(git status --short --untracked-files=all | sed -E 's/^...//' | sort)
+          [[ ${#changed[@]} -eq 2 ]]
+          [[ "${changed[0]}" == ".github/workflows/p3-fix-macos-host-error-visibility.yml" ]]
+          [[ "${changed[1]}" == "apps/cliptype-macos/src/main.rs" ]]
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(p3): expose macOS host result only to parent"
+          git push origin HEAD:fix/p3-macos-candidate-compile-8c52a74
