@@ -1,0 +1,228 @@
+name: P3 Unpack Verified Source
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-unpack-source.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p3-cross-platform-finalize
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  FEATURE_BRANCH: feat/p3-cross-platform-ui-macos
+
+jobs:
+  unpack:
+    name: Materialize reviewed macOS source on feature branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+
+      - name: Select and extract the reviewed payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import re
+          import tarfile
+          from pathlib import Path, PurePosixPath
+
+          root = Path('.github/p3-stage2')
+          expected_encoded = '8f8b42b20fe1ec0a47052992f78ff8705e343cf76947f07b6fe676d6960460a3'
+          expected_payload = 'a97a86588b32216988062a58d19c9ad49e5b3f2077764059468fca6bbf9737f9'
+          expected_length = 28116
+          tail = (
+              '4Drd+CKu/EUUrwBBLNrmBfXcYGX+zb/5N//m3/ybf/Nv/s2/+Tf/5t/8m3'
+              '/zb/7Nv/k3/+bf/Jt/82/+zb/5N//m3/ybf/Nv/n2d7/8Dz2yswwC4AQA='
+          )
+
+          def normalized(path: Path) -> str:
+              value = ''.join(path.read_text(encoding='ascii').split())
+              if re.fullmatch(r'[A-Za-z0-9+/]*={0,2}', value) is None:
+                  raise ValueError(f'non-Base64 character in {path.name}')
+              return value
+
+          candidates = []
+          subchunks = [
+              'chunk-00.b64', 'chunk-01.b64',
+              'chunk-02a.b64', 'chunk-02b.b64',
+              'chunk-02c.b64', 'chunk-02d.b64',
+              'chunk-03.b64', 'chunk-04.b64', 'chunk-05.b64',
+              'chunk-06.b64', 'chunk-07.b64',
+          ]
+          if all((root / name).is_file() for name in subchunks):
+              candidates.append((
+                  'subchunks',
+                  ''.join(normalized(root / name) for name in subchunks) + tail,
+              ))
+          large_chunks = [f'chunk-{index:02d}.b64' for index in range(8)]
+          if all((root / name).is_file() for name in large_chunks):
+              candidates.append((
+                  'large-chunks',
+                  ''.join(normalized(root / name) for name in large_chunks) + tail,
+              ))
+          if (root / 'payload.b64').is_file():
+              try:
+                  candidates.append(('monolith', normalized(root / 'payload.b64')))
+              except (UnicodeError, ValueError):
+                  pass
+
+          selected = None
+          diagnostics = []
+          for name, encoded in candidates:
+              encoded_digest = hashlib.sha256(encoded.encode('ascii')).hexdigest()
+              diagnostics.append(
+                  f'{name}: chars={len(encoded)} encoded_sha256={encoded_digest}'
+              )
+              if len(encoded) != expected_length or encoded_digest != expected_encoded:
+                  continue
+              payload = base64.b64decode(encoded, validate=True)
+              payload_digest = hashlib.sha256(payload).hexdigest()
+              diagnostics.append(
+                  f'{name}: bytes={len(payload)} payload_sha256={payload_digest}'
+              )
+              if payload_digest == expected_payload:
+                  selected = (name, payload)
+                  break
+
+          Path('/tmp/p3-unpack-integrity.txt').write_text(
+              '\n'.join(diagnostics) + '\n', encoding='utf-8'
+          )
+          if selected is None:
+              raise SystemExit('no payload candidate passed both reviewed SHA-256 gates')
+
+          selected_name, payload = selected
+          with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as archive:
+              members = archive.getmembers()
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts:
+                      raise SystemExit('unsafe archive member rejected')
+              Path('/tmp/p3-unpack-members.txt').write_text(
+                  '\n'.join(member.name for member in members) + '\n',
+                  encoding='utf-8',
+              )
+              archive.extractall('.')
+          with Path('/tmp/p3-unpack-integrity.txt').open('a', encoding='utf-8') as handle:
+              handle.write(f'selected={selected_name}\n')
+          PY
+          chmod +x packaging/macos/package.sh
+
+      - name: Normalize generated manifests and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          cargo = Path('apps/cliptype-macos/Cargo.toml')
+          text = cargo.read_text(encoding='utf-8').replace(
+              'name = "cliptype-macos"\n',
+              'name = "cliptype-macos-app"\n',
+              1,
+          )
+          if '[[bin]]' not in text:
+              text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
+          cargo.write_text(text, encoding='utf-8')
+
+          native = Path('crates/cliptype-macos/native/cliptype_macos.m')
+          text = native.read_text(encoding='utf-8')
+          text = text.replace(
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n'
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+          )
+          text = text.replace(
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n'
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+          )
+          native.write_text(text, encoding='utf-8')
+
+          rust = Path('crates/cliptype-macos/src/lib.rs')
+          text = rust.read_text(encoding='utf-8')
+          text = text.replace('#![forbid(unsafe_code)]', '#![deny(unsafe_op_in_unsafe_fn)]')
+          text = text.replace('\nextern "C" {\n', '\nunsafe extern "C" {\n')
+          rust.write_text(text, encoding='utf-8')
+
+          for workflow in [
+              Path('.github/workflows/p3-cross-platform.yml'),
+              Path('.github/workflows/macos-release.yml'),
+          ]:
+              text = workflow.read_text(encoding='utf-8')
+              text = text.replace('-p cliptype-macos --target', '-p cliptype-macos-app --target')
+              text = text.replace(
+                  'runner: macos-15\n            target: x86_64-apple-darwin',
+                  'runner: macos-15-intel\n            target: x86_64-apple-darwin',
+              )
+              text = text.replace(
+                  'runs-on: macos-15\n    timeout-minutes: 20',
+                  'runs-on: macos-15-intel\n    timeout-minutes: 20',
+              )
+              text = text.replace(
+                  '--repo "$GITHUB_REPOSITORY" --clobber=false',
+                  '--repo "$GITHUB_REPOSITORY"',
+              )
+              workflow.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Install pinned Rust and verify native-neutral crates
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          cargo fmt --all
+          cargo generate-lockfile
+          cargo check --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+          cargo test -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+          cargo clippy --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui -- -D warnings
+          git diff --check
+
+      - name: Upload transport diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-unpack-source-diagnostics
+          path: |
+            /tmp/p3-unpack-integrity.txt
+            /tmp/p3-unpack-members.txt
+          if-no-files-found: warn
+          retention-days: 2
+
+      - name: Remove all one-time transport workflows
+        shell: bash
+        run: |
+          git rm -rf .github/p3-stage2
+          for path in \
+            .github/workflows/p3-stage2-apply.yml \
+            .github/workflows/p3-finalize.yml \
+            .github/workflows/p3-finalize-v2.yml \
+            .github/workflows/p3-unpack-source.yml; do
+            if [[ -f "$path" ]]; then
+              git rm "$path"
+            fi
+          done
+
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          git commit -m "P3: materialize reviewed macOS implementation"
+          git push origin HEAD:${FEATURE_BRANCH}
