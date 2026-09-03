@@ -3,9 +3,10 @@ name: P3 Post-Release macOS v0.2.0-beta.1
 on:
   push:
     branches:
-      - feat/p3-cross-platform-ui-macos
+      - main
     paths:
       - ".github/workflows/p3-post-release-macos-v020.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -39,6 +40,8 @@ jobs:
           test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
           test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
           test -f release-assets/SHA256SUMS-macos.txt
+          test -f release-assets/BUILD-INFO-macos.txt
+          test -f release-assets/README-macOS-TESTING-PREVIEW.txt
 
       - name: Verify published checksums
         shell: bash
@@ -54,22 +57,36 @@ jobs:
           mkdir extracted
           ditto -x -k "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip" extracted
           APP="extracted/ClipType.app"
-          EXE="$APP/Contents/MacOS/cliptype-macos"
+          EXE="$APP/Contents/MacOS/ClipType"
           test -x "$EXE"
           plutil -lint "$APP/Contents/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" = cliptype-macos
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = dev.cliptype.ClipType
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" = ClipType
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = io.github.yhan-sun.ClipType
           lipo -verify_arch arm64 x86_64 "$EXE"
           codesign --verify --deep --strict "$APP"
           codesign -dv --verbose=4 "$APP" 2> codesign-details.txt
           grep -Eq 'Signature=adhoc|Signature=Ad Hoc' codesign-details.txt
+
+      - name: Mount published DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_DIR" \
+            "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg" >/dev/null
+          trap 'hdiutil detach "$MOUNT_DIR" >/dev/null 2>&1 || true' EXIT
+          test -d "$MOUNT_DIR/ClipType.app"
+          test -L "$MOUNT_DIR/Applications"
+          test -x "$MOUNT_DIR/ClipType.app/Contents/MacOS/ClipType"
+          hdiutil detach "$MOUNT_DIR" >/dev/null
+          trap - EXIT
 
       - name: Native architecture launch smoke
         shell: bash
         run: |
           set -euo pipefail
           APP="extracted/ClipType.app"
-          EXE="$APP/Contents/MacOS/cliptype-macos"
+          EXE="$APP/Contents/MacOS/ClipType"
           LOG="launch-${{ matrix.arch }}.log"
           if [[ "${{ matrix.arch }}" == x86_64 ]]; then
             arch -x86_64 "$EXE" --settings >"$LOG" 2>&1 &
@@ -95,8 +112,8 @@ jobs:
             echo "fatal marker found in launch log" >&2
             exit 1
           fi
-          printf 'architecture=%s\nrunner=%s\nlaunch_alive_after_5s=true\ninteractive_desktop_claim=false\n' \
-            '${{ matrix.arch }}' '${{ matrix.runner }}' > "post-release-${{ matrix.arch }}.txt"
+          printf 'version=%s\narchitecture=%s\nrunner=%s\nlaunch_alive_after_5s=true\ninteractive_desktop_claim=false\n' \
+            "$VERSION" '${{ matrix.arch }}' '${{ matrix.runner }}' > "post-release-${{ matrix.arch }}.txt"
 
       - name: Record expected Gatekeeper boundary
         shell: bash
@@ -107,8 +124,6 @@ jobs:
           set -e
           printf 'spctl_exit=%s\nexpected_developer_id=false\nexpected_notarized=false\n' "$result" \
             >> "post-release-${{ matrix.arch }}.txt"
-          # The preview is deliberately not Developer ID signed or notarized.
-          # Assessment is evidence only and must not be converted into a trusted-release claim.
 
       - name: Upload content-free post-release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -129,6 +144,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tracker="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'P3-R01 in:title' --json number --jq '.[0].number // empty')"
-          test -n "$tracker"
-          gh issue comment "$tracker" --repo "$GITHUB_REPOSITORY" --body "Hosted post-release verification passed for the immutable ${VERSION} assets on both Apple Silicon and Intel runners (run ${GITHUB_RUN_ID}). Verified: published SHA-256 manifest, Universal 2 slices, Info.plist, ad-hoc code-signature integrity, and a 5-second native-architecture launch smoke. This does **not** satisfy physical interactive Accessibility, hotkey, focus, Login Item, representative-app, notarization, or Gatekeeper user-flow checks; the issue remains open."
+          gh issue comment 61 --repo "$GITHUB_REPOSITORY" --body "Hosted post-release verification passed for the immutable ${VERSION} assets on both Apple Silicon and Intel runners (run ${GITHUB_RUN_ID}). Verified after re-downloading the public Release: SHA-256 manifest, ZIP extraction, DMG mounting, Universal 2 slices, Info.plist, ad-hoc signature integrity, and a five-second native-architecture launch smoke. This does **not** satisfy physical interactive Accessibility, hotkey, focus, Login Item, representative-app, Developer ID, notarization, stapling, or Gatekeeper user-flow checks; Issue #61 remains open."
