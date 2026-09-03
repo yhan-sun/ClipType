@@ -1,0 +1,53 @@
+case_id	category	required	description
+ENV-01	environment	yes	Apple Silicon interactive Mac on the current supported macOS release recorded
+ENV-02	environment	yes	One additional supported macOS version exercised where available or limitation recorded
+ENV-03	environment	yes	Intel runtime evidence recorded or explicit unverified Intel runtime boundary retained
+BUILD-01	quality	yes	fmt check test Clippy and release build pass on the exact source SHA
+BUNDLE-01	bundle	yes	App bundle identifiers versions LSUIElement resources and minimum system version verified
+BUNDLE-02	bundle	yes	Universal binary contains arm64 and x86_64 slices
+PERM-01	permission	yes	Initial permission state is represented honestly before an explicit onboarding action
+PERM-02	permission	yes	Permission prompt occurs only after explicit operator action and does not loop
+PERM-03	permission	yes	Granted state is observed without restarting when the user grants access
+PERM-04	permission	yes	Application identity remains stable across the tested install rebuild or signature boundary
+PERM-05	permission	yes	Revocation while running is observed and synthetic input becomes unavailable
+PERM-06	permission	yes	Open System Settings action reaches the correct Accessibility pane
+CLIP-01	clipboard	yes	Plain text acquisition succeeds for a controlled synthetic fixture without logging content
+CLIP-02	clipboard	yes	Empty non-text unavailable malformed and too-large outcomes remain typed and content-free
+CLIP-03	clipboard	yes	Pasteboard changeCount is stable around a normal read and change is detected conservatively
+CLIP-04	clipboard	yes	Command-V uses the current clipboard without clear rewrite restore or duplicate paste
+KEY-01	keyboard	yes	ASCII fixture is delivered correctly in Keyboard mode
+KEY-02	keyboard	yes	Chinese Japanese and Korean fixture is delivered correctly in Keyboard mode
+KEY-03	keyboard	yes	Emoji fixture is delivered correctly in Keyboard mode
+KEY-04	keyboard	yes	Combining-mark fixture is delivered correctly in Keyboard mode
+KEY-05	keyboard	yes	Newline fixture is delivered correctly in a controlled non-terminal target
+KEY-06	keyboard	yes	Tab fixture behavior is recorded in a controlled target
+KEY-07	keyboard	yes	Corrected typo sequence preserves wrong Backspace correct ordering and per-action pacing
+KEY-08	keyboard	yes	Physical modifiers are not released and contamination blocks or stops safely
+MODE-01	mode	yes	Explicit Clipboard mode succeeds without silently falling back
+MODE-02	mode	yes	Auto mode chooses Keyboard for controlled short text and Clipboard for controlled long text
+TARGET-01	target	yes	Frontmost process and focused Accessibility element evidence remain stable for one native field
+TARGET-02	target	yes	Top-level application switch stops without destination adoption
+TARGET-03	target	yes	Target closure stops without crash or spill into another application
+TARGET-04	target	yes	Native child-control switch behavior and maximum spill are measured and documented
+TARGET-05	target	yes	Same-render-host limitation is measured in at least one representative application
+TARGET-06	target	yes	Permission loss or degraded focused-element evidence fails closed
+HOTKEY-01	hotkey	yes	Free Trigger and Cancel pair registers and delivers commands on the application run loop
+HOTKEY-02	hotkey	yes	Occupied shortcut is classified as conflict without losing the current pair
+HOTKEY-03	hotkey	yes	Transactional replacement applies a free pair without restart
+HOTKEY-04	hotkey	yes	Failed replacement preserves or restores the complete old pair
+HOTKEY-05	hotkey	yes	Trigger and Cancel remain responsive while an injection worker is active
+SHELL-01	shell	yes	One retained NSStatusItem and native menu remain available while idle
+SHELL-02	shell	yes	Settings opens on the main thread hides on close and does not duplicate on reopen
+SHELL-03	shell	yes	Opening or dismissing settings does not redirect the intended external destination
+SHELL-04	shell	yes	Quit during idle and active injection is bounded and restart creates no duplicate state
+STARTUP-01	startup	yes	SMAppService status register and unregister are observed from the installed app bundle
+STARTUP-02	startup	yes	Login launch is exercised or a precise unverified login-cycle boundary is retained
+APP-01	applications	yes	Controlled native NSTextView target passes required fixture classes
+APP-02	applications	yes	At least one Chromium target records Keyboard Clipboard and Auto behavior
+APP-03	applications	yes	At least one code editor records safe Keyboard behavior
+APP-04	applications	yes	Terminal testing uses benign non-newline text and records command-semantic limits
+PRIV-01	privacy	yes	Generated privacy sentinel is absent from logs diagnostics settings crash output and evidence
+PRIV-02	privacy	yes	No clipboard text focused content window title or native handle appears in public evidence
+ACCESS-01	accessibility	yes	Keyboard navigation and VoiceOver smoke are recorded for settings and permission controls
+VISUAL-01	visual	yes	Light dark and Retina screenshots contain synthetic or empty content only
+FINAL-01	gate	yes	Independent reviewer confirms observed results inferences limitations and unresolved questions are separated

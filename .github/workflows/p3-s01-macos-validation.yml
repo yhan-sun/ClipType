@@ -1,0 +1,129 @@
+name: P3 S01 macOS Native Validation Kit
+
+on:
+  pull_request:
+    paths:
+      - "crates/cliptype-macos/**"
+      - "tools/macos/**"
+      - "docs/research/P3_MACOS_NATIVE_SPIKE.md"
+      - "docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md"
+      - ".github/workflows/p3-s01-macos-validation.yml"
+  push:
+    branches: [validation/p3-s01-macos-native-evidence-16cf713]
+    paths:
+      - "crates/cliptype-macos/**"
+      - "tools/macos/**"
+      - "docs/research/P3_MACOS_NATIVE_SPIKE.md"
+      - "docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md"
+      - ".github/workflows/p3-s01-macos-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  P3_PRODUCT_SHA: 16cf71367506f05c5d40fdcf946dee5c29db596f
+
+jobs:
+  evidence-tooling:
+    name: Fail-closed evidence tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prove fixed product candidate
+        run: tools/macos/p3_s01_guard.sh
+      - name: Test fail-closed evidence reports
+        run: tools/macos/p3_s01_self_test.sh
+
+  hosted-mechanism:
+    name: Hosted ${{ matrix.arch }} mechanism and validation kit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prove fixed product candidate
+        run: tools/macos/p3_s01_guard.sh
+      - name: Install pinned Rust
+        run: |
+          rustup toolchain install 1.98.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy \
+            --target "${{ matrix.target }}"
+      - name: Check validation source
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p cliptype-macos --all-targets --target "${{ matrix.target }}"
+          cargo test --locked -p cliptype-macos --target "${{ matrix.target }}"
+          cargo clippy --locked -p cliptype-macos --all-targets --target "${{ matrix.target }}" -- -D warnings
+      - name: Build probe and controlled target
+        env:
+          CLIPTYPE_SOURCE_SHA: ${{ env.P3_PRODUCT_SHA }}
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p cliptype-macos \
+            --example p3_s01_probe --target "${{ matrix.target }}"
+          swiftc -parse-as-library -warnings-as-errors \
+            tools/macos/p3_s01_target.swift \
+            -framework AppKit -o p3_s01_target
+          file p3_s01_target
+      - name: Run hosted mechanism probes
+        env:
+          CLIPTYPE_SOURCE_SHA: ${{ env.P3_PRODUCT_SHA }}
+        run: |
+          set -euo pipefail
+          PROBE="target/${{ matrix.target }}/release/examples/p3_s01_probe"
+          mkdir -p hosted-observations
+          "$PROBE" snapshot | tee hosted-observations/runtime-snapshot.txt
+          "$PROBE" status-item-smoke | tee hosted-observations/status-item-smoke.txt
+          "$PROBE" hotkey-cycle | tee hosted-observations/hotkey-cycle.txt
+          cat > hosted-observations/evidence-boundary.txt <<BOUNDARY
+          product_candidate_sha=$P3_PRODUCT_SHA
+          validation_tooling_sha=$(git rev-parse HEAD)
+          architecture=${{ matrix.arch }}
+          runner=${{ matrix.runner }}
+          interactive_desktop_claim=false
+          physical_keyboard_claim=false
+          product_accessibility_identity_claim=false
+          support_claim=false
+          BOUNDARY
+          ! grep -R -a -E 'CLIPTYPE_P3_S01_PRIVACY_[A-F0-9]+' hosted-observations
+      - name: Assemble operator kit
+        run: |
+          set -euo pipefail
+          KIT="p3-s01-${{ matrix.arch }}-validation-kit"
+          mkdir -p "$KIT/bin" "$KIT/tools/macos" "$KIT/docs/research" "$KIT/docs/testing"
+          cp "target/${{ matrix.target }}/release/examples/p3_s01_probe" "$KIT/bin/"
+          cp p3_s01_target "$KIT/bin/"
+          cp tools/macos/p3_s01_*.sh tools/macos/p3_s01_cases.tsv "$KIT/tools/macos/"
+          cp docs/research/P3_MACOS_NATIVE_SPIKE.md "$KIT/docs/research/"
+          cp docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md "$KIT/docs/testing/"
+          cp -R hosted-observations "$KIT/"
+          printf '%s\n' "$P3_PRODUCT_SHA" > "$KIT/PRODUCT_CANDIDATE_SHA.txt"
+          printf '%s\n' "$(git rev-parse HEAD)" > "$KIT/VALIDATION_TOOLING_SHA.txt"
+          shasum -a 256 "$KIT/bin/p3_s01_probe" "$KIT/bin/p3_s01_target" > "$KIT/SHA256SUMS.txt"
+          ditto -c -k --sequesterRsrc --keepParent "$KIT" "$KIT.zip"
+      - name: Upload validation kit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-s01-${{ matrix.arch }}-validation-kit
+          path: p3-s01-${{ matrix.arch }}-validation-kit.zip
+          if-no-files-found: error
+          retention-days: 7
