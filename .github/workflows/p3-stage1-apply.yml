@@ -93,18 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! cargo check --workspace --all-targets --target x86_64-pc-windows-msvc > /tmp/windows-check.log 2>&1; then
-            python - <<'PY'
-          from pathlib import Path
-          lines = Path('/tmp/windows-check.log').read_text(encoding='utf-8', errors='replace').splitlines()
-          indexes = [index for index, line in enumerate(lines) if line.startswith('error') or 'error[' in line]
-          selected = set()
-          for index in indexes:
-              selected.update(range(max(0, index - 4), min(len(lines), index + 12)))
-          for index in sorted(selected):
-              print(f'{index + 1:05d}: {lines[index]}')
-          if not indexes:
-              print('\n'.join(lines[-250:]))
-          PY
+            grep -n -B4 -A12 -E '(^error|error\[)' /tmp/windows-check.log | tail -n 500 || tail -n 250 /tmp/windows-check.log
             exit 1
           fi
       - name: Remove one-time staging automation
