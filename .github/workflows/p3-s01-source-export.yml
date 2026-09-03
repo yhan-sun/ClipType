@@ -1,0 +1,36 @@
+name: P3 S01 Source Export
+
+on:
+  push:
+    branches:
+      - validation/p3-s01-macos-native-evidence-8c52a74
+    paths:
+      - ".github/workflows/p3-s01-source-export.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    name: Export exact P3-S01 validation source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact validation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          git archive --format=zip --output=export/cliptype-p3-s01-source.zip HEAD
+          git rev-parse HEAD > export/SOURCE_SHA.txt
+      - name: Upload exact source snapshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-p3-s01-source
+          path: export/
+          if-no-files-found: error
+          retention-days: 1
