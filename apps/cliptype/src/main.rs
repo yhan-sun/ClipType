@@ -23,7 +23,7 @@ mod windows_host {
         sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
-            mpsc::{self, Receiver},
+            mpsc::{self, Receiver, RecvTimeoutError},
         },
         thread::{self, JoinHandle},
         time::Duration,
@@ -33,7 +33,12 @@ mod windows_host {
         CancelResult, Coordinator, SessionCompletion, SettingsSource, SettingsStore,
         ShutdownResult, StatusSnapshot, TriggerResult,
     };
-    use cliptype_core::{InjectionBackend, PreparationFailure, ProductSettings, TerminalOutcome};
+    use cliptype_core::{
+        HotkeyApplyResult, HotkeyAvailability, HotkeyPlatform, InjectionBackend,
+        PreparationFailure, ProductSettings, TerminalOutcome,
+    };
+    use cliptype_platform::{AccessibilityPermissionState, HotkeyControlPort};
+    use cliptype_ui::{SettingsUiEvent, SettingsUiPlatform, SettingsUiSignal, SettingsUiThread};
     use cliptype_windows::{
         TrayEvent, TrayNotice, WindowsClipboard, WindowsCommandEvent, WindowsCommandSignal,
         WindowsCommandSource, WindowsKeyboard, WindowsPaste, WindowsStartup, WindowsTarget,
@@ -41,6 +46,7 @@ mod windows_host {
     };
 
     const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(25);
+    const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum HostError {
@@ -53,7 +59,8 @@ mod windows_host {
         InputThreadStart,
         StatusThreadStart,
         TrayStart,
-        TrayHandlerStart,
+        SettingsUiStart,
+        ProductHandlerStart,
         WorkerShutdownTimeout,
         CommandTeardown,
     }
@@ -70,7 +77,8 @@ mod windows_host {
                 Self::InputThreadStart => "input_thread_start",
                 Self::StatusThreadStart => "status_thread_start",
                 Self::TrayStart => "tray_start",
-                Self::TrayHandlerStart => "tray_handler_start",
+                Self::SettingsUiStart => "settings_ui_start",
+                Self::ProductHandlerStart => "product_handler_start",
                 Self::WorkerShutdownTimeout => "worker_shutdown_timeout",
                 Self::CommandTeardown => "command_teardown",
             }
@@ -112,32 +120,71 @@ mod windows_host {
             .map_err(|_| HostError::InvalidConfiguration)?,
         );
 
+        settings
+            .hotkeys
+            .validate_for(HotkeyPlatform::Windows)
+            .map_err(|_| HostError::InvalidConfiguration)?;
         let mut commands = WindowsCommandSource::with_pair(settings.hotkeys);
         commands
             .register_commands()
             .map_err(|_| HostError::CommandRegistration)?;
         let command_signal = commands.signal();
 
-        let (mut tray, tray_handler, tray_signal) = if options.headless {
+        let (mut settings_ui, ui_events, ui_signal) = if options.headless {
+            (None, None, None)
+        } else {
+            let (event_tx, event_rx) = mpsc::channel();
+            let ui = SettingsUiThread::spawn(
+                settings,
+                SettingsUiPlatform::Windows,
+                AccessibilityPermissionState::NotRequired,
+                event_tx,
+            )
+            .map_err(|_| HostError::SettingsUiStart)?;
+            let signal = ui.signal();
+            if options.show_settings {
+                let _ = signal.show();
+            }
+            (Some(ui), Some(event_rx), Some(signal))
+        };
+
+        let (mut tray, tray_events, tray_signal) = if options.headless {
             (None, None, None)
         } else {
             let (event_tx, event_rx) = mpsc::channel();
             let tray =
                 WindowsTrayHandle::spawn(settings, event_tx).map_err(|_| HostError::TrayStart)?;
             let signal = tray.signal();
-            let handler = spawn_tray_handler(
-                event_rx,
-                Arc::clone(&coordinator),
-                settings_store.clone(),
-                startup,
-                executable,
-                command_signal,
-                signal.clone(),
-                settings,
-            )
-            .map_err(|_| HostError::TrayHandlerStart)?;
-            (Some(tray), Some(handler), Some(signal))
+            (Some(tray), Some(event_rx), Some(signal))
         };
+
+        let stop_handler = Arc::new(AtomicBool::new(false));
+        let product_handler =
+            if let (Some(tray_events), Some(ui_events), Some(tray_signal), Some(ui_signal)) = (
+                tray_events,
+                ui_events,
+                tray_signal.clone(),
+                ui_signal.clone(),
+            ) {
+                Some(
+                    spawn_product_handler(
+                        tray_events,
+                        ui_events,
+                        Arc::clone(&coordinator),
+                        settings_store.clone(),
+                        startup,
+                        executable,
+                        command_signal.clone(),
+                        tray_signal,
+                        ui_signal,
+                        settings,
+                        Arc::clone(&stop_handler),
+                    )
+                    .map_err(|_| HostError::ProductHandlerStart)?,
+                )
+            } else {
+                None
+            };
 
         let stop_monitor = Arc::new(AtomicBool::new(false));
         let monitor = spawn_status_monitor(
@@ -147,9 +194,13 @@ mod windows_host {
         )
         .map_err(|_| HostError::StatusThreadStart)?;
 
-        if !options.background && spawn_stdin_shutdown(command_signal).is_err() {
+        if !options.background && spawn_stdin_shutdown(command_signal.clone()).is_err() {
             stop_monitor.store(true, Ordering::Release);
+            stop_handler.store(true, Ordering::Release);
             let _ = monitor.join();
+            if let Some(ui) = settings_ui.as_mut() {
+                let _ = ui.shutdown();
+            }
             if let Some(tray) = tray.as_mut() {
                 let _ = tray.shutdown();
             }
@@ -158,7 +209,7 @@ mod windows_host {
         }
 
         println!(
-            "cliptype status=ready mode={:?} enabled={} cps={} jitter_percent={} typo_percent={} trigger={} cancel={} tray={} settings_source={:?}",
+            "cliptype status=ready mode={:?} enabled={} cps={} jitter_percent={} typo_percent={} trigger={} cancel={} tray={} settings_ui={} settings_source={:?}",
             settings.mode,
             settings.enabled,
             settings.characters_per_second,
@@ -167,17 +218,22 @@ mod windows_host {
             commands.trigger_hotkey(),
             commands.cancel_hotkey(),
             !options.headless,
+            !options.headless,
             loaded.source,
         );
 
         let loop_result = command_loop(&mut commands, &coordinator, tray_signal.as_ref());
         let shutdown_result = coordinator.shutdown();
         stop_monitor.store(true, Ordering::Release);
+        stop_handler.store(true, Ordering::Release);
         let _ = monitor.join();
+        if let Some(ui) = settings_ui.as_mut() {
+            let _ = ui.shutdown();
+        }
         if let Some(tray) = tray.as_mut() {
             let _ = tray.shutdown();
         }
-        if let Some(handler) = tray_handler {
+        if let Some(handler) = product_handler {
             let _ = handler.join();
         }
         let unregister_result = commands.unregister_commands();
@@ -220,94 +276,272 @@ mod windows_host {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn spawn_tray_handler(
-        events: Receiver<TrayEvent>,
+    fn spawn_product_handler(
+        tray_events: Receiver<TrayEvent>,
+        ui_events: Receiver<SettingsUiEvent>,
         coordinator: Arc<Coordinator>,
         store: SettingsStore,
         startup: WindowsStartup,
         executable: PathBuf,
-        shutdown: WindowsCommandSignal,
+        commands: WindowsCommandSignal,
         tray: WindowsTraySignal,
+        ui: SettingsUiSignal,
         initial: ProductSettings,
+        stop: Arc<AtomicBool>,
     ) -> io::Result<JoinHandle<()>> {
         thread::Builder::new()
-            .name("cliptype-tray-handler".to_owned())
+            .name("cliptype-product-handler".to_owned())
             .spawn(move || {
                 let mut current = initial;
-                while let Ok(event) = events.recv() {
-                    match event {
-                        TrayEvent::Trigger => {
-                            let result = coordinator.trigger();
-                            println!("cliptype event=tray_trigger result={result:?}");
-                            notify_trigger_result(Some(&tray), result);
-                        }
-                        TrayEvent::Cancel => {
-                            let result = coordinator.cancel();
-                            println!("cliptype event=tray_cancel result={result:?}");
-                        }
-                        TrayEvent::SettingsChanged(proposed) => {
-                            if apply_settings(
+                while !stop.load(Ordering::Acquire) {
+                    match tray_events.recv_timeout(CONTROL_POLL_INTERVAL) {
+                        Ok(event) => {
+                            if handle_tray_event(
+                                event,
                                 &coordinator,
                                 &store,
                                 &startup,
                                 &executable,
+                                &commands,
                                 &tray,
-                                current,
-                                proposed,
+                                &ui,
+                                &mut current,
                             ) {
-                                current = proposed;
+                                break;
                             }
                         }
-                        TrayEvent::Quit => {
-                            let _ = shutdown.request_shutdown();
-                            break;
-                        }
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                    while let Ok(event) = ui_events.try_recv() {
+                        handle_ui_event(
+                            event,
+                            &coordinator,
+                            &store,
+                            &startup,
+                            &executable,
+                            &commands,
+                            &tray,
+                            &ui,
+                            &mut current,
+                        );
                     }
                 }
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn handle_tray_event(
+        event: TrayEvent,
+        coordinator: &Coordinator,
+        store: &SettingsStore,
+        startup: &WindowsStartup,
+        executable: &Path,
+        commands: &WindowsCommandSignal,
+        tray: &WindowsTraySignal,
+        ui: &SettingsUiSignal,
+        current: &mut ProductSettings,
+    ) -> bool {
+        match event {
+            TrayEvent::Trigger => {
+                let result = coordinator.trigger();
+                println!("cliptype event=tray_trigger result={result:?}");
+                notify_trigger_result(Some(tray), result);
+            }
+            TrayEvent::Cancel => {
+                let result = coordinator.cancel();
+                println!("cliptype event=tray_cancel result={result:?}");
+            }
+            TrayEvent::OpenSettings => {
+                let _ = ui.update_settings(*current);
+                let _ = ui.show();
+            }
+            TrayEvent::SettingsChanged(proposed) => {
+                let _ = apply_settings(
+                    coordinator,
+                    store,
+                    startup,
+                    executable,
+                    commands,
+                    tray,
+                    ui,
+                    current,
+                    proposed,
+                );
+            }
+            TrayEvent::Quit => {
+                let _ = commands.request_shutdown();
+                return true;
+            }
+        }
+        false
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_ui_event(
+        event: SettingsUiEvent,
+        coordinator: &Coordinator,
+        store: &SettingsStore,
+        startup: &WindowsStartup,
+        executable: &Path,
+        commands: &WindowsCommandSignal,
+        tray: &WindowsTraySignal,
+        ui: &SettingsUiSignal,
+        current: &mut ProductSettings,
+    ) {
+        match event {
+            SettingsUiEvent::Apply(proposed) => {
+                let _ = apply_settings(
+                    coordinator,
+                    store,
+                    startup,
+                    executable,
+                    commands,
+                    tray,
+                    ui,
+                    current,
+                    proposed,
+                );
+            }
+            SettingsUiEvent::Probe(pair) => match commands.probe_pair(pair) {
+                Ok(availability) => {
+                    let _ = ui.update_probe(availability, availability);
+                    let _ = ui.set_status(match availability {
+                        HotkeyAvailability::Available => {
+                            "The operating system accepted both temporary registrations."
+                        }
+                        HotkeyAvailability::Conflict => "One or both shortcuts are already in use.",
+                        HotkeyAvailability::Reserved => "One or both shortcuts are reserved.",
+                        HotkeyAvailability::Unsupported => "One or both shortcuts are unsupported.",
+                        HotkeyAvailability::Unknown => {
+                            "The operating system could not fully verify this pair."
+                        }
+                    });
+                }
+                Err(_) => {
+                    let _ =
+                        ui.update_probe(HotkeyAvailability::Unknown, HotkeyAvailability::Unknown);
+                    let _ = ui.set_status("Shortcut availability could not be checked.");
+                }
+            },
+            SettingsUiEvent::Reset(defaults) => {
+                let _ = ui.update_settings(defaults);
+                let _ = ui.set_status("Defaults loaded. Choose Apply to save them.");
+            }
+            SettingsUiEvent::RequestPermission | SettingsUiEvent::OpenPermissionSettings => {
+                let _ = ui.set_status("Accessibility permission is not required on Windows.");
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn apply_settings(
         coordinator: &Coordinator,
         store: &SettingsStore,
         startup: &WindowsStartup,
         executable: &Path,
+        commands: &WindowsCommandSignal,
         tray: &WindowsTraySignal,
-        current: ProductSettings,
+        ui: &SettingsUiSignal,
+        current: &mut ProductSettings,
         proposed: ProductSettings,
     ) -> bool {
         let Ok(proposed) = proposed.validate() else {
-            notify(Some(tray), TrayNotice::SettingsFailed);
+            settings_failure(tray, ui, "One or more settings are invalid.");
             return false;
         };
+        if proposed
+            .hotkeys
+            .validate_for(HotkeyPlatform::Windows)
+            .is_err()
+        {
+            settings_failure(tray, ui, "The shortcut pair is reserved or unsupported.");
+            return false;
+        }
+        let Ok(runtime) = proposed.runtime_config() else {
+            settings_failure(tray, ui, "The runtime settings are invalid.");
+            return false;
+        };
+        let old_runtime = match current.runtime_config() {
+            Ok(value) => value,
+            Err(_) => {
+                settings_failure(tray, ui, "The current runtime settings are invalid.");
+                return false;
+            }
+        };
+
+        let hotkeys_changed = proposed.hotkeys != current.hotkeys;
+        if hotkeys_changed {
+            match commands.replace_pair(proposed.hotkeys) {
+                Ok(HotkeyApplyResult::Applied) => {}
+                Ok(HotkeyApplyResult::Rejected(availability))
+                | Ok(HotkeyApplyResult::RolledBack(availability)) => {
+                    let _ = ui.update_probe(availability, availability);
+                    settings_failure(
+                        tray,
+                        ui,
+                        "The new shortcuts could not be applied; the old pair remains active.",
+                    );
+                    return false;
+                }
+                Err(_) => {
+                    let _ =
+                        ui.update_probe(HotkeyAvailability::Unknown, HotkeyAvailability::Unknown);
+                    settings_failure(tray, ui, "The shortcut owner did not accept the update.");
+                    return false;
+                }
+            }
+        }
+
         let startup_changed = proposed.start_at_login != current.start_at_login;
         if startup_changed
             && startup
                 .set_enabled(executable, proposed.start_at_login)
                 .is_err()
         {
+            if hotkeys_changed {
+                let _ = commands.replace_pair(current.hotkeys);
+            }
+            settings_failure(tray, ui, "Start at login could not be changed.");
             notify(Some(tray), TrayNotice::StartupFailed);
             return false;
         }
-        if store.save(proposed).is_err() {
+
+        if coordinator.update_config(runtime).is_err() {
             if startup_changed {
                 let _ = startup.set_enabled(executable, current.start_at_login);
             }
-            notify(Some(tray), TrayNotice::SettingsFailed);
+            if hotkeys_changed {
+                let _ = commands.replace_pair(current.hotkeys);
+            }
+            settings_failure(tray, ui, "The running configuration could not be updated.");
             return false;
         }
-        let Ok(runtime) = proposed.runtime_config() else {
-            notify(Some(tray), TrayNotice::SettingsFailed);
-            return false;
-        };
-        if coordinator.update_config(runtime).is_err() {
-            notify(Some(tray), TrayNotice::SettingsFailed);
+
+        if store.save(proposed).is_err() {
+            let _ = coordinator.update_config(old_runtime);
+            if startup_changed {
+                let _ = startup.set_enabled(executable, current.start_at_login);
+            }
+            if hotkeys_changed {
+                let _ = commands.replace_pair(current.hotkeys);
+            }
+            settings_failure(
+                tray,
+                ui,
+                "Settings could not be saved; the previous configuration was restored.",
+            );
             return false;
         }
+
+        *current = proposed;
         tray.update_settings(proposed);
+        let _ = ui.update_settings(proposed);
+        let _ = ui.update_probe(HotkeyAvailability::Available, HotkeyAvailability::Available);
+        let _ = ui.set_status("Settings applied.");
         notify(Some(tray), TrayNotice::SettingsSaved);
         println!(
-            "cliptype event=settings_saved mode={:?} enabled={} speed={:?} cps={} jitter_percent={} typo_percent={} startup={} hotkey_restart_required={}",
+            "cliptype event=settings_saved mode={:?} enabled={} speed={:?} cps={} jitter_percent={} typo_percent={} startup={} hotkeys_live_updated={}",
             proposed.mode,
             proposed.enabled,
             proposed.speed,
@@ -315,9 +549,14 @@ mod windows_host {
             proposed.jitter_percent,
             proposed.typo_probability_percent,
             proposed.start_at_login,
-            proposed.hotkeys != current.hotkeys,
+            hotkeys_changed,
         );
         true
+    }
+
+    fn settings_failure(tray: &WindowsTraySignal, ui: &SettingsUiSignal, message: &'static str) {
+        notify(Some(tray), TrayNotice::SettingsFailed);
+        let _ = ui.set_status(message);
     }
 
     fn spawn_stdin_shutdown(signal: WindowsCommandSignal) -> io::Result<JoinHandle<()>> {
@@ -446,6 +685,7 @@ mod windows_host {
     struct HostOptions {
         background: bool,
         headless: bool,
+        show_settings: bool,
     }
 
     impl HostOptions {
@@ -453,16 +693,20 @@ mod windows_host {
             let mut background = false;
             let mut headless =
                 env::var_os("CLIPTYPE_HEADLESS").as_deref() == Some(std::ffi::OsStr::new("1"));
+            let mut show_settings = false;
             for argument in env::args_os().skip(1) {
                 if argument == "--background" {
                     background = true;
                 } else if argument == "--headless" {
                     headless = true;
+                } else if argument == "--settings" {
+                    show_settings = true;
                 }
             }
             Self {
                 background,
                 headless,
+                show_settings,
             }
         }
     }
