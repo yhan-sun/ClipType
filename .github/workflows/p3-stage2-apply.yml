@@ -33,19 +33,22 @@ jobs:
           import hashlib
           from pathlib import Path
 
-          expected_chunks = {
-              'chunk-00.b64': '46a6457fd0b16480166e3d2d5525ddd4683b3a404c25290b7d7508e7ea66820d',
-              'chunk-01.b64': 'a6e60d8e387ea1b8754e0698aefcc56b3dc90734e7190eaaeff77c966eced00b',
-              'chunk-02.b64': '03de407a14a1aa6cc04ea5eea68568058eecbd3aeaf9b7d517f7e42f46871407',
-              'chunk-03.b64': '924c034e1cb75cf62ac23cd507a03d16cc702ab52e71717c75380ad02b735206',
-              'chunk-04.b64': 'c52aadc7cae308660d0e25c603d548c180019077f735991dbc9cd1118e003af0',
-              'chunk-05.b64': 'e6c3c1e28c5726ee9a9ceff316e238c9bbf80c89f2802026a5e4fae8f0f584fa',
-              'chunk-06.b64': 'cf6e98a80a1a7ca6b4e0f49cb56863670ec66cb8f93ed734bb7f696fb185ba26',
-              'chunk-07.b64': '182823fd232c88f52e26876be994cc7370afb5356ceb0bf5c22fb00ba04ad337',
-          }
+          expected_chunks = [
+              ('chunk-00.b64', '46a6457fd0b16480166e3d2d5525ddd4683b3a404c25290b7d7508e7ea66820d'),
+              ('chunk-01.b64', 'a6e60d8e387ea1b8754e0698aefcc56b3dc90734e7190eaaeff77c966eced00b'),
+              ('chunk-02a.b64', 'ce8ea3ceb5f23e63cccfa8186d957a10d298f91ebeac78fc94c39ab8f75239ec'),
+              ('chunk-02b.b64', 'f69d852217c82b7b1401b2cb5a764ba82928491781b1ad8110229baf7595dc77'),
+              ('chunk-02c.b64', 'e043f4b3bff247c45a357ca4a693e359d45752d2f52950ad1cfccde946b961ef'),
+              ('chunk-02d.b64', '29c41ac417387e033d88eeef3322542ffd668180362b0511057c9ad7b94b0a4d'),
+              ('chunk-03.b64', '924c034e1cb75cf62ac23cd507a03d16cc702ab52e71717c75380ad02b735206'),
+              ('chunk-04.b64', 'c52aadc7cae308660d0e25c603d548c180019077f735991dbc9cd1118e003af0'),
+              ('chunk-05.b64', 'e6c3c1e28c5726ee9a9ceff316e238c9bbf80c89f2802026a5e4fae8f0f584fa'),
+              ('chunk-06.b64', 'cf6e98a80a1a7ca6b4e0f49cb56863670ec66cb8f93ed734bb7f696fb185ba26'),
+              ('chunk-07.b64', '182823fd232c88f52e26876be994cc7370afb5356ceb0bf5c22fb00ba04ad337'),
+          ]
           root = Path('.github/p3-stage2')
           parts = []
-          for name, expected_digest in expected_chunks.items():
+          for name, expected_digest in expected_chunks:
               data = (root / name).read_bytes()
               digest = hashlib.sha256(data).hexdigest()
               if digest != expected_digest:
