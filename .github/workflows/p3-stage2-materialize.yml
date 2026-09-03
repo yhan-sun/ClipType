@@ -1,0 +1,88 @@
+name: P3 Stage 2 Materialize Source
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-stage2-materialize.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: p3-stage2-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  materialize:
+    name: Materialize macOS source on the feature branch
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Apply staged source when needed
+        id: applied
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f .github/p3-stage2/payload.b64 ]]; then
+            echo "value=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "value=true" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import base64, tarfile
+          from pathlib import Path
+          encoded = ''.join(Path('.github/p3-stage2/payload.b64').read_text(encoding='ascii').split())
+          archive = Path('/tmp/p3-stage2.tar.gz')
+          archive.write_bytes(base64.b64decode(encoded, validate=True))
+          with tarfile.open(archive, 'r:gz') as bundle:
+              bundle.extractall('.')
+          PY
+          chmod +x packaging/macos/package.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          cargo = Path('apps/cliptype-macos/Cargo.toml')
+          text = cargo.read_text(encoding='utf-8')
+          text = text.replace('name = "cliptype-macos"\n', 'name = "cliptype-macos-app"\n', 1)
+          if '[[bin]]' not in text:
+              text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
+          cargo.write_text(text, encoding='utf-8')
+
+          native = Path('crates/cliptype-macos/native/cliptype_macos.m')
+          text = native.read_text(encoding='utf-8')
+          text = text.replace('int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n', 'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n')
+          text = text.replace('        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n', '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n')
+          native.write_text(text, encoding='utf-8')
+
+          for workflow in [Path('.github/workflows/p3-cross-platform.yml'), Path('.github/workflows/macos-release.yml')]:
+              text = workflow.read_text(encoding='utf-8')
+              text = text.replace('-p cliptype-macos --target', '-p cliptype-macos-app --target')
+              text = text.replace('runner: macos-15\n            target: x86_64-apple-darwin', 'runner: macos-15-intel\n            target: x86_64-apple-darwin')
+              text = text.replace('runs-on: macos-15\n    timeout-minutes: 20', 'runs-on: macos-15-intel\n    timeout-minutes: 20')
+              text = text.replace('--repo "$GITHUB_REPOSITORY" --clobber=false', '--repo "$GITHUB_REPOSITORY"')
+              workflow.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit source and remove staging transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -rf --ignore-unmatch .github/p3-stage2
+          git rm -f --ignore-unmatch .github/workflows/p3-stage2-apply.yml
+          git rm -f --ignore-unmatch .github/workflows/p3-stage2-rescue.yml
+          git rm -f --ignore-unmatch .github/workflows/p3-stage2-materialize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to materialize."
+            exit 0
+          fi
+          git commit -m "P3: materialize macOS implementation for direct CI"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
