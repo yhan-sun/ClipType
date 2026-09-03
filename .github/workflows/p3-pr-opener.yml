@@ -1,0 +1,90 @@
+name: P3 Post-Verification PR Opener
+
+on:
+  push:
+    branches:
+      - feat/p3-cross-platform-ui-macos
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: p3-post-verification-pr
+  cancel-in-progress: true
+
+jobs:
+  open:
+    name: Open P3 PR after verified production source exists
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+
+      - name: Detect verified production state
+        id: ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ \
+            -f crates/cliptype-macos/Cargo.toml && \
+            -f apps/cliptype-macos/Cargo.toml && \
+            -f packaging/macos/package.sh && \
+            -f .github/workflows/p3-cross-platform.yml && \
+            -f .github/workflows/macos-release.yml && \
+            ! -e .github/p3-stage2 && \
+            ! -e .github/workflows/p3-finalize-v2.yml \
+          ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+            echo "P3 final source has not reached the verified production state"
+          fi
+
+      - name: Open or report implementation pull request
+        if: steps.ready.outputs.value == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head feat/p3-cross-platform-ui-macos \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "P3 implementation PR already open: #$existing"
+            exit 0
+          fi
+          cat > /tmp/p3-pr.md <<'EOF'
+          ## Summary
+
+          - adds the shared Slint settings UI and versioned settings persistence
+          - adds transactional custom trigger/cancel hotkeys and live Win32 replacement
+          - adds native macOS clipboard, Unicode keyboard, paste, target, permission, and global-hotkey adapters
+          - adds an AppKit menu-bar application and launch-at-login integration
+          - adds Universal 2 packaging and protected signing/notarization release gates
+
+          ## Verified gates
+
+          - native Apple Silicon workspace check, tests, and Clippy with warnings denied
+          - Intel macOS full workspace cross-check
+          - Windows MSVC full workspace cross-check
+          - arm64 and x86_64 release builds combined and verified with `lipo`
+
+          ## Release boundary
+
+          Developer ID signing and Apple notarization remain protected maintainer-credential gates. Pull-request CI validates unsigned candidates and does not claim notarization.
+          EOF
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head feat/p3-cross-platform-ui-macos \
+            --title "P3: shared settings UI, custom hotkeys, and macOS support" \
+            --body-file /tmp/p3-pr.md
