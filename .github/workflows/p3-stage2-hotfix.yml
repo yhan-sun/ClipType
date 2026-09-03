@@ -25,22 +25,18 @@ jobs:
 
           workflow = Path('.github/workflows/p3-stage2-apply.yml')
           text = workflow.read_text(encoding='utf-8')
-          marker = """          text = host.read_text(encoding='utf-8')
-          text = text.replace(
-              \"        const fn label(self) -> &'static str {\",
-"""
-          replacement = """          text = host.read_text(encoding='utf-8')
-          text = text.replace(
-              '    enum HostError {',
-              '    pub(super) enum HostError {',
-              1,
-          )
-          text = text.replace(
-              \"        const fn label(self) -> &'static str {\",
-"""
-          if marker not in text:
+          needle = "          host.write_text(text, encoding='utf-8')"
+          patch = "\n".join([
+              "          text = text.replace(",
+              "              '    enum HostError {',",
+              "              '    pub(super) enum HostError {',",
+              "              1,",
+              "          )",
+              needle,
+          ])
+          if needle not in text:
               raise SystemExit('HostError workflow patch marker not found')
-          workflow.write_text(text.replace(marker, replacement, 1), encoding='utf-8')
+          workflow.write_text(text.replace(needle, patch, 1), encoding='utf-8')
           PY
           git rm .github/workflows/p3-stage2-hotfix.yml
       - name: Commit workflow hotfix
