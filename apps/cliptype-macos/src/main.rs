@@ -44,7 +44,7 @@ mod macos_host {
     const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(40);
 
     #[derive(Debug, Clone, Copy)]
-    enum HostError {
+    pub(super) enum HostError {
         SettingsPath,
         SettingsLoad,
         SettingsSave,
@@ -87,7 +87,7 @@ mod macos_host {
         quitting: bool,
     }
 
-    pub fn run() -> Result<(), HostError> {
+    pub(super) fn run() -> Result<(), HostError> {
         initialize_application();
 
         let store = SettingsStore::new(settings_path()?);
