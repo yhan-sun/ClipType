@@ -111,6 +111,34 @@ jobs:
               text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
           cargo.write_text(text, encoding='utf-8')
 
+          host = Path('apps/cliptype-macos/src/main.rs')
+          text = host.read_text(encoding='utf-8')
+          text = text.replace(
+              "        const fn label(self) -> &'static str {",
+              "        pub(super) const fn label(self) -> &'static str {",
+              1,
+          )
+          host.write_text(text, encoding='utf-8')
+
+          rust_native = Path('crates/cliptype-macos/src/native.rs')
+          text = rust_native.read_text(encoding='utf-8')
+          text = text.replace(
+              '    sync:{\n        Arc,\n        atomic::{AtomicBool, Ordering},\n',
+              '    sync:{\n        atomic::{AtomicBool, Ordering},\n',
+              1,
+          )
+          text = text.replace(
+              '    sync: {\n        Arc,\n        atomic::{AtomicBool, Ordering},\n',
+              '    sync: {\n        atomic::{AtomicBool, Ordering},\n',
+              1,
+          )
+          text = text.replace(
+              '    sync::{\n        Arc,\n        atomic::{AtomicBool, Ordering},\n',
+              '    sync::{\n        atomic::{AtomicBool, Ordering},\n',
+              1,
+          )
+          rust_native.write_text(text, encoding='utf-8')
+
           native = Path('crates/cliptype-macos/native/cliptype_macos.m')
           text = native.read_text(encoding='utf-8')
           text = text.replace(
