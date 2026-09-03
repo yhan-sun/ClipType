@@ -40,7 +40,7 @@ jobs:
           rm -rf apps/cliptype-flutter/.git
           flutter pub get --directory apps/cliptype-flutter
           flutter analyze apps/cliptype-flutter
-          flutter test apps/cliptype-flutter
+          (cd apps/cliptype-flutter && flutter test)
       - name: Commit generated scaffold and remove one-time workflow
         shell: bash
         run: |
