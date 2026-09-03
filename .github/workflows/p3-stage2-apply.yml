@@ -3,7 +3,9 @@ name: P3 Stage 2 Apply And Verify
 on:
   push:
     branches: [feat/p3-cross-platform-ui-macos]
-    paths: [".github/workflows/p3-stage2-apply.yml"]
+    paths:
+      - ".github/workflows/p3-stage2-apply.yml"
+      - ".github/p3-stage2/payload.b64"
   workflow_dispatch:
 
 permissions:
@@ -28,30 +30,67 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import base64
+          import hashlib
           from pathlib import Path
-          Path('/tmp/p3-stage2.tar.gz').write_bytes(base64.b64decode(Path('.github/p3-stage2/payload.b64').read_text()))
+
+          encoded = Path('.github/p3-stage2/payload.b64').read_text(encoding='utf-8').strip()
+          payload = base64.b64decode(encoded, validate=True)
+          digest = hashlib.sha256(payload).hexdigest()
+          expected = 'a97a86588b32216988062a58d19c9ad49e5b3f2077764059468fca6bbf9737f9'
+          if digest != expected:
+              raise SystemExit(f'payload SHA-256 mismatch: expected {expected}, got {digest}')
+          Path('/tmp/p3-stage2.tar.gz').write_bytes(payload)
           PY
+          tar -tzf /tmp/p3-stage2.tar.gz >/tmp/p3-stage2-members.txt
           tar -xzf /tmp/p3-stage2.tar.gz
           chmod +x packaging/macos/package.sh
           python - <<'PY'
           from pathlib import Path
+
           cargo = Path('apps/cliptype-macos/Cargo.toml')
-          text = cargo.read_text().replace('name = "cliptype-macos"\n', 'name = "cliptype-macos-app"\n', 1)
+          text = cargo.read_text(encoding='utf-8').replace(
+              'name = "cliptype-macos"\n',
+              'name = "cliptype-macos-app"\n',
+              1,
+          )
           if '[[bin]]' not in text:
               text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
-          cargo.write_text(text)
+          cargo.write_text(text, encoding='utf-8')
+
           native = Path('crates/cliptype-macos/native/cliptype_macos.m')
-          text = native.read_text()
-          text = text.replace('int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n', 'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n')
-          text = text.replace('        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n', '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n')
-          native.write_text(text)
-          for workflow in [Path('.github/workflows/p3-cross-platform.yml'), Path('.github/workflows/macos-release.yml')]:
-              text = workflow.read_text()
-              text = text.replace('-p cliptype-macos --target', '-p cliptype-macos-app --target')
-              text = text.replace('runner: macos-15\n            target: x86_64-apple-darwin', 'runner: macos-15-intel\n            target: x86_64-apple-darwin')
-              text = text.replace('runs-on: macos-15\n    timeout-minutes: 20', 'runs-on: macos-15-intel\n    timeout-minutes: 20')
-              text = text.replace('--repo "$GITHUB_REPOSITORY" --clobber=false', '--repo "$GITHUB_REPOSITORY"')
-              workflow.write_text(text)
+          text = native.read_text(encoding='utf-8')
+          text = text.replace(
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+          )
+          text = text.replace(
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+          )
+          native.write_text(text, encoding='utf-8')
+
+          for workflow in [
+              Path('.github/workflows/p3-cross-platform.yml'),
+              Path('.github/workflows/macos-release.yml'),
+          ]:
+              text = workflow.read_text(encoding='utf-8')
+              text = text.replace(
+                  '-p cliptype-macos --target',
+                  '-p cliptype-macos-app --target',
+              )
+              text = text.replace(
+                  'runner: macos-15\n            target: x86_64-apple-darwin',
+                  'runner: macos-15-intel\n            target: x86_64-apple-darwin',
+              )
+              text = text.replace(
+                  'runs-on: macos-15\n    timeout-minutes: 20',
+                  'runs-on: macos-15-intel\n    timeout-minutes: 20',
+              )
+              text = text.replace(
+                  '--repo "$GITHUB_REPOSITORY" --clobber=false',
+                  '--repo "$GITHUB_REPOSITORY"',
+              )
+              workflow.write_text(text, encoding='utf-8')
           PY
       - name: Install pinned Rust
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-apple-darwin
@@ -73,7 +112,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: p3-macos-stage2-diagnostics
-          path: /tmp/macos-*.log
+          path: |
+            /tmp/macos-*.log
+            /tmp/p3-stage2-members.txt
           if-no-files-found: warn
           retention-days: 1
       - name: Remove one-time staging files
