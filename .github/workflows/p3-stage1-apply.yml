@@ -1,0 +1,83 @@
+name: P3 Stage 1 Apply And Verify
+
+on:
+  push:
+    branches:
+      - feat/p3-cross-platform-ui-macos
+    paths:
+      - ".github/workflows/p3-stage1-apply.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apply-and-verify:
+    name: Apply shared UI and custom-hotkey stage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact P3 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Reconstruct and apply staged implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/p3-stage1/chunk-*.txt | base64 --decode > /tmp/p3-stage1.z
+          python - <<'PY'
+          import zlib
+          from pathlib import Path
+          compressed = Path('/tmp/p3-stage1.z').read_bytes()
+          Path('/tmp/p3-stage1-patch.py').write_bytes(zlib.decompress(compressed))
+          PY
+          python /tmp/p3-stage1-patch.py
+      - name: Install native Linux build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake pkg-config \
+            libfontconfig1-dev libfreetype6-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-dev \
+            libwayland-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+      - name: Format source and refresh lockfile
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+      - name: Check, test, and lint native-neutral and UI crates
+        shell: bash
+        run: |
+          cargo check --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+          cargo test -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+          cargo clippy --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui -- -D warnings
+      - name: Cross-check complete Windows workspace
+        shell: bash
+        run: cargo check --workspace --all-targets --target x86_64-pc-windows-msvc
+      - name: Remove one-time staging automation
+        shell: bash
+        run: |
+          git rm -rf .github/p3-stage1
+          git rm .github/workflows/p3-stage1-apply.yml
+          git rm .github/workflows/p3-source-export.yml
+      - name: Commit verified stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          git commit -m "P3: add shared settings UI and live custom hotkeys"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
