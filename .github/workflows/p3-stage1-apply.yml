@@ -46,6 +46,7 @@ jobs:
               'fn unregister_id_checked(id: i32) -> bool {\n    // SAFETY: removes an application-owned id on the owner thread.\n    unsafe { unregister_hot_key(null_mut(), id) } != 0\n}',
               'fn unregister_id_checked(id: i32) -> bool {\n    // SAFETY: removes an application-owned id on the owner thread.\n    let result = unsafe { unregister_hot_key(null_mut(), id) };\n    result != 0\n}',
           )
+          text = text.replace('struct SharedControl {', '#[derive(Debug)]\nstruct SharedControl {')
           command.write_text(text, encoding='utf-8')
 
           ui = Path('crates/cliptype-ui/ui/settings.slint')
