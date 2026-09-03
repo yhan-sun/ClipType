@@ -29,6 +29,33 @@ jobs:
           base64 --decode .github/p3-stage2/payload.b64 > /tmp/p3-stage2.tar.gz
           tar -xzf /tmp/p3-stage2.tar.gz
           chmod +x packaging/macos/package.sh
+          python - <<'PY'
+          from pathlib import Path
+          cargo = Path('apps/cliptype-macos/Cargo.toml')
+          text = cargo.read_text()
+          text = text.replace('name = "cliptype-macos"\n', 'name = "cliptype-macos-app"\n', 1)
+          if '[[bin]]' not in text:
+              text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
+          cargo.write_text(text)
+
+          native = Path('crates/cliptype-macos/native/cliptype_macos.m')
+          text = native.read_text()
+          text = text.replace(
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+          )
+          text = text.replace(
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+          )
+          native.write_text(text)
+
+          for workflow in [Path('.github/workflows/p3-cross-platform.yml'), Path('.github/workflows/macos-release.yml')]:
+              text = workflow.read_text()
+              text = text.replace('-p cliptype-macos --target', '-p cliptype-macos-app --target')
+              text = text.replace('--repo "$GITHUB_REPOSITORY" --clobber=false', '--repo "$GITHUB_REPOSITORY"')
+              workflow.write_text(text)
+          PY
       - name: Install pinned Rust
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-apple-darwin
       - name: Format and refresh lockfile
