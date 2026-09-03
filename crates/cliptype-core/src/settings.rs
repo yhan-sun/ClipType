@@ -2,9 +2,11 @@
 
 use std::{fmt, time::Duration};
 
-use crate::{AutoClipboardThreshold, InjectionMode, P1Config, ProductConfig, ProductConfigError};
+use crate::{
+    AutoClipboardThreshold, HotkeyPair, InjectionMode, P1Config, ProductConfig, ProductConfigError,
+};
 
-pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
 pub const MIN_CHARACTERS_PER_SECOND: u16 = 1;
 pub const MAX_CHARACTERS_PER_SECOND: u16 = 250;
 pub const MAX_JITTER_PERCENT: u8 = 95;
@@ -38,33 +40,6 @@ const fn interval_for_characters_per_second(characters_per_second: u16) -> Durat
     Duration::from_nanos(1_000_000_000_u64 / characters_per_second as u64)
 }
 
-/// Reviewed Windows global-hotkey pairs. Arbitrary user strings are not parsed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HotkeyPreset {
-    #[default]
-    CtrlAltShiftFunction,
-    CtrlAltFunction,
-    CtrlShiftFunction,
-}
-
-impl HotkeyPreset {
-    pub const fn trigger_label(self) -> &'static str {
-        match self {
-            Self::CtrlAltShiftFunction => "Ctrl+Alt+Shift+F12",
-            Self::CtrlAltFunction => "Ctrl+Alt+F12",
-            Self::CtrlShiftFunction => "Ctrl+Shift+F12",
-        }
-    }
-
-    pub const fn cancel_label(self) -> &'static str {
-        match self {
-            Self::CtrlAltShiftFunction => "Ctrl+Alt+Shift+F11",
-            Self::CtrlAltFunction => "Ctrl+Alt+F11",
-            Self::CtrlShiftFunction => "Ctrl+Shift+F11",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductSettings {
     pub version: u32,
@@ -77,7 +52,7 @@ pub struct ProductSettings {
     pub typo_probability_percent: u8,
     pub notifications: bool,
     pub start_at_login: bool,
-    pub hotkey: HotkeyPreset,
+    pub hotkeys: HotkeyPair,
 }
 
 impl ProductSettings {
@@ -96,6 +71,9 @@ impl ProductSettings {
         if self.typo_probability_percent > MAX_TYPO_PROBABILITY_PERCENT {
             return Err(SettingsValidationError::TypoProbabilityOutOfRange);
         }
+        self.hotkeys
+            .validate()
+            .map_err(SettingsValidationError::InvalidHotkeys)?;
         self.runtime_config()
             .map_err(SettingsValidationError::InvalidRuntime)?;
         Ok(self)
@@ -131,7 +109,7 @@ impl Default for ProductSettings {
             typo_probability_percent: 0,
             notifications: true,
             start_at_login: false,
-            hotkey: HotkeyPreset::CtrlAltShiftFunction,
+            hotkeys: HotkeyPair::default(),
         }
     }
 }
@@ -142,6 +120,7 @@ pub enum SettingsValidationError {
     CharactersPerSecondOutOfRange,
     JitterOutOfRange,
     TypoProbabilityOutOfRange,
+    InvalidHotkeys(crate::HotkeyValidationError),
     InvalidRuntime(ProductConfigError),
 }
 
@@ -163,6 +142,7 @@ impl fmt::Display for SettingsValidationError {
                 formatter,
                 "typo probability percent must not exceed {MAX_TYPO_PROBABILITY_PERCENT}"
             ),
+            Self::InvalidHotkeys(error) => write!(formatter, "invalid shortcut settings: {error}"),
             Self::InvalidRuntime(error) => write!(formatter, "invalid runtime settings: {error}"),
         }
     }
@@ -175,10 +155,10 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        HotkeyPreset, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
+        MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
         ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError, SpeedPreset,
     };
-    use crate::InjectionMode;
+    use crate::{HotkeyKey, HotkeyPlatform, InjectionMode};
 
     #[test]
     fn defaults_are_versioned_and_runtime_valid() {
@@ -265,14 +245,13 @@ mod tests {
     }
 
     #[test]
-    fn hotkey_presets_expose_only_reviewed_pairs() {
+    fn defaults_use_reviewed_non_f12_shortcuts() {
+        let settings = ProductSettings::default();
+        assert_eq!(settings.hotkeys.trigger.key, HotkeyKey::V);
+        assert_eq!(settings.hotkeys.cancel.key, HotkeyKey::X);
         assert_eq!(
-            HotkeyPreset::CtrlAltFunction.trigger_label(),
-            "Ctrl+Alt+F12"
-        );
-        assert_eq!(
-            HotkeyPreset::CtrlShiftFunction.cancel_label(),
-            "Ctrl+Shift+F11"
+            settings.hotkeys.trigger.label(HotkeyPlatform::Windows),
+            "Ctrl+Alt+Shift+V"
         );
     }
 }

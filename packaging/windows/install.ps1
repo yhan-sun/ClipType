@@ -40,7 +40,7 @@ if (Test-Path -LiteralPath $configPath) {
     )
 } else {
     $updated = @"
-version = 1
+version = 2
 enabled = true
 mode = "auto"
 auto_clipboard_threshold = 256
@@ -50,7 +50,8 @@ jitter_percent = 0
 typo_probability_percent = 0
 notifications = true
 start_at_login = $startupLiteral
-hotkey = "ctrl-alt-shift-function"
+trigger_hotkey = "ctrl+alt+shift+v"
+cancel_hotkey = "ctrl+alt+shift+x"
 "@
 }
 $configTemp = "$configPath.install.tmp"

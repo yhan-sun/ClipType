@@ -8,6 +8,7 @@
 
 mod cancellation;
 mod config;
+mod hotkey;
 mod limits;
 mod normalization;
 mod outcome;
@@ -21,6 +22,10 @@ mod text;
 pub use cancellation::CancellationProbe;
 pub use config::{
     ConfigError, ConfigField, FocusPolicy, NewlinePolicy, P1Config, RetryBudget, TabPolicy,
+};
+pub use hotkey::{
+    HotkeyApplyResult, HotkeyAvailability, HotkeyKey, HotkeyModifiers, HotkeyPair,
+    HotkeyParseError, HotkeyPlatform, HotkeySpec, HotkeyValidationError,
 };
 pub use limits::{
     BoundError, BoundKind, ByteCount, DispatchBatchLimit, NativeByteLimit, NativeEventCount,
@@ -40,7 +45,7 @@ pub use product::{
 };
 pub use sensitive::SensitiveText;
 pub use settings::{
-    HotkeyPreset, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
+    MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT, MAX_TYPO_PROBABILITY_PERCENT,
     MIN_CHARACTERS_PER_SECOND, ProductSettings, SETTINGS_SCHEMA_VERSION, SettingsValidationError,
     SpeedPreset,
 };

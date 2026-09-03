@@ -112,7 +112,7 @@ mod windows_host {
             .map_err(|_| HostError::InvalidConfiguration)?,
         );
 
-        let mut commands = WindowsCommandSource::with_preset(settings.hotkey);
+        let mut commands = WindowsCommandSource::with_pair(settings.hotkeys);
         commands
             .register_commands()
             .map_err(|_| HostError::CommandRegistration)?;
@@ -315,7 +315,7 @@ mod windows_host {
             proposed.jitter_percent,
             proposed.typo_probability_percent,
             proposed.start_at_login,
-            proposed.hotkey != current.hotkey,
+            proposed.hotkeys != current.hotkeys,
         );
         true
     }
