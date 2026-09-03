@@ -12,7 +12,9 @@ use std::{
     time::Duration,
 };
 
-use cliptype_core::{HotkeyPreset, InjectionBackend, InjectionMode, ProductSettings, SpeedPreset};
+use cliptype_core::{
+    HotkeyPlatform, InjectionBackend, InjectionMode, ProductSettings, SpeedPreset,
+};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
     System::Threading::GetCurrentThreadId,
@@ -525,10 +527,11 @@ fn show_context_menu(window: HWND) {
         false,
     );
     let hotkey = format!(
-        "Hotkey: {} (cycle; restart)",
-        settings.hotkey.trigger_label()
+        "Shortcuts: {} / {}",
+        settings.hotkeys.trigger.label(HotkeyPlatform::Windows),
+        settings.hotkeys.cancel.label(HotkeyPlatform::Windows),
     );
-    append(menu, CMD_HOTKEY, &hotkey, false, false);
+    append(menu, CMD_HOTKEY, &hotkey, false, true);
     append_separator(menu);
     append(menu, CMD_QUIT, "Quit ClipType", false, false);
 
@@ -659,10 +662,7 @@ fn apply_command(command: usize, mut settings: ProductSettings) {
             settings.start_at_login = !settings.start_at_login;
             Some(TrayEvent::SettingsChanged(settings))
         }
-        CMD_HOTKEY => {
-            settings.hotkey = next_hotkey(settings.hotkey);
-            Some(TrayEvent::SettingsChanged(settings))
-        }
+        CMD_HOTKEY => None,
         CMD_QUIT => Some(TrayEvent::Quit),
         _ => None,
     };
@@ -686,14 +686,6 @@ fn adjust_speed(settings: &mut ProductSettings, delta: i16) {
     settings.characters_per_second =
         u16::try_from(next).unwrap_or(cliptype_core::MAX_CHARACTERS_PER_SECOND);
     settings.speed = SpeedPreset::Custom;
-}
-
-const fn next_hotkey(current: HotkeyPreset) -> HotkeyPreset {
-    match current {
-        HotkeyPreset::CtrlAltShiftFunction => HotkeyPreset::CtrlAltFunction,
-        HotkeyPreset::CtrlAltFunction => HotkeyPreset::CtrlShiftFunction,
-        HotkeyPreset::CtrlShiftFunction => HotkeyPreset::CtrlAltShiftFunction,
-    }
 }
 
 struct TrayIcon {
@@ -862,24 +854,12 @@ fn wide(value: &str) -> Vec<u16> {
 
 #[cfg(test)]
 mod tests {
-    use cliptype_core::{HotkeyPreset, InjectionMode, ProductSettings, SpeedPreset};
+    use cliptype_core::{InjectionMode, ProductSettings, SpeedPreset};
 
     use super::{
         CMD_ENABLED, CMD_HOTKEY, CMD_MODE_CLIPBOARD, CMD_SPEED_FAST, CMD_SPEED_PLUS_ONE, TrayEvent,
-        adjust_speed, apply_command, next_hotkey,
+        adjust_speed, apply_command,
     };
-
-    #[test]
-    fn hotkey_cycle_is_closed_over_reviewed_presets() {
-        assert_eq!(
-            next_hotkey(HotkeyPreset::CtrlAltShiftFunction),
-            HotkeyPreset::CtrlAltFunction
-        );
-        assert_eq!(
-            next_hotkey(HotkeyPreset::CtrlShiftFunction),
-            HotkeyPreset::CtrlAltShiftFunction
-        );
-    }
 
     #[test]
     fn settings_commands_are_content_free_enum_transitions() {
@@ -898,8 +878,6 @@ mod tests {
         clipboard.mode = InjectionMode::Clipboard;
         let mut fast = settings;
         fast.speed = SpeedPreset::Fast;
-        let mut hotkey = settings;
-        hotkey.hotkey = HotkeyPreset::CtrlAltFunction;
         let mut faster = settings;
         adjust_speed(&mut faster, 1);
 
@@ -907,7 +885,6 @@ mod tests {
             (CMD_ENABLED, TrayEvent::SettingsChanged(enabled)),
             (CMD_MODE_CLIPBOARD, TrayEvent::SettingsChanged(clipboard)),
             (CMD_SPEED_FAST, TrayEvent::SettingsChanged(fast)),
-            (CMD_HOTKEY, TrayEvent::SettingsChanged(hotkey)),
             (CMD_SPEED_PLUS_ONE, TrayEvent::SettingsChanged(faster)),
         ] {
             let _ = (command, expected);
@@ -916,5 +893,6 @@ mod tests {
         // Keep the command dispatcher callable under tests without installing a
         // global context; it must simply become a no-op delivery.
         apply_command(CMD_ENABLED, settings);
+        apply_command(CMD_HOTKEY, settings);
     }
 }

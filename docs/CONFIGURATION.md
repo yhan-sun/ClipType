@@ -8,14 +8,20 @@ The Windows product stores one per-user settings file:
 %LOCALAPPDATA%\ClipType\config.toml
 ```
 
-If `LOCALAPPDATA` is unavailable, the host may use the current user's roaming application-data root. Clipboard text and target data are never stored beside the configuration.
+The macOS product stores the same schema under the standard per-user Application Support directory:
+
+```text
+~/Library/Application Support/ClipType/config.toml
+```
+
+Clipboard text and target data are never stored beside the configuration.
 
 ## Current schema
 
-The public beta uses schema version `1` and a deliberately small, flat TOML vocabulary:
+P3 uses schema version `2` and a deliberately small, flat TOML vocabulary:
 
 ```toml
-version = 1
+version = 2
 enabled = true
 mode = "auto"
 auto_clipboard_threshold = 256
@@ -25,16 +31,19 @@ jitter_percent = 0
 typo_probability_percent = 0
 notifications = true
 start_at_login = false
-hotkey = "ctrl-alt-shift-function"
+trigger_hotkey = "ctrl+alt+shift+v"
+cancel_hotkey = "ctrl+alt+shift+x"
 ```
 
-The parser is strict. Existing files may omit the three human-typing fields for backward compatibility; they are migrated in memory from the legacy speed preset and written on the next settings save. All other documented fields are required. Unknown keys, duplicate keys, inline/untrusted trailing text, malformed quoting, invalid booleans/numbers, unsupported enum values, zero threshold, or unsupported schema version fail visibly rather than being ignored.
+The parser is strict. Unknown keys, duplicate keys, inline/untrusted trailing text, malformed quoting, invalid booleans/numbers, unsupported enum values, zero threshold, unsupported shortcuts, duplicate Trigger/Cancel values, or unsupported schema versions fail visibly rather than being ignored.
+
+Schema version `1` is migrated deterministically. The old preset-only `hotkey` value maps to a reviewed non-F12 Trigger/Cancel pair and preserves all other valid settings. The migrated schema is written on the next successful settings save.
 
 ## Fields
 
 ### `version`
 
-Must be `1`. Unknown versions fail closed. A future migration requires an explicit schema/migration implementation and tests.
+Must be `2`. Version `1` is accepted only through the explicit migration path. Other versions fail closed.
 
 ### `enabled`
 
@@ -44,7 +53,7 @@ Controls acceptance of new trigger commands. `false` rejects new sessions before
 
 Accepted values:
 
-- `"keyboard"` — bounded Unicode-oriented keyboard batches;
+- `"keyboard"` — bounded Unicode-oriented keyboard actions;
 - `"clipboard"` — one revision-guarded ordinary paste command;
 - `"auto"` — freeze one eligible backend from payload size and capabilities.
 
@@ -58,7 +67,7 @@ The default is `256`. It is a policy crossover covered by the backend benchmark,
 
 ### `speed`
 
-Accepted values are `"slow"`, `"normal"`, `"fast"`, and `"custom"`. The three presets map to 8, 40, and 120 characters per second. Selecting a tray adjustment sets the value to `"custom"`.
+Accepted values are `"slow"`, `"normal"`, `"fast"`, and `"custom"`. The three presets map to 8, 40, and 120 characters per second. Editing the exact rate sets the value to `"custom"`.
 
 ### `characters_per_second`
 
@@ -76,25 +85,45 @@ Do not enable typo simulation for passwords, source code, terminals, commands, i
 
 ### `notifications`
 
-Controls fixed content-free tray balloon notifications. Disabling notifications does not disable safety checks or internal content-free status.
+Controls fixed content-free tray/menu-bar notifications. Disabling notifications does not disable safety checks or internal content-free status.
 
 ### `start_at_login`
 
-Controls the product-owned current-user Run value. The command contains the quoted executable path plus `--background`. No administrator privilege, service, scheduled task, or machine-wide registry write is used.
+Controls the platform-owned per-user login item:
 
-Installer and tray changes update both the setting and startup registration with rollback on failure. Uninstall removes only product-owned state.
+- Windows uses one ClipType value under the current user's Run key;
+- macOS uses the app-owned `SMAppService.mainApp` registration when supported.
 
-### `hotkey`
+No administrator/root privilege, service, scheduled task, machine-wide registry write, or consent bypass is used.
 
-Accepted reviewed presets:
+### `trigger_hotkey` and `cancel_hotkey`
 
-| Value | Trigger | Cancel |
-|---|---|---|
-| `"ctrl-alt-shift-function"` | Ctrl+Alt+Shift+F12 | Ctrl+Alt+Shift+F11 |
-| `"ctrl-alt-function"` | Ctrl+Alt+F12 | Ctrl+Alt+F11 |
-| `"ctrl-shift-function"` | Ctrl+Shift+F12 | Ctrl+Shift+F11 |
+Each value is a canonical, native-neutral shortcut string. Supported tokens include:
 
-The Windows adapter uses `RegisterHotKey` with no-repeat behavior; it does not install a low-level keyboard hook. Another application can own the combination. A changed preset is saved immediately and becomes active after a controlled restart in this beta.
+- modifiers: `ctrl`, `alt`, `shift`, `meta`;
+- letters and digits;
+- `f1` through `f24` where the platform supports them;
+- navigation keys and selected punctuation names such as `left`, `pageup`, `minus`, `slash`, and `bracket-left`.
+
+Examples:
+
+```toml
+trigger_hotkey = "ctrl+alt+shift+v"
+cancel_hotkey = "ctrl+alt+shift+x"
+```
+
+Rules:
+
+- at least one of Control, Alt/Option, or Meta/Command is required;
+- Shift-only and bare-key shortcuts are rejected;
+- Trigger and Cancel must differ;
+- known system-reserved or unsafe combinations are rejected per platform;
+- Windows F12 is rejected as a custom/recommended binding;
+- the graphical recorder captures only local events while its control owns focus;
+- the platform adapter probes actual OS registration before persistence;
+- successful OS registration cannot prove that every foreground application or hook-based tool will not also react, so the UI may report `Cannot fully verify`.
+
+The configuration never stores native virtual-key codes, Carbon event references, window handles, or captured key history.
 
 ## Compiled safety configuration
 
@@ -110,7 +139,7 @@ The file intentionally does not expose every safety bound. The validated runtime
 - target/integrity evidence policy;
 - no-retry handling after partial or unknown native progress.
 
-These are mandatory safety invariants, not user switches. A later version may expose a bounded subset only after adding validation, migration, UI, and regression tests.
+These are mandatory safety invariants, not user switches.
 
 ## Persistence and recovery
 
@@ -123,7 +152,7 @@ config.toml.bak
 
 The store:
 
-1. validates the proposed settings;
+1. validates the complete proposed settings and shortcut pair;
 2. creates the parent directory;
 3. writes/truncates the temporary file;
 4. flushes and syncs it;
@@ -147,7 +176,7 @@ The schema has no field for:
 - transformed or generated text;
 - target title/content;
 - content samples, prefixes, suffixes, hashes, or fingerprints;
-- arbitrary key capture;
+- arbitrary key capture or recorded key history;
 - telemetry, account, or network configuration;
 - elevation or security-boundary bypass.
 
@@ -157,10 +186,10 @@ Clipboard mode does not use a `restore_clipboard` option because the product nev
 
 When configuration is invalid:
 
-1. close ClipType through the tray when possible;
+1. close ClipType through the tray or menu bar when possible;
 2. preserve the invalid file only if needed for debugging and it contains no manually added secrets;
-3. replace it with the complete version-1 example above or remove both primary and backup to regenerate defaults;
+3. replace it with the complete version-2 example above or remove both primary and backup to regenerate defaults;
 4. restart ClipType;
-5. reapply the desired reviewed settings through the tray.
+5. reapply desired settings through the graphical settings window.
 
 Do not attach a real settings file to a public issue if it has been manually edited to contain private data. Reproduce with generated values and report only the content-free error category.

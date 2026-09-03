@@ -9,8 +9,8 @@ use std::{
 };
 
 use cliptype_core::{
-    AutoClipboardThreshold, HotkeyPreset, InjectionMode, ProductSettings, SettingsValidationError,
-    SpeedPreset,
+    AutoClipboardThreshold, HotkeyPair, HotkeySpec, InjectionMode, ProductSettings,
+    SETTINGS_SCHEMA_VERSION, SettingsValidationError, SpeedPreset,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,9 +178,10 @@ pub fn serialize_settings(settings: ProductSettings) -> String {
             "typo_probability_percent = {}\n",
             "notifications = {}\n",
             "start_at_login = {}\n",
-            "hotkey = \"{}\"\n"
+            "trigger_hotkey = \"{}\"\n",
+            "cancel_hotkey = \"{}\"\n"
         ),
-        settings.version,
+        SETTINGS_SCHEMA_VERSION,
         settings.enabled,
         mode_name(settings.mode),
         settings.auto_clipboard_threshold.get(),
@@ -190,7 +191,8 @@ pub fn serialize_settings(settings: ProductSettings) -> String {
         settings.typo_probability_percent,
         settings.notifications,
         settings.start_at_login,
-        hotkey_name(settings.hotkey),
+        settings.hotkeys.trigger.canonical(),
+        settings.hotkeys.cancel.canonical(),
     )
 }
 
@@ -206,7 +208,9 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
     let mut typo_probability_percent = None;
     let mut notifications = None;
     let mut start_at_login = None;
-    let mut hotkey = None;
+    let mut trigger_hotkey = None;
+    let mut cancel_hotkey = None;
+    let mut legacy_hotkey = None;
 
     for (index, raw_line) in contents.lines().enumerate() {
         let line_number = index + 1;
@@ -245,14 +249,42 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
             }
             "notifications" => notifications = Some(parse_bool(value, line_number)?),
             "start_at_login" => start_at_login = Some(parse_bool(value, line_number)?),
-            "hotkey" => hotkey = Some(parse_hotkey(value, line_number)?),
+            "trigger_hotkey" => trigger_hotkey = Some(parse_hotkey_spec(value, line_number)?),
+            "cancel_hotkey" => cancel_hotkey = Some(parse_hotkey_spec(value, line_number)?),
+            "hotkey" => legacy_hotkey = Some(parse_legacy_hotkey(value, line_number)?),
             _ => return Err(SettingsError::UnknownKey { line: line_number }),
         }
     }
 
+    let source_version = version.ok_or(SettingsError::MissingKey("version"))?;
+    let hotkeys = match source_version {
+        1 => {
+            if trigger_hotkey.is_some() || cancel_hotkey.is_some() {
+                return Err(SettingsError::InvalidValue { line: 1 });
+            }
+            legacy_hotkey
+                .ok_or(SettingsError::MissingKey("hotkey"))?
+                .migrated_pair()
+        }
+        current if current == SETTINGS_SCHEMA_VERSION => {
+            if legacy_hotkey.is_some() {
+                return Err(SettingsError::InvalidValue { line: 1 });
+            }
+            HotkeyPair::new(
+                trigger_hotkey.ok_or(SettingsError::MissingKey("trigger_hotkey"))?,
+                cancel_hotkey.ok_or(SettingsError::MissingKey("cancel_hotkey"))?,
+            )
+        }
+        _ => {
+            return Err(SettingsError::Validation(
+                SettingsValidationError::UnsupportedVersion(source_version),
+            ));
+        }
+    };
+
     let speed = speed.ok_or(SettingsError::MissingKey("speed"))?;
     ProductSettings {
-        version: version.ok_or(SettingsError::MissingKey("version"))?,
+        version: SETTINGS_SCHEMA_VERSION,
         enabled: enabled.ok_or(SettingsError::MissingKey("enabled"))?,
         mode: mode.ok_or(SettingsError::MissingKey("mode"))?,
         auto_clipboard_threshold: threshold
@@ -264,7 +296,7 @@ pub fn parse_settings(contents: &str) -> Result<ProductSettings, SettingsError> 
         typo_probability_percent: typo_probability_percent.unwrap_or(0),
         notifications: notifications.ok_or(SettingsError::MissingKey("notifications"))?,
         start_at_login: start_at_login.ok_or(SettingsError::MissingKey("start_at_login"))?,
-        hotkey: hotkey.ok_or(SettingsError::MissingKey("hotkey"))?,
+        hotkeys,
     }
     .validate()
     .map_err(SettingsError::Validation)
@@ -329,11 +361,47 @@ fn parse_speed(value: &str, line: usize) -> Result<SpeedPreset, SettingsError> {
     }
 }
 
-fn parse_hotkey(value: &str, line: usize) -> Result<HotkeyPreset, SettingsError> {
+fn parse_hotkey_spec(value: &str, line: usize) -> Result<HotkeySpec, SettingsError> {
+    parse_string(value, line)?
+        .parse()
+        .map_err(|_| SettingsError::InvalidValue { line })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyHotkeyPreset {
+    AltShift,
+    Alt,
+    Shift,
+}
+
+impl LegacyHotkeyPreset {
+    fn migrated_pair(self) -> HotkeyPair {
+        match self {
+            Self::AltShift => HotkeyPair::new(
+                "ctrl+alt+shift+v"
+                    .parse()
+                    .expect("reviewed legacy migration"),
+                "ctrl+alt+shift+x"
+                    .parse()
+                    .expect("reviewed legacy migration"),
+            ),
+            Self::Alt => HotkeyPair::new(
+                "ctrl+alt+v".parse().expect("reviewed legacy migration"),
+                "ctrl+alt+x".parse().expect("reviewed legacy migration"),
+            ),
+            Self::Shift => HotkeyPair::new(
+                "ctrl+shift+v".parse().expect("reviewed legacy migration"),
+                "ctrl+shift+x".parse().expect("reviewed legacy migration"),
+            ),
+        }
+    }
+}
+
+fn parse_legacy_hotkey(value: &str, line: usize) -> Result<LegacyHotkeyPreset, SettingsError> {
     match parse_string(value, line)? {
-        "ctrl-alt-shift-function" => Ok(HotkeyPreset::CtrlAltShiftFunction),
-        "ctrl-alt-function" => Ok(HotkeyPreset::CtrlAltFunction),
-        "ctrl-shift-function" => Ok(HotkeyPreset::CtrlShiftFunction),
+        "ctrl-alt-shift-function" => Ok(LegacyHotkeyPreset::AltShift),
+        "ctrl-alt-function" => Ok(LegacyHotkeyPreset::Alt),
+        "ctrl-shift-function" => Ok(LegacyHotkeyPreset::Shift),
         _ => Err(SettingsError::InvalidValue { line }),
     }
 }
@@ -352,14 +420,6 @@ const fn speed_name(speed: SpeedPreset) -> &'static str {
         SpeedPreset::Normal => "normal",
         SpeedPreset::Fast => "fast",
         SpeedPreset::Custom => "custom",
-    }
-}
-
-const fn hotkey_name(hotkey: HotkeyPreset) -> &'static str {
-    match hotkey {
-        HotkeyPreset::CtrlAltShiftFunction => "ctrl-alt-shift-function",
-        HotkeyPreset::CtrlAltFunction => "ctrl-alt-function",
-        HotkeyPreset::CtrlShiftFunction => "ctrl-shift-function",
     }
 }
 
@@ -387,7 +447,8 @@ mod tests {
     };
 
     use cliptype_core::{
-        AutoClipboardThreshold, HotkeyPreset, InjectionMode, ProductSettings, SpeedPreset,
+        AutoClipboardThreshold, HotkeyPair, InjectionMode, ProductSettings,
+        SETTINGS_SCHEMA_VERSION, SpeedPreset,
     };
 
     use super::{SettingsError, SettingsSource, SettingsStore, parse_settings, serialize_settings};
@@ -401,7 +462,10 @@ mod tests {
             speed: SpeedPreset::Fast,
             notifications: false,
             start_at_login: true,
-            hotkey: HotkeyPreset::CtrlAltFunction,
+            hotkeys: HotkeyPair::new(
+                "ctrl+alt+v".parse().expect("trigger"),
+                "ctrl+alt+x".parse().expect("cancel"),
+            ),
             ..ProductSettings::default()
         };
         let serialized = serialize_settings(settings);
@@ -409,6 +473,8 @@ mod tests {
         assert_eq!(serialize_settings(settings), serialized);
         assert!(!serialized.contains("clipboard_text"));
         assert!(!serialized.contains("history"));
+        assert!(serialized.contains("trigger_hotkey = \"ctrl+alt+v\""));
+        assert!(serialized.contains("cancel_hotkey = \"ctrl+alt+x\""));
     }
 
     #[test]
@@ -433,25 +499,41 @@ mod tests {
     }
 
     #[test]
-    fn legacy_speed_only_file_migrates_to_safe_typing_defaults() {
-        let legacy = serialize_settings(ProductSettings::default())
-            .lines()
-            .filter(|line| {
-                !line.starts_with("characters_per_second")
-                    && !line.starts_with("jitter_percent")
-                    && !line.starts_with("typo_probability_percent")
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let parsed = parse_settings(&legacy).expect("legacy settings migrate");
+    fn legacy_schema_migrates_to_non_f12_pair_and_safe_typing_defaults() {
+        let legacy = concat!(
+            "version = 1\n",
+            "enabled = true\n",
+            "mode = \"auto\"\n",
+            "auto_clipboard_threshold = 256\n",
+            "speed = \"normal\"\n",
+            "notifications = true\n",
+            "start_at_login = false\n",
+            "hotkey = \"ctrl-alt-shift-function\"\n",
+        );
+        let parsed = parse_settings(legacy).expect("legacy settings migrate");
 
+        assert_eq!(parsed.version, SETTINGS_SCHEMA_VERSION);
         assert_eq!(
             parsed.characters_per_second,
             parsed.speed.default_characters_per_second()
         );
         assert_eq!(parsed.jitter_percent, 0);
         assert_eq!(parsed.typo_probability_percent, 0);
+        assert_eq!(parsed.hotkeys.trigger.canonical(), "ctrl+alt+shift+v");
+        assert_eq!(parsed.hotkeys.cancel.canonical(), "ctrl+alt+shift+x");
+    }
+
+    #[test]
+    fn duplicate_trigger_and_cancel_pair_is_rejected() {
+        let serialized = serialize_settings(ProductSettings::default());
+        let duplicate = serialized.replace(
+            "cancel_hotkey = \"ctrl+alt+shift+x\"",
+            "cancel_hotkey = \"ctrl+alt+shift+v\"",
+        );
+        assert!(matches!(
+            parse_settings(&duplicate),
+            Err(SettingsError::Validation(_))
+        ));
     }
 
     #[test]

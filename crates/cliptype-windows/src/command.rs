@@ -3,7 +3,7 @@
 use core::ffi::c_void;
 use std::{marker::PhantomData, ptr::null_mut, rc::Rc};
 
-use cliptype_core::HotkeyPreset;
+use cliptype_core::{HotkeyKey, HotkeyPair, HotkeyPlatform, HotkeySpec};
 use cliptype_platform::{
     CommandEvent, CommandEventSource, CommandSourceError, CommandSourceErrorKind, NativeError,
     NativeErrorKind,
@@ -29,10 +29,8 @@ const CANCEL_ID: i32 = 0x4354_02;
 const MOD_ALT: u32 = 0x0001;
 const MOD_CONTROL: u32 = 0x0002;
 const MOD_SHIFT: u32 = 0x0004;
+const MOD_WIN: u32 = 0x0008;
 const MOD_NOREPEAT: u32 = 0x4000;
-
-const VK_F11: u32 = 0x7A;
-const VK_F12: u32 = 0x7B;
 
 const PM_NOREMOVE: u32 = 0;
 const WM_QUIT: u32 = 0x0012;
@@ -41,10 +39,10 @@ const WM_APP: u32 = 0x8000;
 const WM_CLIPTYPE_SHUTDOWN: u32 = WM_APP + 0x4354;
 const ERROR_HOTKEY_ALREADY_REGISTERED: u32 = 1409;
 
-/// Human-readable default trigger binding retained for P1 compatibility.
-pub const TRIGGER_HOTKEY: &str = "Ctrl+Alt+Shift+F12";
-/// Human-readable default cancel binding retained for P1 compatibility.
-pub const CANCEL_HOTKEY: &str = "Ctrl+Alt+Shift+F11";
+/// Human-readable default trigger binding.
+pub const TRIGGER_HOTKEY: &str = "Ctrl+Alt+Shift+V";
+/// Human-readable default cancel binding.
+pub const CANCEL_HOTKEY: &str = "Ctrl+Alt+Shift+X";
 
 /// Cross-thread signal handle for controlled host shutdown.
 ///
@@ -75,22 +73,22 @@ impl WindowsCommandSignal {
 #[derive(Debug)]
 pub struct WindowsCommandSource {
     owner_thread_id: u32,
-    preset: HotkeyPreset,
+    pair: HotkeyPair,
     registered: bool,
     _thread_affine: PhantomData<Rc<()>>,
 }
 
 impl WindowsCommandSource {
     pub fn new() -> Self {
-        Self::with_preset(HotkeyPreset::default())
+        Self::with_pair(HotkeyPair::default())
     }
 
-    pub fn with_preset(preset: HotkeyPreset) -> Self {
+    pub fn with_pair(pair: HotkeyPair) -> Self {
         // SAFETY: this call has no pointer or ownership preconditions.
         let owner_thread_id = unsafe { GetCurrentThreadId() };
         Self {
             owner_thread_id,
-            preset,
+            pair,
             registered: false,
             _thread_affine: PhantomData,
         }
@@ -106,20 +104,20 @@ impl WindowsCommandSource {
         self.registered
     }
 
-    pub const fn preset(&self) -> HotkeyPreset {
-        self.preset
+    pub const fn pair(&self) -> HotkeyPair {
+        self.pair
     }
 
-    pub const fn trigger_hotkey(&self) -> &'static str {
-        self.preset.trigger_label()
+    pub fn trigger_hotkey(&self) -> String {
+        self.pair.trigger.label(HotkeyPlatform::Windows)
     }
 
-    pub const fn cancel_hotkey(&self) -> &'static str {
-        self.preset.cancel_label()
+    pub fn cancel_hotkey(&self) -> String {
+        self.pair.cancel.label(HotkeyPlatform::Windows)
     }
 
-    /// Changes the reviewed preset only while no native registration exists.
-    pub fn set_preset(&mut self, preset: HotkeyPreset) -> Result<(), CommandSourceError> {
+    /// Changes the pair only while no native registration exists.
+    pub fn set_pair(&mut self, pair: HotkeyPair) -> Result<(), CommandSourceError> {
         self.ensure_owner_thread()?;
         if self.registered {
             return Err(CommandSourceError::new(
@@ -127,12 +125,10 @@ impl WindowsCommandSource {
                 None,
             ));
         }
-        self.preset = preset;
+        pair.validate_for(HotkeyPlatform::Windows)
+            .map_err(|_| invalid_binding())?;
+        self.pair = pair;
         Ok(())
-    }
-
-    fn modifiers(&self) -> u32 {
-        preset_modifiers(self.preset)
     }
 
     fn ensure_owner_thread(&self) -> Result<(), CommandSourceError> {
@@ -198,18 +194,21 @@ impl CommandEventSource for WindowsCommandSource {
             ));
         }
 
+        self.pair
+            .validate_for(HotkeyPlatform::Windows)
+            .map_err(|_| invalid_binding())?;
+        let trigger = translate_hotkey(self.pair.trigger)?;
+        let cancel = translate_hotkey(self.pair.cancel)?;
         self.create_message_queue();
-        let modifiers = self.modifiers();
 
         // SAFETY: null HWND creates thread-owned registrations. The ids are
-        // process-local constants, the modifiers are explicit, and F11/F12 are
-        // valid virtual-key values.
-        if unsafe { register_hot_key(null_mut(), TRIGGER_ID, modifiers, VK_F12) } == 0 {
+        // process-local constants and translated values are validated.
+        if unsafe { register_hot_key(null_mut(), TRIGGER_ID, trigger.0, trigger.1) } == 0 {
             return Err(registration_error());
         }
 
         // SAFETY: same invariant as the trigger registration.
-        if unsafe { register_hot_key(null_mut(), CANCEL_ID, modifiers, VK_F11) } == 0 {
+        if unsafe { register_hot_key(null_mut(), CANCEL_ID, cancel.0, cancel.1) } == 0 {
             // SAFETY: the trigger registration succeeded on this owner thread.
             let _ = unsafe { unregister_hot_key(null_mut(), TRIGGER_ID) };
             return Err(registration_error());
@@ -260,13 +259,114 @@ impl Drop for WindowsCommandSource {
     }
 }
 
-const fn preset_modifiers(preset: HotkeyPreset) -> u32 {
-    let modifiers = match preset {
-        HotkeyPreset::CtrlAltShiftFunction => MOD_CONTROL | MOD_ALT | MOD_SHIFT,
-        HotkeyPreset::CtrlAltFunction => MOD_CONTROL | MOD_ALT,
-        HotkeyPreset::CtrlShiftFunction => MOD_CONTROL | MOD_SHIFT,
-    };
-    modifiers | MOD_NOREPEAT
+fn translate_hotkey(spec: HotkeySpec) -> Result<(u32, u32), CommandSourceError> {
+    spec.validate_for(HotkeyPlatform::Windows)
+        .map_err(|_| invalid_binding())?;
+    let mut modifiers = MOD_NOREPEAT;
+    if spec.modifiers.control() {
+        modifiers |= MOD_CONTROL;
+    }
+    if spec.modifiers.alt() {
+        modifiers |= MOD_ALT;
+    }
+    if spec.modifiers.shift() {
+        modifiers |= MOD_SHIFT;
+    }
+    if spec.modifiers.meta() {
+        modifiers |= MOD_WIN;
+    }
+    Ok((modifiers, virtual_key(spec.key)))
+}
+
+const fn virtual_key(key: HotkeyKey) -> u32 {
+    match key {
+        HotkeyKey::A => 0x41,
+        HotkeyKey::B => 0x42,
+        HotkeyKey::C => 0x43,
+        HotkeyKey::D => 0x44,
+        HotkeyKey::E => 0x45,
+        HotkeyKey::F => 0x46,
+        HotkeyKey::G => 0x47,
+        HotkeyKey::H => 0x48,
+        HotkeyKey::I => 0x49,
+        HotkeyKey::J => 0x4A,
+        HotkeyKey::K => 0x4B,
+        HotkeyKey::L => 0x4C,
+        HotkeyKey::M => 0x4D,
+        HotkeyKey::N => 0x4E,
+        HotkeyKey::O => 0x4F,
+        HotkeyKey::P => 0x50,
+        HotkeyKey::Q => 0x51,
+        HotkeyKey::R => 0x52,
+        HotkeyKey::S => 0x53,
+        HotkeyKey::T => 0x54,
+        HotkeyKey::U => 0x55,
+        HotkeyKey::V => 0x56,
+        HotkeyKey::W => 0x57,
+        HotkeyKey::X => 0x58,
+        HotkeyKey::Y => 0x59,
+        HotkeyKey::Z => 0x5A,
+        HotkeyKey::Digit0 => 0x30,
+        HotkeyKey::Digit1 => 0x31,
+        HotkeyKey::Digit2 => 0x32,
+        HotkeyKey::Digit3 => 0x33,
+        HotkeyKey::Digit4 => 0x34,
+        HotkeyKey::Digit5 => 0x35,
+        HotkeyKey::Digit6 => 0x36,
+        HotkeyKey::Digit7 => 0x37,
+        HotkeyKey::Digit8 => 0x38,
+        HotkeyKey::Digit9 => 0x39,
+        HotkeyKey::F1 => 0x70,
+        HotkeyKey::F2 => 0x71,
+        HotkeyKey::F3 => 0x72,
+        HotkeyKey::F4 => 0x73,
+        HotkeyKey::F5 => 0x74,
+        HotkeyKey::F6 => 0x75,
+        HotkeyKey::F7 => 0x76,
+        HotkeyKey::F8 => 0x77,
+        HotkeyKey::F9 => 0x78,
+        HotkeyKey::F10 => 0x79,
+        HotkeyKey::F11 => 0x7A,
+        HotkeyKey::F12 => 0x7B,
+        HotkeyKey::F13 => 0x7C,
+        HotkeyKey::F14 => 0x7D,
+        HotkeyKey::F15 => 0x7E,
+        HotkeyKey::F16 => 0x7F,
+        HotkeyKey::F17 => 0x80,
+        HotkeyKey::F18 => 0x81,
+        HotkeyKey::F19 => 0x82,
+        HotkeyKey::F20 => 0x83,
+        HotkeyKey::F21 => 0x84,
+        HotkeyKey::F22 => 0x85,
+        HotkeyKey::F23 => 0x86,
+        HotkeyKey::F24 => 0x87,
+        HotkeyKey::Space => 0x20,
+        HotkeyKey::Tab => 0x09,
+        HotkeyKey::Enter => 0x0D,
+        HotkeyKey::Escape => 0x1B,
+        HotkeyKey::Backspace => 0x08,
+        HotkeyKey::Insert => 0x2D,
+        HotkeyKey::Delete => 0x2E,
+        HotkeyKey::Home => 0x24,
+        HotkeyKey::End => 0x23,
+        HotkeyKey::PageUp => 0x21,
+        HotkeyKey::PageDown => 0x22,
+        HotkeyKey::ArrowLeft => 0x25,
+        HotkeyKey::ArrowUp => 0x26,
+        HotkeyKey::ArrowRight => 0x27,
+        HotkeyKey::ArrowDown => 0x28,
+        HotkeyKey::Minus => 0xBD,
+        HotkeyKey::Equal => 0xBB,
+        HotkeyKey::BracketLeft => 0xDB,
+        HotkeyKey::BracketRight => 0xDD,
+        HotkeyKey::Backslash => 0xDC,
+        HotkeyKey::Semicolon => 0xBA,
+        HotkeyKey::Quote => 0xDE,
+        HotkeyKey::Comma => 0xBC,
+        HotkeyKey::Period => 0xBE,
+        HotkeyKey::Slash => 0xBF,
+        HotkeyKey::Backquote => 0xC0,
+    }
 }
 
 const fn decode_message(message: u32, wparam: usize) -> Option<CommandEvent> {
@@ -276,6 +376,10 @@ const fn decode_message(message: u32, wparam: usize) -> Option<CommandEvent> {
         (WM_CLIPTYPE_SHUTDOWN, _) => Some(CommandEvent::Shutdown),
         _ => None,
     }
+}
+
+const fn invalid_binding() -> CommandSourceError {
+    CommandSourceError::new(CommandSourceErrorKind::InvalidBinding, None)
 }
 
 fn registration_error() -> CommandSourceError {
@@ -311,12 +415,12 @@ fn last_command_error(kind: CommandSourceErrorKind) -> CommandSourceError {
 mod tests {
     use std::{thread, time::Duration};
 
-    use cliptype_core::HotkeyPreset;
+    use cliptype_core::{HotkeyKey, HotkeyPair, HotkeyPlatform};
     use cliptype_platform::{CommandEvent, CommandEventSource};
 
     use super::{
         CANCEL_ID, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, TRIGGER_ID, WM_CLIPTYPE_SHUTDOWN,
-        WM_HOTKEY, WindowsCommandSource, decode_message, preset_modifiers,
+        WM_HOTKEY, WindowsCommandSource, decode_message, translate_hotkey,
     };
 
     #[test]
@@ -337,18 +441,16 @@ mod tests {
     }
 
     #[test]
-    fn reviewed_presets_map_to_explicit_no_repeat_modifiers() {
+    fn default_pair_maps_to_explicit_no_repeat_modifiers_and_vk() {
+        let pair = HotkeyPair::default();
         assert_eq!(
-            preset_modifiers(HotkeyPreset::CtrlAltShiftFunction),
-            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT
+            translate_hotkey(pair.trigger).expect("trigger translation"),
+            (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 0x56)
         );
+        assert_eq!(pair.trigger.key, HotkeyKey::V);
         assert_eq!(
-            preset_modifiers(HotkeyPreset::CtrlAltFunction),
-            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT
-        );
-        assert_eq!(
-            preset_modifiers(HotkeyPreset::CtrlShiftFunction),
-            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+            pair.cancel.label(HotkeyPlatform::Windows),
+            "Ctrl+Alt+Shift+X"
         );
     }
 
