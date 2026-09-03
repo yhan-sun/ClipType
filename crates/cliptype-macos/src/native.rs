@@ -3,7 +3,6 @@ use std::{
     ptr::{NonNull, null_mut},
     slice,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
         mpsc::Sender,
     },
