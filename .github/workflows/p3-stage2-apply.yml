@@ -15,7 +15,7 @@ env:
 jobs:
   apply-and-verify:
     name: Apply macOS adapters, app, packaging, and CI
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,19 +40,15 @@ jobs:
 
           native = Path('crates/cliptype-macos/native/cliptype_macos.m')
           text = native.read_text()
-          text = text.replace(
-              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
-              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
-          )
-          text = text.replace(
-              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
-              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
-          )
+          text = text.replace('int ct_macos_post_unicode(const uint16_t *units, size_t length) {\nint ct_macos_post_unicode(const uint16_t *units, size_t length) {\n', 'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n')
+          text = text.replace('        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n', '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n')
           native.write_text(text)
 
           for workflow in [Path('.github/workflows/p3-cross-platform.yml'), Path('.github/workflows/macos-release.yml')]:
               text = workflow.read_text()
               text = text.replace('-p cliptype-macos --target', '-p cliptype-macos-app --target')
+              text = text.replace('runner: macos-15\n            target: x86_64-apple-darwin', 'runner: macos-15-intel\n            target: x86_64-apple-darwin')
+              text = text.replace('runs-on: macos-15\n    timeout-minutes: 20', 'runs-on: macos-15-intel\n    timeout-minutes: 20')
               text = text.replace('--repo "$GITHUB_REPOSITORY" --clobber=false', '--repo "$GITHUB_REPOSITORY"')
               workflow.write_text(text)
           PY
