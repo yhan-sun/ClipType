@@ -1,0 +1,75 @@
+name: P3 Open Implementation PR After Green
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: Open the P3 implementation PR after staging is complete
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Detect verified source stage
+        id: ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e .github/p3-stage2 || -e .github/workflows/p3-stage2-apply.yml ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Stage 2 is still being verified; PR creation is deferred."
+            exit 0
+          fi
+          test -f crates/cliptype-macos/Cargo.toml
+          test -f apps/cliptype-macos/Cargo.toml
+          test -f .github/workflows/p3-cross-platform.yml
+          test -f .github/workflows/macos-release.yml
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: Create or update draft implementation PR
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: feat/p3-cross-platform-ui-macos
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          title="P3: cross-platform settings UI, live custom hotkeys, and macOS Universal 2"
+          body_file="$(mktemp)"
+          cat > "$body_file" <<'EOF'
+          ## Scope
+
+          Implements the P3 production slice for:
+
+          - shared native-compiled Settings UI;
+          - recorded Trigger and Cancel shortcuts;
+          - OS-level conflict probing and atomic rollback;
+          - live Windows hotkey replacement;
+          - macOS clipboard, keyboard, paste, focus, permission, startup, and hotkey adapters;
+          - AppKit menu-bar composition root;
+          - Intel + Apple Silicon CI and Universal 2 packaging;
+          - Developer ID signing/notarization hooks without committing credentials.
+
+          ## Evidence boundary
+
+          The PR starts as Draft. Hosted CI proves compilation, unit tests, packaging, and controlled platform checks. It does not replace interactive unlocked-client testing, Apple Accessibility authorization testing, or a credentialed notarization run.
+
+          ## Related issues
+
+          Tracks #43, #44, #45, #46, #47, #48, #49, #50, and #51.
+          EOF
+          if [[ -n "$existing" ]]; then
+            gh pr edit "$existing" --repo "$REPO" --title "$title" --body-file "$body_file"
+            echo "Updated PR #$existing"
+          else
+            gh pr create --repo "$REPO" --base main --head "$HEAD_BRANCH" --draft --title "$title" --body-file "$body_file"
+          fi
