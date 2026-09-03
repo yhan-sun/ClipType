@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .github/p3-stage2/payload.b64 > /tmp/p3-stage2.tar.gz
+          base64 --decode -i .github/p3-stage2/payload.b64 -o /tmp/p3-stage2.tar.gz
           tar -xzf /tmp/p3-stage2.tar.gz
           chmod +x packaging/macos/package.sh
           python - <<'PY'
