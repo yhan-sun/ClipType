@@ -80,7 +80,8 @@ jobs:
           set -euo pipefail
           cargo build --release --locked -p cliptype-macos \
             --example p3_s01_probe --target "${{ matrix.target }}"
-          swiftc -warnings-as-errors tools/macos/p3_s01_target.swift \
+          swiftc -parse-as-library -warnings-as-errors \
+            tools/macos/p3_s01_target.swift \
             -framework AppKit -o p3_s01_target
           file p3_s01_target
       - name: Run hosted mechanism probes
