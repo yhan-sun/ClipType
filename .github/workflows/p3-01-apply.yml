@@ -6,6 +6,7 @@ on:
       - feat/p3-01-hotkey-contracts
     paths:
       - ".github/workflows/p3-01-apply.yml"
+      - ".github/patches/**"
   workflow_dispatch:
 
 permissions:
