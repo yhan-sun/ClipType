@@ -1,0 +1,38 @@
+name: P3 Source Export V2
+
+on:
+  push:
+    branches:
+      - automation/p3-source-export-v2
+    paths:
+      - ".github/workflows/p3-source-export-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Record exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'source_commit=%s\n' "$GITHUB_SHA" > P3-SOURCE-INFO.txt
+          printf 'base_main=%s\n' "$(git merge-base HEAD origin/main)" >> P3-SOURCE-INFO.txt
+      - name: Upload complete source tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-p3-source-v2-${{ github.sha }}
+          path: |
+            .
+            !.git/**
+            !target/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 2
