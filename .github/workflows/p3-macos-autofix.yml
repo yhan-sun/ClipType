@@ -1,0 +1,78 @@
+name: P3 macOS Source Verify And Normalize
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-macos-autofix.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: p3-macos-autofix-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify native and Intel macOS source
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Require materialized macOS source
+        run: |
+          test -f crates/cliptype-macos/Cargo.toml
+          test -f apps/cliptype-macos/Cargo.toml
+      - name: Install pinned Rust targets
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin --toolchain 1.98.0
+      - name: Normalize lockfile and apply machine fixes
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+          cargo fix --workspace --all-targets --allow-dirty --allow-staged || true
+          cargo fmt --all
+      - name: Native Apple Silicon quality gate
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --workspace --all-targets 2>&1 | tee /tmp/p3-native-check.log
+          cargo test --workspace 2>&1 | tee /tmp/p3-native-test.log
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee /tmp/p3-native-clippy.log
+      - name: Intel cross-check and Universal 2 inputs
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --workspace --all-targets --target x86_64-apple-darwin 2>&1 | tee /tmp/p3-intel-check.log
+          cargo build --release -p cliptype-macos-app --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-arm64-build.log
+          cargo build --release -p cliptype-macos-app --target x86_64-apple-darwin 2>&1 | tee /tmp/p3-intel-build.log
+          lipo -create target/aarch64-apple-darwin/release/cliptype-macos target/x86_64-apple-darwin/release/cliptype-macos -output /tmp/cliptype-macos-universal
+          archs="$(lipo -archs /tmp/cliptype-macos-universal)"
+          [[ "$archs" == "arm64 x86_64" || "$archs" == "x86_64 arm64" ]]
+      - name: Upload compiler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-macos-source-diagnostics
+          path: /tmp/p3-*.log
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Commit normalized verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/p3-macos-autofix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "P3: verify macOS source and Universal 2 inputs"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
