@@ -396,12 +396,21 @@ fn clipboard_retry_exhaustion_is_a_preparation_failure() {
     let clipboard = FakeClipboard::new("never read", usize::MAX, trace.clone());
     let target = FakeTarget::stable(1, trace.clone());
     let keyboard = FakeKeyboard::complete(trace);
+    let mut retry_attempt_config = config(2);
+    // This case verifies the attempt bound, not the independent wall-clock
+    // bound. A wide window prevents slower CI hosts from legitimately
+    // exhausting the time budget before the fourth attempt.
+    retry_attempt_config.clipboard_retry = RetryBudget::new(
+        RetryAttemptLimit::new(4).expect("test retry count"),
+        Duration::from_secs(1),
+    )
+    .expect("test retry window");
     let coordinator = Coordinator::new(
         clipboard.clone(),
         target,
         keyboard,
         FakeModifier::clear(),
-        config(2),
+        retry_attempt_config,
     )
     .expect("coordinator");
 
