@@ -1,0 +1,135 @@
+name: P3 Export Final Tree
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-export-final-tree.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  export:
+    name: Export reviewed final P3 tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Materialize exact reviewed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import io
+          import tarfile
+          from pathlib import Path, PurePosixPath
+
+          root = Path('.github/p3-stage2')
+          names = [
+              'chunk-00.b64', 'chunk-01.b64',
+              'chunk-02a.b64', 'chunk-02b.b64', 'chunk-02c.b64', 'chunk-02d.b64',
+              'chunk-03.b64',
+              'chunk-04a.b64', 'chunk-04b.b64', 'chunk-04c.b64', 'chunk-04d.b64',
+              'chunk-05a.b64', 'chunk-05b.b64', 'chunk-05c.b64', 'chunk-05d.b64',
+              'chunk-06.b64', 'chunk-07.b64',
+          ]
+          tail = (
+              '4Drd+CKu/EUUrwBBLNrmBfXcYGX+zb/5N//m3/ybf/Nv/s2/+Tf/5t/8m3'
+              '/zb/7Nv/k3/+bf/Jt/82/+zb/5N//m3/ybf/Nv/n2d7/8Dz2yswwC4AQA='
+          )
+          encoded = ''.join(''.join((root / name).read_text(encoding='ascii').split()) for name in names) + tail
+          assert len(encoded) == 28116
+          assert hashlib.sha256(encoded.encode('ascii')).hexdigest() == '8f8b42b20fe1ec0a47052992f78ff8705e343cf76947f07b6fe676d6960460a3'
+          payload = base64.b64decode(encoded, validate=True)
+          assert hashlib.sha256(payload).hexdigest() == 'a97a86588b32216988062a58d19c9ad49e5b3f2077764059468fca6bbf9737f9'
+          uncompressed = gzip.decompress(payload)
+          assert hashlib.sha256(uncompressed).hexdigest() == '344ae75f5f289cca03b5a4448e0985dae5dcfd97ca2faa81c62a53c4bebaa61a'
+
+          destination = Path('/tmp/p3-reviewed-tree')
+          destination.mkdir(parents=True, exist_ok=True)
+          with tarfile.open(fileobj=io.BytesIO(uncompressed), mode='r:') as archive:
+              members = archive.getmembers()
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts or member.issym() or member.islnk() or member.isdev():
+                      raise RuntimeError(f'unsafe archive member: {member.name}')
+                  if member.isfile():
+                      stream = archive.extractfile(member)
+                      if stream is None or len(stream.read()) != member.size:
+                          raise RuntimeError(f'incomplete archive member: {member.name}')
+              archive.extractall(destination, members=members, filter='data')
+          PY
+          rm -rf .github/p3-*
+          rm -f .github/scripts/materialize_p3.py
+          rm -f .github/workflows/p3-*.yml
+          cp -a /tmp/p3-reviewed-tree/. .
+          chmod +x packaging/macos/package.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in (Path('.github/workflows/p3-cross-platform.yml'), Path('.github/workflows/macos-release.yml')):
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('runner: macos-15\n            target: x86_64-apple-darwin', 'runner: macos-15-intel\n            target: x86_64-apple-darwin')
+              text = text.replace('runner: macos-15-xlarge\n            target: aarch64-apple-darwin', 'runner: macos-15\n            target: aarch64-apple-darwin')
+              path.write_text(text, encoding='utf-8')
+          rust = Path('crates/cliptype-macos/src/lib.rs')
+          rust.write_text(rust.read_text(encoding='utf-8').replace('#![forbid(unsafe_code)]', '#![deny(unsafe_op_in_unsafe_fn)]'), encoding='utf-8')
+          native = Path('crates/cliptype-macos/src/native.rs')
+          native.write_text(native.read_text(encoding='utf-8').replace('\nextern "C" {\n', '\nunsafe extern "C" {\n'), encoding='utf-8')
+          PY
+          cargo fmt --all
+          cargo generate-lockfile
+      - name: Package exact working-tree delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p3-final-delta/files
+          git diff --name-status -z HEAD -- . > /tmp/p3-final-delta/name-status.z
+          git diff --name-status HEAD -- . > /tmp/p3-final-delta/name-status.txt
+          git diff --check
+          python3 - <<'PY'
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+
+          raw = Path('/tmp/p3-final-delta/name-status.z').read_bytes().split(b'\0')
+          entries = []
+          index = 0
+          while index < len(raw) and raw[index]:
+              status = raw[index].decode('utf-8')
+              index += 1
+              if status.startswith(('R', 'C')):
+                  old = raw[index].decode('utf-8'); new = raw[index + 1].decode('utf-8'); index += 2
+                  entries.append({'status': status, 'old_path': old, 'path': new})
+                  path = new
+              else:
+                  path = raw[index].decode('utf-8'); index += 1
+                  entries.append({'status': status, 'path': path})
+              if not status.startswith('D'):
+                  source = Path(path)
+                  destination = Path('/tmp/p3-final-delta/files') / path
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(source, destination)
+          Path('/tmp/p3-final-delta/manifest.json').write_text(json.dumps(entries, indent=2), encoding='utf-8')
+          print(json.dumps(entries, indent=2))
+          PY
+          tar -C /tmp -czf /tmp/p3-final-delta.tar.gz p3-final-delta
+          sha256sum /tmp/p3-final-delta.tar.gz > /tmp/p3-final-delta.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-final-delta
+          path: |
+            /tmp/p3-final-delta.tar.gz
+            /tmp/p3-final-delta.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 3
