@@ -1,0 +1,170 @@
+name: P3 S01 macOS Native Validation Kit
+
+on:
+  pull_request:
+    paths:
+      - "crates/cliptype-macos/**"
+      - "apps/cliptype-macos/**"
+      - "tools/macos/**"
+      - "docs/research/P3_MACOS_NATIVE_SPIKE.md"
+      - "docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md"
+      - ".github/workflows/p3-s01-macos-validation.yml"
+  push:
+    branches:
+      - validation/p3-s01-macos-native-evidence-8c52a74
+    paths:
+      - "crates/cliptype-macos/**"
+      - "apps/cliptype-macos/**"
+      - "tools/macos/**"
+      - "docs/research/P3_MACOS_NATIVE_SPIKE.md"
+      - "docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md"
+      - ".github/workflows/p3-s01-macos-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  P3_PRODUCT_SHA: 8c52a74b5ab89ba8fd40ed91c54b5f7bd4270e73
+
+jobs:
+  evidence-tooling:
+    name: Fail-closed evidence tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prove product paths are unchanged from the fixed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$P3_PRODUCT_SHA^{commit}"
+          unexpected="$({ git diff --name-only "$P3_PRODUCT_SHA"..HEAD; } | \
+            grep -Ev '^(tools/macos/|docs/research/P3_MACOS_NATIVE_SPIKE\.md$|docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK\.md$|\.github/workflows/p3-s01-macos-validation\.yml$|\.github/workflows/p3-s01-source-export\.yml$)' || true)"
+          [[ -z "$unexpected" ]] || {
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          }
+      - name: Test fail-closed report generation
+        shell: bash
+        run: tools/macos/p3_s01_self_test.sh
+
+  hosted-mechanism:
+    name: Hosted ${{ matrix.arch }} mechanism and validation-kit build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Prove product paths are unchanged from the fixed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$P3_PRODUCT_SHA^{commit}"
+          unexpected="$({ git diff --name-only "$P3_PRODUCT_SHA"..HEAD; } | \
+            grep -Ev '^(tools/macos/|docs/research/P3_MACOS_NATIVE_SPIKE\.md$|docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK\.md$|\.github/workflows/p3-s01-macos-validation\.yml$|\.github/workflows/p3-s01-source-export\.yml$)' || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "validation branch changed product paths after $P3_PRODUCT_SHA" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy \
+            --target "${{ matrix.target }}"
+
+      - name: Check validation source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p cliptype-macos --all-targets --target "${{ matrix.target }}"
+          cargo test --locked -p cliptype-macos --target "${{ matrix.target }}"
+          cargo clippy --locked -p cliptype-macos --all-targets --target "${{ matrix.target }}" -- -D warnings
+
+      - name: Build content-free probe and controlled native target
+        shell: bash
+        env:
+          CLIPTYPE_SOURCE_SHA: ${{ env.P3_PRODUCT_SHA }}
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p cliptype-macos \
+            --example p3_s01_probe --target "${{ matrix.target }}"
+          swiftc -warnings-as-errors tools/macos/p3_s01_target.swift \
+            -framework AppKit -o p3_s01_target
+          file p3_s01_target
+
+      - name: Run hosted native-mechanism probes
+        shell: bash
+        env:
+          CLIPTYPE_SOURCE_SHA: ${{ env.P3_PRODUCT_SHA }}
+        run: |
+          set -euo pipefail
+          PROBE="target/${{ matrix.target }}/release/examples/p3_s01_probe"
+          mkdir -p hosted-observations
+          "$PROBE" snapshot | tee hosted-observations/runtime-snapshot.txt
+          "$PROBE" status-item-smoke | tee hosted-observations/status-item-smoke.txt
+          "$PROBE" hotkey-cycle | tee hosted-observations/hotkey-cycle.txt
+          cat > hosted-observations/evidence-boundary.txt <<BOUNDARY
+          product_candidate_sha=$P3_PRODUCT_SHA
+          validation_tooling_sha=$(git rev-parse HEAD)
+          architecture=${{ matrix.arch }}
+          runner=${{ matrix.runner }}
+          interactive_desktop_claim=false
+          physical_keyboard_claim=false
+          product_accessibility_identity_claim=false
+          support_claim=false
+          BOUNDARY
+          ! grep -R -a -E 'CLIPTYPE_P3_S01_PRIVACY_[A-F0-9]+' hosted-observations
+
+      - name: Assemble operator kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT="p3-s01-${{ matrix.arch }}-validation-kit"
+          mkdir -p "$KIT/bin" "$KIT/tools/macos" "$KIT/docs/research" "$KIT/docs/testing"
+          cp "target/${{ matrix.target }}/release/examples/p3_s01_probe" "$KIT/bin/"
+          cp p3_s01_target "$KIT/bin/"
+          cp tools/macos/p3_s01_cases.tsv "$KIT/tools/macos/"
+          cp tools/macos/p3_s01_prepare.sh "$KIT/tools/macos/"
+          cp tools/macos/p3_s01_record.sh "$KIT/tools/macos/"
+          cp tools/macos/p3_s01_privacy_sentinel.sh "$KIT/tools/macos/"
+          cp tools/macos/p3_s01_finalize.sh "$KIT/tools/macos/"
+          cp tools/macos/p3_s01_self_test.sh "$KIT/tools/macos/"
+          cp docs/research/P3_MACOS_NATIVE_SPIKE.md "$KIT/docs/research/"
+          cp docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md "$KIT/docs/testing/"
+          cp -R hosted-observations "$KIT/"
+          printf '%s\n' "$P3_PRODUCT_SHA" > "$KIT/PRODUCT_CANDIDATE_SHA.txt"
+          printf '%s\n' "$(git rev-parse HEAD)" > "$KIT/VALIDATION_TOOLING_SHA.txt"
+          shasum -a 256 "$KIT/bin/p3_s01_probe" "$KIT/bin/p3_s01_target" > "$KIT/SHA256SUMS.txt"
+          ditto -c -k --sequesterRsrc --keepParent "$KIT" "$KIT.zip"
+
+      - name: Upload validation kit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-s01-${{ matrix.arch }}-validation-kit
+          path: p3-s01-${{ matrix.arch }}-validation-kit.zip
+          if-no-files-found: error
+          retention-days: 7
