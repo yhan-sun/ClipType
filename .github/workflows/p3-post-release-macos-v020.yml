@@ -1,0 +1,134 @@
+name: P3 Post-Release macOS v0.2.0-beta.1
+
+on:
+  push:
+    branches:
+      - feat/p3-cross-platform-ui-macos
+    paths:
+      - ".github/workflows/p3-post-release-macos-v020.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  VERSION: v0.2.0-beta.1
+
+jobs:
+  verify:
+    name: Published asset verification (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - name: Download immutable public release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
+          test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
+          test -f release-assets/SHA256SUMS-macos.txt
+
+      - name: Verify published checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          shasum -a 256 -c SHA256SUMS-macos.txt
+
+      - name: Inspect extracted application
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir extracted
+          ditto -x -k "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip" extracted
+          APP="extracted/ClipType.app"
+          EXE="$APP/Contents/MacOS/cliptype-macos"
+          test -x "$EXE"
+          plutil -lint "$APP/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" = cliptype-macos
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = dev.cliptype.ClipType
+          lipo -verify_arch arm64 x86_64 "$EXE"
+          codesign --verify --deep --strict "$APP"
+          codesign -dv --verbose=4 "$APP" 2> codesign-details.txt
+          grep -Eq 'Signature=adhoc|Signature=Ad Hoc' codesign-details.txt
+
+      - name: Native architecture launch smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="extracted/ClipType.app"
+          EXE="$APP/Contents/MacOS/cliptype-macos"
+          LOG="launch-${{ matrix.arch }}.log"
+          if [[ "${{ matrix.arch }}" == x86_64 ]]; then
+            arch -x86_64 "$EXE" --settings >"$LOG" 2>&1 &
+          else
+            arch -arm64 "$EXE" --settings >"$LOG" 2>&1 &
+          fi
+          pid=$!
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" || true
+            echo "published application exited during launch smoke" >&2
+            sed -E 's#(/Users/)[^/]+#\1<redacted>#g' "$LOG" >&2
+            exit 1
+          fi
+          kill -TERM "$pid" 2>/dev/null || true
+          for _ in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.25
+          done
+          kill -KILL "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          if grep -aEi 'panic|fatal|dyld.*not loaded|symbol not found|segmentation fault' "$LOG"; then
+            echo "fatal marker found in launch log" >&2
+            exit 1
+          fi
+          printf 'architecture=%s\nrunner=%s\nlaunch_alive_after_5s=true\ninteractive_desktop_claim=false\n' \
+            '${{ matrix.arch }}' '${{ matrix.runner }}' > "post-release-${{ matrix.arch }}.txt"
+
+      - name: Record expected Gatekeeper boundary
+        shell: bash
+        run: |
+          set +e
+          spctl --assess --type execute --verbose=4 extracted/ClipType.app >spctl.txt 2>&1
+          result=$?
+          set -e
+          printf 'spctl_exit=%s\nexpected_developer_id=false\nexpected_notarized=false\n' "$result" \
+            >> "post-release-${{ matrix.arch }}.txt"
+          # The preview is deliberately not Developer ID signed or notarized.
+          # Assessment is evidence only and must not be converted into a trusted-release claim.
+
+      - name: Upload content-free post-release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-post-release-${{ matrix.arch }}-v0.2.0-beta.1
+          path: post-release-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  record:
+    name: Record hosted post-release result
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Comment on physical-Mac tracker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tracker="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'P3-R01 in:title' --json number --jq '.[0].number // empty')"
+          test -n "$tracker"
+          gh issue comment "$tracker" --repo "$GITHUB_REPOSITORY" --body "Hosted post-release verification passed for the immutable ${VERSION} assets on both Apple Silicon and Intel runners (run ${GITHUB_RUN_ID}). Verified: published SHA-256 manifest, Universal 2 slices, Info.plist, ad-hoc code-signature integrity, and a 5-second native-architecture launch smoke. This does **not** satisfy physical interactive Accessibility, hotkey, focus, Login Item, representative-app, notarization, or Gatekeeper user-flow checks; the issue remains open."
