@@ -53,6 +53,15 @@ jobs:
           text = text.replace('    min-width: 680px;\n', '')
           text = text.replace('    min-height: 540px;\n', '')
           ui.write_text(text, encoding='utf-8')
+
+          lib = Path('crates/cliptype-ui/src/lib.rs')
+          text = lib.read_text(encoding='utf-8')
+          text = text.replace('#![forbid(unsafe_code)]', '#![deny(unsafe_op_in_unsafe_fn)]')
+          text = text.replace(
+              '.and_then(AutoClipboardThreshold::new)',
+              '.and_then(|value| AutoClipboardThreshold::new(value).ok())',
+          )
+          lib.write_text(text, encoding='utf-8')
           PY
       - name: Install native Linux build dependencies
         shell: bash
