@@ -1,0 +1,318 @@
+name: Publish and verify macOS v0.2.0-beta.1 preview
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/p3-publish-macos-v020.yml"
+
+concurrency:
+  group: cliptype-macos-v0.2.0-beta.1-publication
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION: v0.2.0-beta.1
+  RELEASE_NOTES: release/RELEASE_NOTES-v0.2.0-beta.1.md
+
+jobs:
+  build-slices:
+    name: Build and test ${{ matrix.arch }} slice
+    if: github.repository == 'yhan-sun/ClipType'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal \
+            --component rustfmt --component clippy \
+            --target "${{ matrix.target }}"
+
+      - name: Source quality gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 check --workspace --all-targets --locked --target "${{ matrix.target }}"
+          cargo +1.98.0 test --workspace --locked --target "${{ matrix.target }}"
+          cargo +1.98.0 clippy --workspace --all-targets --locked --target "${{ matrix.target }}" -- -D warnings
+
+      - name: Build release slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 build --release --locked -p cliptype-macos-app --target "${{ matrix.target }}"
+          binary="target/${{ matrix.target }}/release/cliptype-macos"
+          test -x "$binary"
+          file "$binary"
+          shasum -a 256 "$binary" > "slice-${{ matrix.arch }}.sha256"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-slice-${{ matrix.arch }}
+          path: |
+            target/${{ matrix.target }}/release/cliptype-macos
+            slice-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Assemble and publish immutable Universal 2 preview
+    needs: build-slices
+    runs-on: macos-15
+    timeout-minutes: 30
+    outputs:
+      release_url: ${{ steps.release.outputs.url }}
+      release_target: ${{ steps.release.outputs.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: macos-slice-*
+          path: slices
+
+      - name: Assemble, package, and validate candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat release/VERSION)" = "$VERSION"
+          test -f "$RELEASE_NOTES"
+
+          arm="slices/macos-slice-arm64/target/aarch64-apple-darwin/release/cliptype-macos"
+          intel="slices/macos-slice-x86_64/target/x86_64-apple-darwin/release/cliptype-macos"
+          chmod +x "$arm" "$intel"
+          mkdir -p universal dist/release
+          lipo -create "$arm" "$intel" -output universal/ClipType
+          lipo -verify_arch arm64 x86_64 universal/ClipType
+
+          packaging/macos/package.sh "$VERSION" universal/ClipType dist/macos
+
+          old_zip="dist/macos/ClipType-${VERSION}-macos-universal.zip"
+          old_dmg="dist/macos/ClipType-${VERSION}-macos-universal.dmg"
+          zip="dist/release/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
+          dmg="dist/release/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
+          mv "$old_zip" "$zip"
+          mv "$old_dmg" "$dmg"
+          cp -R dist/macos/ClipType.app dist/release/ClipType.app
+
+          app="dist/release/ClipType.app"
+          exe="$app/Contents/MacOS/ClipType"
+          test -x "$exe"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")" = ClipType
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = io.github.yhan-sun.ClipType
+          lipo -verify_arch arm64 x86_64 "$exe"
+          codesign --verify --deep --strict "$app"
+          codesign -dv --verbose=4 "$app" 2> dist/release/codesign-details.txt
+          grep -Eq 'Signature=adhoc|Signature=Ad Hoc' dist/release/codesign-details.txt
+
+          (
+            cd dist/release
+            shasum -a 256 \
+              "ClipType-${VERSION}-macos-universal2-UNSIGNED.zip" \
+              "ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg" \
+              > SHA256SUMS-macos.txt
+            shasum -a 256 -c SHA256SUMS-macos.txt
+          )
+
+          {
+            printf 'version=%s\n' "$VERSION"
+            printf 'source_commit=%s\n' "$GITHUB_SHA"
+            printf 'workflow_run=%s\n' "$GITHUB_RUN_ID"
+            printf 'rustc=%s\n' "$(rustc +1.98.0 --version)"
+            printf 'xcode=%s\n' "$(xcodebuild -version | tr '\n' ';')"
+            printf 'architectures=%s\n' "$(lipo -archs "$exe")"
+            printf 'signature=ad-hoc\n'
+            printf 'developer_id=false\n'
+            printf 'notarized=false\n'
+          } > dist/release/BUILD-INFO-macos.txt
+
+          cat > dist/release/README-macOS-TESTING-PREVIEW.txt <<'TXT'
+          ClipType v0.2.0-beta.1 macOS testing preview
+
+          This Universal 2 build contains arm64 and x86_64 slices. It is ad-hoc
+          signed and is NOT Developer ID signed or Apple notarized. macOS may
+          block the first launch. This preview is published for post-release
+          physical-Mac validation tracked in Issue #61; it is not a broad
+          compatibility or trusted-distribution claim.
+          TXT
+
+          rm -rf dist/release/ClipType.app dist/release/codesign-details.txt
+
+      - name: Create prerelease and upload assets
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(
+            "dist/release/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
+            "dist/release/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
+            "dist/release/SHA256SUMS-macos.txt"
+            "dist/release/BUILD-INFO-macos.txt"
+            "dist/release/README-macOS-TESTING-PREVIEW.txt"
+          )
+
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            target="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            test "$target" = "$GITHUB_SHA"
+          else
+            gh release create "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "ClipType $VERSION" \
+              --notes-file "$RELEASE_NOTES" \
+              --draft \
+              --prerelease
+          fi
+
+          existing="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for asset in "${assets[@]}"; do
+            name="$(basename "$asset")"
+            if ! grep -Fxq "$name" <<<"$existing"; then
+              gh release upload "$VERSION" "$asset" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          url="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          target="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-v0.2.0-beta.1-published-assets
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-published:
+    name: Verify public assets on ${{ matrix.arch }}
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - name: Download public release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
+          test -f "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
+          test -f release-assets/SHA256SUMS-macos.txt
+          test -f release-assets/BUILD-INFO-macos.txt
+          test -f release-assets/README-macOS-TESTING-PREVIEW.txt
+
+      - name: Verify checksums and application structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-assets && shasum -a 256 -c SHA256SUMS-macos.txt)
+          mkdir extracted
+          ditto -x -k "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip" extracted
+          app="extracted/ClipType.app"
+          exe="$app/Contents/MacOS/ClipType"
+          test -x "$exe"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")" = ClipType
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = io.github.yhan-sun.ClipType
+          lipo -verify_arch arm64 x86_64 "$exe"
+          codesign --verify --deep --strict "$app"
+          codesign -dv --verbose=4 "$app" 2> codesign-details.txt
+          grep -Eq 'Signature=adhoc|Signature=Ad Hoc' codesign-details.txt
+
+      - name: Mount published DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount_dir="$(mktemp -d)"
+          device="$(hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg" | awk 'NR==1 {print $1}')"
+          test -d "$mount_dir/ClipType.app"
+          test -L "$mount_dir/Applications"
+          hdiutil detach "$device"
+
+      - name: Native architecture launch smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="extracted/ClipType.app/Contents/MacOS/ClipType"
+          log="launch-${{ matrix.arch }}.log"
+          if [[ "${{ matrix.arch }}" == x86_64 ]]; then
+            arch -x86_64 "$exe" --settings >"$log" 2>&1 &
+          else
+            arch -arm64 "$exe" --settings >"$log" 2>&1 &
+          fi
+          pid=$!
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" || true
+            sed -E 's#(/Users/)[^/]+#\1<redacted>#g' "$log" >&2
+            exit 1
+          fi
+          kill -TERM "$pid" 2>/dev/null || true
+          for _ in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.25
+          done
+          kill -KILL "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          if grep -aEi 'panic|fatal|dyld.*not loaded|symbol not found|segmentation fault' "$log"; then
+            exit 1
+          fi
+          printf 'version=%s\narchitecture=%s\nrunner=%s\nrelease_target=%s\nlaunch_alive_after_5s=true\ninteractive_desktop_claim=false\n' \
+            "$VERSION" '${{ matrix.arch }}' '${{ matrix.runner }}' '${{ needs.publish.outputs.release_target }}' \
+            > "post-release-${{ matrix.arch }}.txt"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-v0.2.0-beta.1-post-release-${{ matrix.arch }}
+          path: post-release-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  record:
+    name: Record publication and hosted verification
+    needs:
+      - publish
+      - verify-published
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Comment on post-release physical-Mac tracker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue comment 61 --repo "$GITHUB_REPOSITORY" --body "The public ${VERSION} macOS testing preview was published from exact main commit \`${{ needs.publish.outputs.release_target }}\` and then re-downloaded from GitHub Releases. Hosted verification passed on Apple Silicon and Intel runners: SHA-256 manifest, ZIP and DMG structure, Universal 2 slices, Info.plist, ad-hoc signature integrity, and a five-second native-architecture launch smoke. This does **not** satisfy physical interactive Accessibility, global-hotkey, focus, representative-app, Login Item, Developer ID, notarization, stapling, or Gatekeeper user-flow checks; Issue #61 remains open. Release: ${{ needs.publish.outputs.release_url }}"
