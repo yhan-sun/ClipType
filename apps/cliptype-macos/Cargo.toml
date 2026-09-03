@@ -1,0 +1,24 @@
+[package]
+name = "cliptype-macos-app"
+description = "macOS menu-bar composition root for ClipType."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cliptype-app.workspace = true
+cliptype-core.workspace = true
+cliptype-macos.workspace = true
+cliptype-platform.workspace = true
+cliptype-ui.workspace = true
+slint = { version = "=1.17.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "cliptype-macos"
+path = "src/main.rs"

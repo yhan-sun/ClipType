@@ -822,6 +822,27 @@ name = "cliptype-core"
 version = "0.1.0"
 
 [[package]]
+name = "cliptype-macos"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "cliptype-core",
+ "cliptype-platform",
+]
+
+[[package]]
+name = "cliptype-macos-app"
+version = "0.1.0"
+dependencies = [
+ "cliptype-app",
+ "cliptype-core",
+ "cliptype-macos",
+ "cliptype-platform",
+ "cliptype-ui",
+ "slint",
+]
+
+[[package]]
 name = "cliptype-platform"
 version = "0.1.0"
 dependencies = [
