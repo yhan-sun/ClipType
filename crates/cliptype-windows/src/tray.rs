@@ -77,6 +77,7 @@ const CMD_JITTER_HEADER: usize = 1312;
 const CMD_TYPO_MINUS_ONE: usize = 1320;
 const CMD_TYPO_PLUS_ONE: usize = 1321;
 const CMD_TYPO_HEADER: usize = 1322;
+const CMD_OPEN_SETTINGS: usize = 1390;
 const CMD_STARTUP: usize = 1400;
 const CMD_HOTKEY: usize = 1500;
 const CMD_QUIT: usize = 1999;
@@ -179,6 +180,7 @@ unsafe extern "system" {
 pub enum TrayEvent {
     Trigger,
     Cancel,
+    OpenSettings,
     SettingsChanged(ProductSettings),
     Quit,
 }
@@ -519,6 +521,8 @@ fn show_context_menu(window: HWND) {
     append(menu, CMD_TYPO_MINUS_ONE, "Typo chance -1%", false, false);
     append(menu, CMD_TYPO_PLUS_ONE, "Typo chance +1%", false, false);
     append_separator(menu);
+    append(menu, CMD_OPEN_SETTINGS, "Open Settings…", false, false);
+    append_separator(menu);
     append(
         menu,
         CMD_STARTUP,
@@ -658,6 +662,7 @@ fn apply_command(command: usize, mut settings: ProductSettings) {
             Some(TrayEvent::SettingsChanged(settings))
         }
         CMD_SPEED_HEADER | CMD_JITTER_HEADER | CMD_TYPO_HEADER => None,
+        CMD_OPEN_SETTINGS => Some(TrayEvent::OpenSettings),
         CMD_STARTUP => {
             settings.start_at_login = !settings.start_at_login;
             Some(TrayEvent::SettingsChanged(settings))

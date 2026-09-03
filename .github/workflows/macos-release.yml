@@ -1,0 +1,165 @@
+name: macOS Developer ID Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Prerelease tag, for example v0.2.0-beta.1
+        required: true
+        default: v0.2.0-beta.1
+      publish:
+        description: Sign, notarize, and attach assets to a GitHub prerelease
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  build-slices:
+    name: Build ${{ matrix.arch }} slice
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install 1.98.0 --profile minimal --component clippy --target ${{ matrix.target }}
+      - name: Release quality gate and build
+        run: |
+          cargo check --workspace --all-targets --locked --target ${{ matrix.target }}
+          cargo test --workspace --locked --target ${{ matrix.target }}
+          cargo clippy --workspace --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+          cargo build --release --locked -p cliptype-macos-app --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 3
+
+  assemble:
+    name: Assemble exact Universal 2 candidate
+    needs: build-slices
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: release-macos-*
+          path: slices
+      - name: Assemble Universal 2 app
+        run: |
+          test "$VERSION" = "v0.2.0-beta.1"
+          chmod +x slices/release-macos-x86_64/cliptype-macos slices/release-macos-arm64/cliptype-macos
+          mkdir universal
+          lipo -create slices/release-macos-x86_64/cliptype-macos slices/release-macos-arm64/cliptype-macos -output universal/ClipType
+          packaging/macos/package.sh "$VERSION" universal/ClipType dist/macos
+          ditto -c -k --sequesterRsrc --keepParent dist/macos/ClipType.app dist/macos/ClipType-app-adhoc.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-universal-release-candidate
+          path: dist/macos/
+          if-no-files-found: error
+          retention-days: 3
+
+  sign-notarize-publish:
+    name: Developer ID sign, notarize, staple, attest, and publish
+    if: inputs.publish
+    needs: assemble
+    runs-on: macos-15
+    timeout-minutes: 35
+    environment: macos-release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: macos-universal-release-candidate
+          path: candidate
+      - name: Require protected Apple credentials and import Developer ID
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_TEAM_ID APPLE_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            test -n "${!name:-}" || { echo "missing protected secret $name"; exit 1; }
+          done
+          KEYCHAIN="$RUNNER_TEMP/cliptype-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n1)"
+          test -n "$identity"
+          echo "SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Replace ad-hoc signature with hardened Developer ID signature
+        run: |
+          rm -rf signed && mkdir signed
+          ditto -x -k candidate/ClipType-app-adhoc.zip signed
+          codesign --force --deep --options runtime --timestamp \
+            --entitlements packaging/macos/entitlements.plist \
+            --keychain "$SIGNING_KEYCHAIN" --sign "$SIGNING_IDENTITY" signed/ClipType.app
+          codesign --verify --deep --strict --verbose=2 signed/ClipType.app
+          ditto -c -k --sequesterRsrc --keepParent signed/ClipType.app "signed/ClipType-$VERSION-macos-universal.zip"
+      - name: Notarize, staple, and assess app
+        run: |
+          xcrun notarytool submit "signed/ClipType-$VERSION-macos-universal.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+          xcrun stapler staple signed/ClipType.app
+          xcrun stapler validate signed/ClipType.app
+          codesign --verify --deep --strict --verbose=2 signed/ClipType.app
+          spctl --assess --type execute --verbose=2 signed/ClipType.app
+          mkdir signed/image
+          cp -R signed/ClipType.app signed/image/
+          ln -s /Applications signed/image/Applications
+          hdiutil create -volname ClipType -srcfolder signed/image -ov -format UDZO "signed/ClipType-$VERSION-macos-universal.dmg" >/dev/null
+          xcrun notarytool submit "signed/ClipType-$VERSION-macos-universal.dmg" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+          xcrun stapler staple "signed/ClipType-$VERSION-macos-universal.dmg"
+          xcrun stapler validate "signed/ClipType-$VERSION-macos-universal.dmg"
+          (cd signed && shasum -a 256 "ClipType-$VERSION-macos-universal.zip" "ClipType-$VERSION-macos-universal.dmg" > SHA256SUMS-macos.txt)
+      - name: Generate GitHub attestations
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            signed/ClipType-${{ env.VERSION }}-macos-universal.zip
+            signed/ClipType-${{ env.VERSION }}-macos-universal.dmg
+            signed/SHA256SUMS-macos.txt
+      - name: Attach macOS assets to prerelease
+        run: |
+          if ! gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ClipType $VERSION" --prerelease --notes "Cross-platform beta candidate."
+          fi
+          gh release upload "$VERSION" \
+            "signed/ClipType-$VERSION-macos-universal.zip" \
+            "signed/ClipType-$VERSION-macos-universal.dmg" \
+            signed/SHA256SUMS-macos.txt \
+            --repo "$GITHUB_REPOSITORY"

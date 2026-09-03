@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "gate": "p3-real-host",
+  "checks": [
+    {
+      "id": "app.launches_cleanly",
+      "title": "Application launches and exits cleanly",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Launch the exact commit candidate from a clean user session, confirm one visible app instance, then quit through the product UI without a crash or orphaned process."
+    },
+    {
+      "id": "settings.opens_from_status_ui",
+      "title": "Settings opens from tray or menu bar",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Open Settings from the native tray or menu-bar item, verify the window can be reopened after closing, and confirm no duplicate background application is created."
+    },
+    {
+      "id": "settings.persist_after_restart",
+      "title": "Settings persist across restart",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Change non-sensitive settings, restart the application, and confirm the selected mode, speed, jitter, notification, and shortcut values are restored."
+    },
+    {
+      "id": "hotkey.trigger_live_replace",
+      "title": "Trigger shortcut is replaced live",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Record a valid replacement Trigger shortcut, save it, verify the old shortcut no longer triggers, and verify the new shortcut triggers without restarting."
+    },
+    {
+      "id": "hotkey.cancel_live_replace",
+      "title": "Cancel shortcut is replaced live",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Record a valid replacement Cancel shortcut, save it, and verify cancellation uses the replacement shortcut immediately without restarting."
+    },
+    {
+      "id": "hotkey.conflict_rolls_back_pair",
+      "title": "Shortcut conflict rolls back both shortcuts",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Attempt to apply a shortcut known to be occupied, confirm the UI reports a conflict, and verify both previously active shortcuts remain registered and functional."
+    },
+    {
+      "id": "hotkey.invalid_chords_rejected",
+      "title": "Unsafe or ambiguous shortcut chords are rejected",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Verify bare letters, bare digits, Shift-only chords, and identical Trigger and Cancel shortcuts are rejected before system registration."
+    },
+    {
+      "id": "typing.unicode_newline_tab",
+      "title": "Unicode, CJK, emoji, newline, and tab are delivered",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Use a disposable local test document and verify representative ASCII, CJK, emoji, line-break, and tab atoms are delivered in order; record only a content-blind pass reference."
+    },
+    {
+      "id": "typing.cancel_latency",
+      "title": "Cancellation stops delivery promptly",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Start a long disposable sample, invoke Cancel, and verify delivery stops within the documented latency budget without emitting a delayed tail after cancellation."
+    },
+    {
+      "id": "typing.target_switch_aborts",
+      "title": "Target change aborts safely",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Begin delivery in a disposable target, switch focus to a different application, and verify ClipType stops rather than continuing into the new target."
+    },
+    {
+      "id": "clipboard.preserved",
+      "title": "Clipboard content and revision are preserved",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Exercise Keyboard, Clipboard, and Auto modes and verify the source clipboard remains unchanged after success, cancellation, and a guarded revision-change failure."
+    },
+    {
+      "id": "privacy.no_content_in_diagnostics",
+      "title": "Diagnostics contain no clipboard or typed content",
+      "platforms": ["windows-x86_64", "macos-arm64", "macos-x86_64", "release-macos"],
+      "required": true,
+      "instructions": "Inspect product diagnostics and gate evidence references for the run and confirm no clipboard content, typed sample, credential, or full log body is retained."
+    },
+    {
+      "id": "windows.package_install_run_uninstall",
+      "title": "Windows package installs, runs, and uninstalls",
+      "platforms": ["windows-x86_64"],
+      "required": true,
+      "instructions": "Install the candidate through the supported package, launch it as a standard user, then uninstall it and confirm the installed executable and startup entry are removed."
+    },
+    {
+      "id": "windows.startup_toggle",
+      "title": "Windows startup setting is reversible",
+      "platforms": ["windows-x86_64"],
+      "required": true,
+      "instructions": "Enable startup, sign out and back in to confirm launch, then disable startup and confirm the application no longer starts automatically."
+    },
+    {
+      "id": "windows.no_low_level_keyboard_hook",
+      "title": "Windows build does not install a low-level keyboard hook",
+      "platforms": ["windows-x86_64"],
+      "required": true,
+      "instructions": "Use an approved local inspection tool or debugger to confirm shortcut handling uses registered hotkeys and does not install a global low-level keyboard hook."
+    },
+    {
+      "id": "windows.integrity_boundary",
+      "title": "Windows integrity boundary fails closed",
+      "platforms": ["windows-x86_64"],
+      "required": true,
+      "instructions": "From a standard-user ClipType process, target an elevated application and confirm delivery is rejected or reported unavailable rather than silently partially injected."
+    },
+    {
+      "id": "macos.menu_bar_lifecycle",
+      "title": "macOS menu-bar lifecycle is correct",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Verify the template icon, enabled state, mode selection, Settings action, permission status, startup toggle, and Quit action update correctly without a Dock-only lifecycle."
+    },
+    {
+      "id": "macos.accessibility_prompt_and_grant",
+      "title": "macOS Accessibility prompt and grant flow works",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Start from an ungranted state, request Accessibility through ClipType, grant it in System Settings, return to ClipType, and verify the state becomes granted without reinstalling."
+    },
+    {
+      "id": "macos.accessibility_revoke",
+      "title": "macOS Accessibility revocation is detected",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "After a granted run, revoke Accessibility in System Settings and verify ClipType reports revoked or unavailable and stops native delivery safely."
+    },
+    {
+      "id": "macos.secure_input_blocks_delivery",
+      "title": "macOS Secure Event Input blocks delivery safely",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Use an approved local Secure Event Input test target and verify ClipType reports unavailable or blocked without attempting a hidden fallback."
+    },
+    {
+      "id": "macos.focus_evidence",
+      "title": "macOS focused-target evidence prevents cross-target delivery",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Exercise same-window focus changes and application switches and verify focused-control or top-level target evidence produces the documented safe comparison result."
+    },
+    {
+      "id": "macos.startup_toggle",
+      "title": "macOS login-item setting is reversible",
+      "platforms": ["macos-arm64", "macos-x86_64"],
+      "required": true,
+      "instructions": "Enable the SMAppService login item, sign out and back in to confirm launch, then disable it and confirm the application no longer starts automatically."
+    },
+    {
+      "id": "macos.arm64_native_launch",
+      "title": "Universal 2 candidate launches natively on Apple Silicon",
+      "platforms": ["macos-arm64"],
+      "required": true,
+      "instructions": "Confirm the Universal 2 candidate launches as arm64 on Apple Silicon and completes the core menu-bar, Settings, shortcut, and delivery checks without Rosetta."
+    },
+    {
+      "id": "macos.x86_64_native_launch",
+      "title": "Universal 2 candidate launches as x86_64",
+      "platforms": ["macos-x86_64"],
+      "required": true,
+      "instructions": "Confirm the Universal 2 candidate launches as x86_64 on Intel macOS or under the explicitly approved Rosetta test path and completes the core checks."
+    },
+    {
+      "id": "release.bundle_structure",
+      "title": "macOS application bundle structure is complete",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Verify Info.plist, executable, resources, icon, supported architectures, minimum OS, bundle identifier, and executable permissions in the exact release candidate."
+    },
+    {
+      "id": "release.hardened_runtime",
+      "title": "Hardened Runtime and entitlements are correct",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Inspect the final signature and entitlements and confirm Hardened Runtime is enabled with no unexpected debugging, JIT, library-validation, or broad filesystem exceptions."
+    },
+    {
+      "id": "release.codesign_verify",
+      "title": "Developer ID signature verifies deeply and strictly",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Run codesign deep strict verification and record only the command result, signing identity fingerprint reference, and artifact digest; never record credentials."
+    },
+    {
+      "id": "release.notarization_accepted",
+      "title": "Apple notarization is accepted",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Submit the signed candidate with notarytool, require an Accepted result, and reference the submission identifier without embedding the notarization credential or full log."
+    },
+    {
+      "id": "release.stapler_validate",
+      "title": "Notarization ticket is stapled and validates",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Staple the accepted notarization ticket to the app or distribution image and require stapler validation to succeed on the final artifact."
+    },
+    {
+      "id": "release.gatekeeper_assess",
+      "title": "Gatekeeper accepts the final candidate",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Run spctl assessment against the final offline candidate and confirm Gatekeeper identifies an accepted notarized Developer ID application."
+    },
+    {
+      "id": "release.artifact_hashes",
+      "title": "Release artifact hashes are recorded",
+      "platforms": ["release-macos"],
+      "required": true,
+      "instructions": "Record SHA-256 references for the final app archive and DMG produced from the exact commit after signing, notarization, and stapling."
+    }
+  ]
+}

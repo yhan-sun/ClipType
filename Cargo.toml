@@ -4,6 +4,9 @@ members = [
     "crates/cliptype-platform",
     "crates/cliptype-app",
     "crates/cliptype-windows",
+    "crates/cliptype-ui",
+    "crates/cliptype-macos",
+    "apps/cliptype-macos",
     "apps/cliptype",
 ]
 resolver = "3"
@@ -21,6 +24,8 @@ cliptype-core = { path = "crates/cliptype-core" }
 cliptype-platform = { path = "crates/cliptype-platform" }
 cliptype-app = { path = "crates/cliptype-app" }
 cliptype-windows = { path = "crates/cliptype-windows" }
+cliptype-ui = { path = "crates/cliptype-ui" }
+cliptype-macos = { path = "crates/cliptype-macos" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

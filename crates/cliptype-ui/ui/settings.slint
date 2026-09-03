@@ -1,0 +1,230 @@
+import {
+    AboutSlint, Button, CheckBox, ComboBox, GroupBox, HorizontalBox, LineEdit,
+    ScrollView, SpinBox, StandardButton, VerticalBox
+} from "std-widgets.slint";
+
+component ShortcutRecorder inherits Rectangle {
+    in property <string> title;
+    in-out property <string> value;
+    in property <string> status;
+    in-out property <bool> recording: false;
+    callback captured(string, bool, bool, bool, bool);
+    callback cleared();
+    callback cancelled();
+
+    height: 96px;
+    border-width: 1px;
+    border-color: recording ? #1684ff : #c9ced8;
+    border-radius: 8px;
+    background: recording ? #eef6ff : transparent;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+        Text { text: root.title; font-weight: 600; }
+        HorizontalLayout {
+            spacing: 8px;
+            editor := LineEdit {
+                text <=> root.value;
+                read-only: true;
+                placeholder-text: root.recording ? "Press shortcut now…" : "No shortcut";
+                key-pressed(event) => {
+                    if (!root.recording || event.repeat) { return reject; }
+                    if (event.text == Key.Escape) {
+                        root.recording = false;
+                        root.cancelled();
+                        return accept;
+                    }
+                    if (event.text == Key.Backspace || event.text == Key.Delete) {
+                        root.recording = false;
+                        root.cleared();
+                        return accept;
+                    }
+                    root.captured(
+                        event.text,
+                        event.modifiers.control,
+                        event.modifiers.alt,
+                        event.modifiers.shift,
+                        event.modifiers.meta
+                    );
+                    return accept;
+                }
+            }
+            Button {
+                text: root.recording ? "Cancel" : "Record";
+                clicked => {
+                    root.recording = !root.recording;
+                    if (root.recording) { editor.focus(); }
+                    else { root.cancelled(); }
+                }
+            }
+        }
+        Text {
+            text: root.status;
+            color: root.status == "Available" ? #16843f : #6f7785;
+            font-size: 12px;
+        }
+    }
+}
+
+export component ClipTypeSettings inherits Window {
+    title: "ClipType Settings";
+    width: 780px;
+    height: 610px;
+
+    in-out property <int> page: 0;
+    in-out property <bool> enabled-setting: true;
+    in-out property <bool> notifications-setting: true;
+    in-out property <bool> startup-setting: false;
+    in-out property <int> mode-index: 2;
+    in-out property <int> characters-per-second: 40;
+    in-out property <int> jitter-percent: 0;
+    in-out property <int> typo-percent: 0;
+    in-out property <int> auto-threshold: 256;
+    in-out property <string> trigger-hotkey;
+    in-out property <string> cancel-hotkey;
+    in-out property <string> trigger-status: "Not checked";
+    in-out property <string> cancel-status: "Not checked";
+    in-out property <string> permission-status: "Not required";
+    in-out property <string> capability-status: "Ready";
+    in-out property <string> status-message: "";
+    in-out property <string> platform-name: "Desktop";
+    in-out property <string> version-label: "ClipType";
+    in-out property <bool> permission-actions-visible: false;
+
+    callback apply-requested();
+    callback reset-requested();
+    callback probe-requested();
+    callback shortcut-captured(int, string, bool, bool, bool, bool);
+    callback shortcut-cleared(int);
+    callback request-permission();
+    callback open-permission-settings();
+
+    HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            width: 174px;
+            background: #f2f4f8;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Text { text: "ClipType"; font-size: 22px; font-weight: 700; }
+                Text { text: root.platform-name; color: #727887; font-size: 12px; }
+                Button { text: "General"; checkable: true; checked: root.page == 0; clicked => { root.page = 0; } }
+                Button { text: "Shortcuts"; checkable: true; checked: root.page == 1; clicked => { root.page = 1; } }
+                Button { text: "Typing"; checkable: true; checked: root.page == 2; clicked => { root.page = 2; } }
+                Button { text: "Permissions"; checkable: true; checked: root.page == 3; clicked => { root.page = 3; } }
+                Button { text: "About & Updates"; checkable: true; checked: root.page == 4; clicked => { root.page = 4; } }
+                Rectangle { vertical-stretch: 1; }
+                Text { text: root.version-label; color: #727887; font-size: 11px; wrap: word-wrap; }
+            }
+        }
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            ScrollView {
+                vertical-stretch: 1;
+                viewport-width: self.width;
+                if root.page == 0: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "General"; font-size: 24px; font-weight: 700; }
+                    Text { text: "ClipType stays local and performs input only after an explicit trigger."; wrap: word-wrap; }
+                    GroupBox {
+                        title: "Application";
+                        VerticalLayout {
+                            CheckBox { text: "Enable ClipType"; checked <=> root.enabled-setting; }
+                            CheckBox { text: "Show content-free notifications"; checked <=> root.notifications-setting; }
+                            CheckBox { text: "Start ClipType at login"; checked <=> root.startup-setting; }
+                        }
+                    }
+                }
+                if root.page == 1: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "Shortcuts"; font-size: 24px; font-weight: 700; }
+                    Text { text: "Shortcuts are recorded only while the focused recorder is active. ClipType probes global OS registration, but application-local conflicts may remain unknown."; wrap: word-wrap; }
+                    trigger := ShortcutRecorder {
+                        title: "Trigger";
+                        value <=> root.trigger-hotkey;
+                        status: root.trigger-status;
+                        captured(text, control, alt, shift, meta) => {
+                            root.shortcut-captured(0, text, control, alt, shift, meta);
+                            self.recording = false;
+                        }
+                        cleared => { root.shortcut-cleared(0); }
+                    }
+                    cancel := ShortcutRecorder {
+                        title: "Cancel active session";
+                        value <=> root.cancel-hotkey;
+                        status: root.cancel-status;
+                        captured(text, control, alt, shift, meta) => {
+                            root.shortcut-captured(1, text, control, alt, shift, meta);
+                            self.recording = false;
+                        }
+                        cleared => { root.shortcut-cleared(1); }
+                    }
+                    Button { text: "Check availability"; clicked => { root.probe-requested(); } }
+                }
+                if root.page == 2: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "Typing"; font-size: 24px; font-weight: 700; }
+                    GroupBox {
+                        title: "Delivery";
+                        VerticalLayout {
+                            Text { text: "Mode"; }
+                            ComboBox {
+                                model: ["Keyboard", "Clipboard", "Auto"];
+                                current-index <=> root.mode-index;
+                            }
+                            HorizontalLayout { Text { text: "Characters per second"; horizontal-stretch: 1; } SpinBox { minimum: 1; maximum: 250; value <=> root.characters-per-second; } }
+                            HorizontalLayout { Text { text: "Timing jitter (%)"; horizontal-stretch: 1; } SpinBox { minimum: 0; maximum: 95; value <=> root.jitter-percent; } }
+                            HorizontalLayout { Text { text: "Corrected typo probability (%)"; horizontal-stretch: 1; } SpinBox { minimum: 0; maximum: 25; value <=> root.typo-percent; } }
+                            HorizontalLayout { Text { text: "Auto clipboard threshold"; horizontal-stretch: 1; } SpinBox { minimum: 1; maximum: 1000000; value <=> root.auto-threshold; } }
+                        }
+                    }
+                    if root.typo-percent > 0: Rectangle {
+                        background: #fff4d6;
+                        border-color: #e2a520;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        height: 74px;
+                        Text {
+                            x: 12px; y: 10px; width: parent.width - 24px;
+                            text: "Safety warning: corrected typo simulation is unsuitable for passwords, source code, terminals, commands, administrative tools, and exact-data entry.";
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                if root.page == 3: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "Permissions"; font-size: 24px; font-weight: 700; }
+                    GroupBox {
+                        title: "Platform capability";
+                        VerticalLayout {
+                            Text { text: "Accessibility: " + root.permission-status; wrap: word-wrap; }
+                            Text { text: root.capability-status; wrap: word-wrap; color: #727887; }
+                            if root.permission-actions-visible: HorizontalLayout {
+                                Button { text: "Request permission"; clicked => { root.request-permission(); } }
+                                Button { text: "Open System Settings"; clicked => { root.open-permission-settings(); } }
+                            }
+                        }
+                    }
+                }
+                if root.page == 4: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "About ClipType"; font-size: 24px; font-weight: 700; }
+                    Text { text: root.version-label; }
+                    Text { text: "Privacy-first clipboard-to-input utility. Licensed under MIT OR Apache-2.0."; wrap: word-wrap; }
+                    Text { text: "The settings window is built with Slint 1.17.1 under the Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0."; wrap: word-wrap; }
+                    AboutSlint { }
+                }
+            }
+            Rectangle { height: 1px; background: #d6dae2; }
+            HorizontalLayout {
+                Text { text: root.status-message; color: #667080; horizontal-stretch: 1; wrap: word-wrap; }
+                StandardButton { kind: reset; clicked => { root.reset-requested(); } }
+                StandardButton { kind: apply; primary: true; clicked => { root.apply-requested(); } }
+            }
+        }
+    }
+}
