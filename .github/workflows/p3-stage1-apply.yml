@@ -37,6 +37,16 @@ jobs:
           Path('/tmp/p3-stage1-patch.py').write_bytes(zlib.decompress(compressed))
           PY
           python /tmp/p3-stage1-patch.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/cliptype-windows/src/command.rs')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'fn unregister_id_checked(id: i32) -> bool {\n    // SAFETY: removes an application-owned id on the owner thread.\n    unsafe { unregister_hot_key(null_mut(), id) } != 0\n}',
+              'fn unregister_id_checked(id: i32) -> bool {\n    // SAFETY: removes an application-owned id on the owner thread.\n    let result = unsafe { unregister_hot_key(null_mut(), id) };\n    result != 0\n}',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Install native Linux build dependencies
         shell: bash
         run: |
