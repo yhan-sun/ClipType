@@ -1,0 +1,132 @@
+name: P3 Cross-Platform Product Gate
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/cliptype-core/**"
+      - "crates/cliptype-platform/**"
+      - "crates/cliptype-app/**"
+      - "crates/cliptype-ui/**"
+      - "crates/cliptype-windows/**"
+      - "crates/cliptype-macos/**"
+      - "apps/cliptype/**"
+      - "apps/cliptype-macos/**"
+      - "assets/branding/**"
+      - "packaging/macos/**"
+      - ".github/workflows/p3-cross-platform.yml"
+  push:
+    branches:
+      - feat/p3-cross-platform-ui-macos
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "apps/**"
+      - "assets/branding/**"
+      - "packaging/macos/**"
+      - ".github/workflows/p3-cross-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  P3_VERSION: v0.2.0-beta.1
+
+jobs:
+  windows:
+    name: Windows UI and custom hotkeys
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Format, check, test, and lint
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build Windows product
+        run: cargo build --release --locked -p cliptype
+
+  macos-build:
+    name: macOS ${{ matrix.arch }} build and tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target ${{ matrix.target }}
+      - name: Validate source and native adapters
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked --target ${{ matrix.target }}
+          cargo test --workspace --locked --target ${{ matrix.target }}
+          cargo clippy --workspace --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+      - name: Build macOS composition root
+        run: cargo build --release --locked -p cliptype-macos-app --target ${{ matrix.target }}
+      - name: Inspect architecture
+        run: |
+          file target/${{ matrix.target }}/release/cliptype-macos
+          lipo -archs target/${{ matrix.target }}/release/cliptype-macos | grep -q '${{ matrix.arch }}'
+      - name: Upload architecture slice
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-macos-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 7
+
+  macos-universal:
+    name: Assemble Universal 2 app, ZIP, and DMG
+    needs: macos-build
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: cliptype-macos-*
+          path: slices
+      - name: Create and validate Universal 2 binary
+        run: |
+          chmod +x slices/cliptype-macos-x86_64/cliptype-macos slices/cliptype-macos-arm64/cliptype-macos
+          mkdir -p universal
+          lipo -create slices/cliptype-macos-x86_64/cliptype-macos slices/cliptype-macos-arm64/cliptype-macos -output universal/ClipType
+          test "$(lipo -archs universal/ClipType | tr ' ' '\n' | sort | tr '\n' ' ')" = "arm64 x86_64 "
+      - name: Assemble ad-hoc-signed candidate
+        run: packaging/macos/package.sh "$P3_VERSION" universal/ClipType dist/macos
+      - name: Validate app metadata and assets
+        run: |
+          plutil -lint dist/macos/ClipType.app/Contents/Info.plist
+          test "$(defaults read "$PWD/dist/macos/ClipType.app/Contents/Info" LSUIElement)" = "1"
+          codesign --verify --deep --strict dist/macos/ClipType.app
+          test -s dist/macos/ClipType.app/Contents/Resources/ClipType.icns
+          test -s dist/macos/ClipType-$P3_VERSION-macos-universal.zip
+          test -s dist/macos/ClipType-$P3_VERSION-macos-universal.dmg
+          (cd dist/macos && shasum -a 256 -c SHA256SUMS.txt)
+      - name: Upload unsigned/ad-hoc candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-${{ env.P3_VERSION }}-macos-universal-unsigned-candidate
+          path: |
+            dist/macos/ClipType-${{ env.P3_VERSION }}-macos-universal.zip
+            dist/macos/ClipType-${{ env.P3_VERSION }}-macos-universal.dmg
+            dist/macos/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
