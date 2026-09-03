@@ -179,10 +179,7 @@ mod macos_probe {
         let action = permission
             .request()
             .map_err(|_| "permission_request_failed")?;
-        println!(
-            "permission_action={}",
-            permission_action_label(action)
-        );
+        println!("permission_action={}", permission_action_label(action));
 
         let deadline = Instant::now()
             .checked_add(Duration::from_secs(seconds))
@@ -196,10 +193,7 @@ mod macos_probe {
             }
             thread::sleep(Duration::from_millis(500));
         }
-        println!(
-            "permission_final={}",
-            permission_label(permission.state())
-        );
+        println!("permission_final={}", permission_label(permission.state()));
         println!("status=complete");
         Ok(())
     }
@@ -211,10 +205,7 @@ mod macos_probe {
             .map_err(|_| "open_permission_settings_failed")?;
         println!("format=cliptype-p3-s01-v1");
         println!("command=open-permission-settings");
-        println!(
-            "permission_action={}",
-            permission_action_label(action)
-        );
+        println!("permission_action={}", permission_action_label(action));
         println!("status=complete");
         Ok(())
     }
@@ -240,9 +231,7 @@ mod macos_probe {
         println!("format=cliptype-p3-s01-v1");
         println!("command=hotkey-cycle");
         println!("occupied_candidate_result={}", apply_label(rejected));
-        println!(
-            "old_pair_preserved_after_rejection={preserved_after_rejection}"
-        );
+        println!("old_pair_preserved_after_rejection={preserved_after_rejection}");
         println!("free_candidate_result={}", apply_label(applied));
         println!("free_candidate_active={alternate_active}");
         println!("restore_result={}", apply_label(restored));
@@ -256,10 +245,7 @@ mod macos_probe {
             && alternate_active
             && restored == HotkeyApplyResult::Applied
             && initial_restored;
-        println!(
-            "status={}",
-            if passed { "complete" } else { "failed" }
-        );
+        println!("status={}", if passed { "complete" } else { "failed" });
         if passed {
             Ok(())
         } else {
@@ -270,8 +256,8 @@ mod macos_probe {
     fn hold_hotkeys(trigger: &str, cancel: &str, seconds: u64) -> Result<(), &'static str> {
         let pair = pair(trigger, cancel)?;
         let (events, _receiver) = mpsc::channel::<MacMenuEvent>();
-        let _controller = MacHotkeyController::new(pair, events)
-            .map_err(|_| "hold_registration_failed")?;
+        let _controller =
+            MacHotkeyController::new(pair, events).map_err(|_| "hold_registration_failed")?;
         println!("format=cliptype-p3-s01-v1");
         println!("command=hold-hotkeys");
         println!("hold_seconds={seconds}");
@@ -328,9 +314,7 @@ mod macos_probe {
         let trigger = trigger
             .parse::<HotkeySpec>()
             .map_err(|_| "invalid_trigger")?;
-        let cancel = cancel
-            .parse::<HotkeySpec>()
-            .map_err(|_| "invalid_cancel")?;
+        let cancel = cancel.parse::<HotkeySpec>().map_err(|_| "invalid_cancel")?;
         Ok(HotkeyPair::new(trigger, cancel))
     }
 
@@ -427,19 +411,11 @@ mod macos_probe {
             HotkeyApplyResult::Rejected(HotkeyAvailability::Available) => "rejected_available",
             HotkeyApplyResult::Rejected(HotkeyAvailability::Conflict) => "rejected_conflict",
             HotkeyApplyResult::Rejected(HotkeyAvailability::Reserved) => "rejected_reserved",
-            HotkeyApplyResult::Rejected(HotkeyAvailability::Unsupported) => {
-                "rejected_unsupported"
-            }
+            HotkeyApplyResult::Rejected(HotkeyAvailability::Unsupported) => "rejected_unsupported",
             HotkeyApplyResult::Rejected(HotkeyAvailability::Unknown) => "rejected_unknown",
-            HotkeyApplyResult::RolledBack(HotkeyAvailability::Available) => {
-                "rolled_back_available"
-            }
-            HotkeyApplyResult::RolledBack(HotkeyAvailability::Conflict) => {
-                "rolled_back_conflict"
-            }
-            HotkeyApplyResult::RolledBack(HotkeyAvailability::Reserved) => {
-                "rolled_back_reserved"
-            }
+            HotkeyApplyResult::RolledBack(HotkeyAvailability::Available) => "rolled_back_available",
+            HotkeyApplyResult::RolledBack(HotkeyAvailability::Conflict) => "rolled_back_conflict",
+            HotkeyApplyResult::RolledBack(HotkeyAvailability::Reserved) => "rolled_back_reserved",
             HotkeyApplyResult::RolledBack(HotkeyAvailability::Unsupported) => {
                 "rolled_back_unsupported"
             }
