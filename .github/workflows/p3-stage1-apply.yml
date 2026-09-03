@@ -96,6 +96,14 @@ jobs:
             grep -n -B4 -A12 -E '(^error|error\[)' /tmp/windows-check.log | tail -n 500 || tail -n 250 /tmp/windows-check.log
             exit 1
           fi
+      - name: Upload focused Windows diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-windows-cross-check-diagnostics
+          path: /tmp/windows-check.log
+          if-no-files-found: warn
+          retention-days: 1
       - name: Remove one-time staging automation
         shell: bash
         run: |
