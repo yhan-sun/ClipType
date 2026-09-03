@@ -1,0 +1,34 @@
+name: P3 S01 One-Time Cargo Format
+
+on:
+  push:
+    branches: [validation/p3-s01-macos-native-evidence-8c52a74]
+    paths: [".github/workflows/p3-s01-format.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    name: Apply canonical cargo fmt output
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Format and commit only the validation probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo +1.98.0 fmt --all
+          mapfile -t changed < <(git diff --name-only)
+          [[ ${#changed[@]} -eq 1 ]]
+          [[ "${changed[0]}" == "crates/cliptype-macos/examples/p3_s01_probe.rs" ]]
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/cliptype-macos/examples/p3_s01_probe.rs
+          git diff --cached --check
+          git commit -m "style(p3-s01): canonical cargo fmt output"
+          git push origin HEAD:validation/p3-s01-macos-native-evidence-8c52a74
