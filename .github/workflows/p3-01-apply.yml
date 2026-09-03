@@ -34,7 +34,21 @@ jobs:
           git apply --index /tmp/p3-01.patch
           base64 --decode .github/patches/hotkey.rs.gz.b64 | gzip --decompress > crates/cliptype-core/src/hotkey.rs
           sed -i 's/CMD_HOTKEY => None$/CMD_HOTKEY => None,/' crates/cliptype-windows/src/tray.rs
-          git add crates/cliptype-core/src/hotkey.rs crates/cliptype-windows/src/tray.rs
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/cliptype-core/src/settings.rs')
+          text = path.read_text()
+          text = text.replace(
+              '        HotkeyKey, HotkeyPlatform, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT,\n',
+              '        MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT,\n',
+          )
+          text = text.replace(
+              '    use crate::InjectionMode;\n',
+              '    use crate::{HotkeyKey, HotkeyPlatform, InjectionMode};\n',
+          )
+          path.write_text(text)
+          PY
+          git add crates/cliptype-core/src/hotkey.rs crates/cliptype-core/src/settings.rs crates/cliptype-windows/src/tray.rs
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
       - name: Format source
