@@ -1,0 +1,54 @@
+name: P4 Bootstrap Flutter macOS arm64
+
+on:
+  push:
+    branches:
+      - feat/p4-macos-arm64-flutter-rebuild
+    paths:
+      - ".github/workflows/p4-bootstrap-flutter.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install pinned Flutter SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Generate macOS-only Flutter application
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/flutter/bin:$PATH"
+          flutter config --enable-macos-desktop
+          rm -rf apps/cliptype-flutter
+          flutter create \
+            --platforms=macos \
+            --org io.cliptype \
+            --project-name cliptype_flutter \
+            --description "ClipType Apple Silicon settings and menu-bar application" \
+            apps/cliptype-flutter
+          rm -rf apps/cliptype-flutter/.git
+          flutter pub get --directory apps/cliptype-flutter
+          flutter analyze apps/cliptype-flutter
+          flutter test apps/cliptype-flutter
+      - name: Commit generated scaffold and remove one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/p4-bootstrap-flutter.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- apps/cliptype-flutter .github/workflows/p4-bootstrap-flutter.yml
+          git diff --cached --check
+          git commit -m "build(p4): bootstrap Flutter macOS arm64 shell"
+          git push origin HEAD:feat/p4-macos-arm64-flutter-rebuild
