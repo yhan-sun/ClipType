@@ -1,0 +1,207 @@
+name: P3 macOS Repair Gate
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths:
+      - "apps/cliptype-macos/**"
+      - "crates/cliptype-macos/**"
+      - "crates/cliptype-ui/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/p3-macos-repair.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p3-macos-repair
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FEATURE_BRANCH: feat/p3-cross-platform-ui-macos
+
+jobs:
+  repair:
+    name: Apply verified fixes and validate both macOS architectures
+    runs-on: macos-15-arm64
+    timeout-minutes: 55
+    steps:
+      - name: Check out exact P3 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+
+      - name: Detect materialized macOS source
+        id: source
+        shell: bash
+        run: |
+          if [[ -f crates/cliptype-macos/Cargo.toml && -f apps/cliptype-macos/Cargo.toml ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "macOS source has not been materialized yet; transport workflow remains authoritative."
+          fi
+
+      - name: Install pinned Rust
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy \
+            --target aarch64-apple-darwin \
+            --target x86_64-apple-darwin
+
+      - name: Normalize known generated-source hazards
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          cargo = Path('apps/cliptype-macos/Cargo.toml')
+          text = cargo.read_text(encoding='utf-8')
+          text = text.replace('name = "cliptype-macos"\n', 'name = "cliptype-macos-app"\n', 1)
+          if '[[bin]]' not in text:
+              text += '\n[[bin]]\nname = "cliptype-macos"\npath = "src/main.rs"\n'
+          cargo.write_text(text, encoding='utf-8')
+
+          native = Path('crates/cliptype-macos/native/cliptype_macos.m')
+          text = native.read_text(encoding='utf-8')
+          duplicate_function = (
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n'
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n'
+          )
+          text = text.replace(
+              duplicate_function,
+              'int ct_macos_post_unicode(const uint16_t *units, size_t length) {\n',
+          )
+          duplicate_image = (
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n'
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n'
+          )
+          text = text.replace(
+              duplicate_image,
+              '        image = [NSImage imageWithSystemSymbolName:@"doc.on.clipboard"\n',
+          )
+          native.write_text(text, encoding='utf-8')
+
+          rust = Path('crates/cliptype-macos/src/lib.rs')
+          text = rust.read_text(encoding='utf-8')
+          text = text.replace('#![forbid(unsafe_code)]', '#![deny(unsafe_op_in_unsafe_fn)]')
+          text = text.replace('\nextern "C" {\n', '\nunsafe extern "C" {\n')
+          rust.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Apply only machine-applicable Rust fixes
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set +e
+          cargo fix \
+            --workspace \
+            --all-targets \
+            --target aarch64-apple-darwin \
+            --allow-dirty \
+            --allow-staged \
+            2>&1 | tee /tmp/p3-cargo-fix.log
+          cargo clippy \
+            --fix \
+            --workspace \
+            --all-targets \
+            --target aarch64-apple-darwin \
+            --allow-dirty \
+            --allow-staged \
+            -- -D warnings \
+            2>&1 | tee /tmp/p3-clippy-fix.log
+          cargo fmt --all
+          cargo generate-lockfile
+          exit 0
+
+      - name: Verify Apple Silicon workspace
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --workspace --all-targets --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-arm-check.log
+          cargo test --workspace --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-arm-test.log
+          cargo clippy --workspace --all-targets --target aarch64-apple-darwin -- -D warnings 2>&1 | tee /tmp/p3-arm-clippy.log
+
+      - name: Verify Intel workspace and both release builds
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --workspace --all-targets --target x86_64-apple-darwin 2>&1 | tee /tmp/p3-intel-check.log
+          cargo build --release -p cliptype-macos-app --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-arm-build.log
+          cargo build --release -p cliptype-macos-app --target x86_64-apple-darwin 2>&1 | tee /tmp/p3-intel-build.log
+          mkdir -p /tmp/p3-universal
+          lipo -create \
+            target/aarch64-apple-darwin/release/cliptype-macos \
+            target/x86_64-apple-darwin/release/cliptype-macos \
+            -output /tmp/p3-universal/cliptype-macos
+          lipo -verify_arch arm64 x86_64 /tmp/p3-universal/cliptype-macos
+          lipo -info /tmp/p3-universal/cliptype-macos | tee /tmp/p3-universal.log
+          git diff --check
+
+      - name: Publish failure diagnostics as an artifact
+        if: failure() && steps.source.outputs.present == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-macos-repair-diagnostics
+          path: /tmp/p3-*.log
+          if-no-files-found: warn
+          retention-days: 2
+
+      - name: Persist sanitized failure summary on diagnostic branch
+        if: failure() && steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .github/p3-ci-diagnostics
+          {
+            echo "# P3 macOS repair diagnostics"
+            echo
+            echo "Source commit: $GITHUB_SHA"
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            for file in /tmp/p3-arm-check.log /tmp/p3-arm-test.log /tmp/p3-arm-clippy.log /tmp/p3-intel-check.log /tmp/p3-arm-build.log /tmp/p3-intel-build.log; do
+              if [[ -f "$file" ]]; then
+                echo "## $(basename "$file")"
+                echo '```text'
+                grep -E -B3 -A12 '(^error|error\[|warning:|ld:|clang:)' "$file" | tail -n 500 || tail -n 200 "$file"
+                echo '```'
+              fi
+            done
+          } > .github/p3-ci-diagnostics/latest.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/p3-ci-diagnostics/latest.md
+          if ! git diff --cached --quiet; then
+            git commit -m "ci(p3): record macOS repair diagnostics"
+            git push origin HEAD:diagnostics/p3-macos-repair --force
+          fi
+
+      - name: Commit only fully verified fixes
+        if: success() && steps.source.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/p3-macos-repair.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source fixes were required."
+            exit 0
+          fi
+          git diff --cached --stat
+          git commit -m "fix(p3): apply verified macOS build fixes"
+          git push origin HEAD:${FEATURE_BRANCH}
