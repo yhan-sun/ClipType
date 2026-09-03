@@ -1,0 +1,45 @@
+name: P3 Normalize Source
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-normalize-source.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  normalize:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Normalize source and lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f crates/cliptype-macos/Cargo.toml
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo fmt --all
+          cargo generate-lockfile
+      - name: Commit normalization and retire workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/p3-normalize-source.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "P3: normalize macOS source and lockfile"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
+          gh workflow run p3-candidate-gate.yml --repo "$GITHUB_REPOSITORY" --ref feat/p3-cross-platform-ui-macos
