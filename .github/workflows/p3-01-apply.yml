@@ -36,8 +36,9 @@ jobs:
           sed -i 's/CMD_HOTKEY => None$/CMD_HOTKEY => None,/' crates/cliptype-windows/src/tray.rs
           python - <<'PY'
           from pathlib import Path
-          path = Path('crates/cliptype-core/src/settings.rs')
-          text = path.read_text()
+
+          core_settings = Path('crates/cliptype-core/src/settings.rs')
+          text = core_settings.read_text()
           text = text.replace(
               '        HotkeyKey, HotkeyPlatform, MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT,\n',
               '        MAX_CHARACTERS_PER_SECOND, MAX_JITTER_PERCENT,\n',
@@ -46,9 +47,16 @@ jobs:
               '    use crate::InjectionMode;\n',
               '    use crate::{HotkeyKey, HotkeyPlatform, InjectionMode};\n',
           )
-          path.write_text(text)
+          core_settings.write_text(text)
+
+          app_settings = Path('crates/cliptype-app/src/settings.rs')
+          text = app_settings.read_text()
+          text = text.replace('CtrlAltShiftFunction', 'AltShift')
+          text = text.replace('CtrlAltFunction', 'Alt')
+          text = text.replace('CtrlShiftFunction', 'Shift')
+          app_settings.write_text(text)
           PY
-          git add crates/cliptype-core/src/hotkey.rs crates/cliptype-core/src/settings.rs crates/cliptype-windows/src/tray.rs
+          git add crates/cliptype-core/src/hotkey.rs crates/cliptype-core/src/settings.rs crates/cliptype-app/src/settings.rs crates/cliptype-windows/src/tray.rs
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
       - name: Format source
