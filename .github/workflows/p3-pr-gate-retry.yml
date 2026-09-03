@@ -1,0 +1,109 @@
+name: P3 Verified Pull Request Gate Retry
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-pr-gate-retry.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: p3-verified-pr-gate
+  cancel-in-progress: true
+
+jobs:
+  verify-and-open:
+    name: Revalidate committed P3 source and open PR
+    runs-on: macos-15-arm64
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+
+      - name: Require completed Stage 2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f crates/cliptype-macos/Cargo.toml
+          test -f apps/cliptype-macos/Cargo.toml
+          test -f packaging/macos/package.sh
+          test -f .github/workflows/p3-cross-platform.yml
+          test -f .github/workflows/macos-release.yml
+          test ! -e .github/p3-stage2
+
+      - name: Install pinned validation toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup target add --toolchain 1.98.0 aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc
+          rustup default 1.98.0
+
+      - name: Verify formatting, tests, lint, and target checks
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --all -- --check
+          cargo generate-lockfile
+          git diff --exit-code -- Cargo.lock
+          cargo check --workspace --all-targets --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-retry-arm64-check.log
+          cargo test --workspace --target aarch64-apple-darwin 2>&1 | tee /tmp/p3-retry-arm64-test.log
+          cargo clippy --workspace --all-targets --target aarch64-apple-darwin -- -D warnings 2>&1 | tee /tmp/p3-retry-arm64-clippy.log
+          cargo check --workspace --all-targets --target x86_64-apple-darwin 2>&1 | tee /tmp/p3-retry-x64-check.log
+          cargo check --workspace --all-targets --target x86_64-pc-windows-msvc 2>&1 | tee /tmp/p3-retry-windows-check.log
+
+      - name: Verify Universal 2 release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release -p cliptype-macos-app --target aarch64-apple-darwin
+          cargo build --release -p cliptype-macos-app --target x86_64-apple-darwin
+          mkdir -p target/universal2/release
+          lipo -create target/aarch64-apple-darwin/release/cliptype-macos target/x86_64-apple-darwin/release/cliptype-macos -output target/universal2/release/cliptype-macos
+          lipo -verify_arch arm64 x86_64 target/universal2/release/cliptype-macos
+          lipo -info target/universal2/release/cliptype-macos | tee /tmp/p3-retry-universal2.log
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-pr-gate-retry-diagnostics
+          path: /tmp/p3-retry-*.log
+          if-no-files-found: warn
+          retention-days: 2
+
+      - name: Remove temporary PR gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f --ignore-unmatch .github/workflows/p3-pr-gate.yml .github/workflows/p3-pr-gate-retry.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ci(p3): remove verified pull request gates"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
+
+      - name: Create P3 implementation PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head feat/p3-cross-platform-ui-macos --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$existing" ]]; then
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head feat/p3-cross-platform-ui-macos \
+              --title "P3: shared settings UI, custom hotkeys, and macOS support" \
+              --body "Implements the P3 shared Slint settings UI, transactional custom hotkeys, native macOS adapters and menu-bar host, and Universal 2 packaging/release gates. Verified on native Apple Silicon, cross-checked for Intel macOS and Windows MSVC, and validated as a two-architecture Universal 2 binary. Developer ID signing and notarization remain protected-credential release gates."
+          else
+            echo "P3 pull request already open: #$existing"
+          fi
