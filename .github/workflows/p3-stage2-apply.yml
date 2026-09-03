@@ -5,7 +5,6 @@ on:
     branches: [feat/p3-cross-platform-ui-macos]
     paths:
       - ".github/workflows/p3-stage2-apply.yml"
-      - ".github/p3-stage2/**"
   workflow_dispatch:
 
 permissions:
@@ -14,10 +13,14 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: p3-stage2-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apply-and-verify:
     name: Apply macOS adapters, app, packaging, and CI
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -140,20 +143,20 @@ jobs:
               workflow.write_text(text, encoding='utf-8')
           PY
       - name: Install pinned Rust
-        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-apple-darwin
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin
       - name: Format and refresh lockfile
         run: |
           cargo fmt --all
           cargo generate-lockfile
-      - name: Check, test, and lint workspace on macOS Intel
+      - name: Check, test, and lint workspace on Apple Silicon
         shell: bash
         run: |
           set -o pipefail
-          cargo check --workspace --all-targets --target x86_64-apple-darwin 2>&1 | tee /tmp/macos-check.log
-          cargo test --workspace --target x86_64-apple-darwin 2>&1 | tee /tmp/macos-test.log
-          cargo clippy --workspace --all-targets --target x86_64-apple-darwin -- -D warnings 2>&1 | tee /tmp/macos-clippy.log
+          cargo check --workspace --all-targets --target aarch64-apple-darwin 2>&1 | tee /tmp/macos-check.log
+          cargo test --workspace --target aarch64-apple-darwin 2>&1 | tee /tmp/macos-test.log
+          cargo clippy --workspace --all-targets --target aarch64-apple-darwin -- -D warnings 2>&1 | tee /tmp/macos-clippy.log
       - name: Build macOS composition root
-        run: cargo build --release -p cliptype-macos-app --target x86_64-apple-darwin
+        run: cargo build --release -p cliptype-macos-app --target aarch64-apple-darwin
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
