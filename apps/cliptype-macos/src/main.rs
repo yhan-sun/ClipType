@@ -57,7 +57,7 @@ mod macos_host {
     }
 
     impl HostError {
-        const fn label(self) -> &'static str {
+        pub(super) const fn label(self) -> &'static str {
             match self {
                 Self::SettingsPath => "settings_path",
                 Self::SettingsLoad => "settings_load",
