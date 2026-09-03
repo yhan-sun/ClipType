@@ -31,6 +31,9 @@ jobs:
           set -euo pipefail
           base64 --decode .github/patches/p3-01.patch.gz.b64 | gzip --decompress > /tmp/p3-01.patch
           git apply --index /tmp/p3-01.patch
+          base64 --decode .github/patches/hotkey.rs.gz.b64 | gzip --decompress > crates/cliptype-core/src/hotkey.rs
+          sed -i 's/CMD_HOTKEY => None$/CMD_HOTKEY => None,/' crates/cliptype-windows/src/tray.rs
+          git add crates/cliptype-core/src/hotkey.rs crates/cliptype-windows/src/tray.rs
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
       - name: Format source
@@ -55,6 +58,7 @@ jobs:
       - name: Remove one-time implementation files
         run: |
           git rm .github/patches/p3-01.patch.gz.b64
+          git rm .github/patches/hotkey.rs.gz.b64
           git rm .github/workflows/p3-01-apply.yml
       - name: Commit verified implementation
         shell: bash
