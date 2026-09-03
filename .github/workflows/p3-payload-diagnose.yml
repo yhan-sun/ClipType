@@ -1,0 +1,86 @@
+name: P3 Payload Diagnose
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-payload-diagnose.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  diagnose:
+    name: Reconstruct and validate reviewed macOS payload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - name: Reconstruct, decode, and inspect archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import re
+          import tarfile
+          from pathlib import Path, PurePosixPath
+
+          root = Path('.github/p3-stage2')
+          names = [
+              'chunk-00.b64', 'chunk-01.b64',
+              'chunk-02a.b64', 'chunk-02b.b64', 'chunk-02c.b64', 'chunk-02d.b64',
+              'chunk-03.b64', 'chunk-04.b64', 'chunk-05.b64',
+              'chunk-06.b64', 'chunk-07.b64',
+          ]
+          tail = (
+              '4Drd+CKu/EUUrwBBLNrmBfXcYGX+zb/5N//m3/ybf/Nv/s2/+Tf/5t/8m3'
+              '/zb/7Nv/k3/+bf/Jt/82/+zb/5N//m3/ybf/Nv/n2d7/8Dz2yswwC4AQA='
+          )
+          encoded = ''.join(''.join((root / name).read_text(encoding='ascii').split()) for name in names) + tail
+          if re.fullmatch(r'[A-Za-z0-9+/]*={0,2}', encoded) is None:
+              raise SystemExit('payload contains non-Base64 data')
+          raw = base64.b64decode(encoded, validate=True)
+          Path('/tmp/p3-reviewed-source.tar.gz').write_bytes(raw)
+
+          members = []
+          with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
+              for member in archive.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts or member.issym() or member.islnk() or member.isdev():
+                      raise SystemExit(f'unsafe archive member: {member.name}')
+                  members.append({
+                      'name': member.name,
+                      'size': member.size,
+                      'type': 'dir' if member.isdir() else 'file' if member.isfile() else 'other',
+                  })
+
+          report = {
+              'encoded_length': len(encoded),
+              'encoded_sha256': hashlib.sha256(encoded.encode('ascii')).hexdigest(),
+              'payload_bytes': len(raw),
+              'payload_sha256': hashlib.sha256(raw).hexdigest(),
+              'member_count': len(members),
+              'members': members,
+          }
+          Path('/tmp/p3-payload-report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+          print(json.dumps({k: v for k, v in report.items() if k != 'members'}, indent=2))
+          for member in members:
+              print(f"{member['type']:4} {member['size']:8} {member['name']}")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-reviewed-payload-diagnostic
+          path: |
+            /tmp/p3-reviewed-source.tar.gz
+            /tmp/p3-payload-report.json
+          if-no-files-found: error
+          retention-days: 3
