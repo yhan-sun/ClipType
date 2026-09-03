@@ -1,0 +1,419 @@
+name: P3 Publish macOS Testing Preview
+
+on:
+  push:
+    branches:
+      - feat/p3-cross-platform-ui-macos
+    paths:
+      - ".github/workflows/p3-publish-macos-testing-preview.yml"
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  issues: write
+  attestations: write
+  id-token: write
+
+env:
+  VERSION: v0.2.0-beta.1
+  PR_NUMBER: "55"
+  FEATURE_BRANCH: feat/p3-cross-platform-ui-macos
+
+jobs:
+  prepare:
+    name: Repair and freeze source candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      candidate_sha: ${{ steps.freeze.outputs.candidate_sha }}
+    steps:
+      - name: Check out product branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.FEATURE_BRANCH }}
+          fetch-depth: 0
+
+      - name: Repair known macOS and preflight failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path("apps/cliptype-macos/src/main.rs")
+          text = main.read_text(encoding="utf-8")
+          text = text.replace(
+              "        const fn label(self) -> &'static str {",
+              "        pub(super) const fn label(self) -> &'static str {",
+              1,
+          )
+          main.write_text(text, encoding="utf-8")
+
+          native = Path("crates/cliptype-macos/src/native.rs")
+          lines = native.read_text(encoding="utf-8").splitlines()
+          output = []
+          removed = False
+          for line in lines:
+              if not removed and line.strip() == "Arc,":
+                  removed = True
+                  continue
+              output.append(line)
+          native.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+          gate = Path(".github/workflows/p3-real-host-evidence.yml")
+          gate_text = gate.read_text(encoding="utf-8")
+          marker = "  PYTHONDONTWRITEBYTECODE: 1\n"
+          cache = "  PYTHONPYCACHEPREFIX: /tmp/cliptype-p3-pycache\n"
+          if cache not in gate_text and marker in gate_text:
+              gate_text = gate_text.replace(marker, marker + cache, 1)
+          gate.write_text(gate_text, encoding="utf-8")
+
+          version = Path("release/VERSION")
+          if version.exists():
+              version.write_text("v0.2.0-beta.1\n", encoding="utf-8")
+          PY
+
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Commit source repair and remove one-time workflows
+        id: freeze
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/p3-fix-macos-release-candidate.yml
+          rm -f .github/workflows/p3-publish-macos-testing-preview.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git diff --cached --check
+            git commit -m "fix(p3): prepare macOS testing-preview candidate"
+            git push origin "HEAD:${FEATURE_BRANCH}"
+          fi
+          candidate_sha="$(git rev-parse HEAD)"
+          remote_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${FEATURE_BRANCH//\//%2F}" --jq .commit.sha)"
+          test "$candidate_sha" = "$remote_sha"
+          printf 'candidate_sha=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+
+  validate-intel:
+    name: Validate macOS x86_64 source
+    needs: prepare
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+      - name: Install pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-apple-darwin
+      - name: Format, check, test, and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked --target x86_64-apple-darwin
+          cargo test --workspace --locked --target x86_64-apple-darwin
+          cargo clippy --workspace --all-targets --locked --target x86_64-apple-darwin -- -D warnings
+      - name: Build Intel release slice
+        shell: bash
+        run: cargo build --release --locked -p cliptype-macos-app --target x86_64-apple-darwin
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-macos-x86_64-${{ needs.prepare.outputs.candidate_sha }}
+          path: target/x86_64-apple-darwin/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 7
+
+  validate-arm64:
+    name: Validate macOS arm64 source
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+      - name: Install pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin
+      - name: Format, check, test, and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked --target aarch64-apple-darwin
+          cargo test --workspace --locked --target aarch64-apple-darwin
+          cargo clippy --workspace --all-targets --locked --target aarch64-apple-darwin -- -D warnings
+      - name: Build Apple Silicon release slice
+        shell: bash
+        run: cargo build --release --locked -p cliptype-macos-app --target aarch64-apple-darwin
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-macos-arm64-${{ needs.prepare.outputs.candidate_sha }}
+          path: target/aarch64-apple-darwin/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    name: Merge exact validated P3 candidate
+    needs: [prepare, validate-intel, validate-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      merge_sha: ${{ steps.merge.outputs.merge_sha }}
+    steps:
+      - name: Merge PR #55
+        id: merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$actual" = "$CANDIDATE_SHA"
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -f draft=false >/dev/null
+          response="$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -f merge_method=merge \
+            -f sha="$CANDIDATE_SHA" \
+            -f commit_title="P3: cross-platform settings UI and macOS testing preview (#55)")"
+          merged="$(jq -r .merged <<<"$response")"
+          test "$merged" = true
+          merge_sha="$(jq -r .sha <<<"$response")"
+          printf 'merge_sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"
+
+  rebuild-intel:
+    name: Rebuild x86_64 from merge commit
+    needs: merge
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --target x86_64-apple-darwin
+      - name: Build exact merge slice
+        run: cargo build --release --locked -p cliptype-macos-app --target x86_64-apple-darwin
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos-x86_64-${{ needs.merge.outputs.merge_sha }}
+          path: target/x86_64-apple-darwin/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 7
+
+  rebuild-arm64:
+    name: Rebuild arm64 from merge commit
+    needs: merge
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --target aarch64-apple-darwin
+      - name: Build exact merge slice
+        run: cargo build --release --locked -p cliptype-macos-app --target aarch64-apple-darwin
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos-arm64-${{ needs.merge.outputs.merge_sha }}
+          path: target/aarch64-apple-darwin/release/cliptype-macos
+          if-no-files-found: error
+          retention-days: 7
+
+  package-and-publish:
+    name: Package and publish unsigned macOS testing preview
+    needs: [merge, rebuild-intel, rebuild-arm64]
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.merge.outputs.merge_sha }}
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-macos-x86_64-${{ needs.merge.outputs.merge_sha }}
+          path: slices/x86_64
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-macos-arm64-${{ needs.merge.outputs.merge_sha }}
+          path: slices/arm64
+
+      - name: Assemble Universal 2 testing app
+        shell: bash
+        env:
+          MERGE_SHA: ${{ needs.merge.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          APP="dist/ClipType.app"
+          CONTENTS="$APP/Contents"
+          MACOS="$CONTENTS/MacOS"
+          RESOURCES="$CONTENTS/Resources"
+          mkdir -p "$MACOS" "$RESOURCES"
+          chmod +x slices/x86_64/cliptype-macos slices/arm64/cliptype-macos
+          lipo -create slices/x86_64/cliptype-macos slices/arm64/cliptype-macos -output "$MACOS/cliptype-macos"
+          chmod +x "$MACOS/cliptype-macos"
+          lipo -verify_arch x86_64 arm64 "$MACOS/cliptype-macos"
+
+          plist="packaging/macos/Info.plist.template"
+          if [[ -f "$plist" ]]; then
+            cp "$plist" "$CONTENTS/Info.plist"
+            sed -i '' \
+              -e "s/@VERSION@/0.2.0-beta.1/g" \
+              -e "s/@EXECUTABLE@/cliptype-macos/g" \
+              -e "s/@BUNDLE_IDENTIFIER@/dev.cliptype.ClipType/g" \
+              "$CONTENTS/Info.plist" || true
+          else
+            cat > "$CONTENTS/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleDisplayName</key><string>ClipType</string>
+          <key>CFBundleExecutable</key><string>cliptype-macos</string>
+          <key>CFBundleIdentifier</key><string>dev.cliptype.ClipType</string>
+          <key>CFBundleName</key><string>ClipType</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleShortVersionString</key><string>0.2.0-beta.1</string>
+          <key>CFBundleVersion</key><string>1</string>
+          <key>LSUIElement</key><true/>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          fi
+          plutil -lint "$CONTENTS/Info.plist"
+
+          icon="$(find packaging/macos assets -type f -name '*.icns' 2>/dev/null | head -1 || true)"
+          if [[ -n "$icon" ]]; then
+            cp "$icon" "$RESOURCES/ClipType.icns"
+            /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$CONTENTS/Info.plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string ClipType.icns" "$CONTENTS/Info.plist"
+          fi
+          cp LICENSE-MIT LICENSE-APACHE "$RESOURCES/"
+
+          # Ad-hoc signing checks bundle integrity only. It is not Developer ID signing.
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+          mkdir -p release-assets
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip"
+          hdiutil create -volname "ClipType ${VERSION} Testing Preview" -srcfolder "$APP" -ov -format UDZO \
+            "release-assets/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg"
+          cat > release-assets/BUILD-INFO-macos.txt <<EOF
+          version=${VERSION}
+          source_commit=${MERGE_SHA}
+          architecture=Universal 2 (x86_64, arm64)
+          signing=ad-hoc only
+          developer_id=false
+          notarized=false
+          stapled=false
+          release_class=post-release-testing-preview
+          EOF
+          cat > release-assets/README-macOS-TESTING-PREVIEW.txt <<'EOF'
+          ClipType macOS testing preview
+
+          This prerelease is Universal 2 but is NOT Developer ID signed or Apple notarized.
+          macOS Gatekeeper may block it. It is published first so physical-Mac testing can
+          be completed against immutable release assets. Do not treat this as a broad
+          compatibility or trusted-publisher claim.
+          EOF
+          (cd release-assets && shasum -a 256 * > SHA256SUMS-macos.txt)
+
+      - name: Publish immutable testing prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ needs.merge.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $VERSION already exists; refusing replacement" >&2
+            exit 1
+          fi
+          cat > /tmp/release-notes.md <<EOF
+          ## ClipType ${VERSION} — macOS post-release testing preview
+
+          This prerelease adds the cross-platform graphical Settings UI, custom Trigger/Cancel shortcuts, and a Universal 2 macOS application candidate.
+
+          ### Important distribution boundary
+
+          - Universal 2: **yes** (`arm64` + `x86_64`)
+          - Ad-hoc bundle integrity signature: **yes**
+          - Apple Developer ID signature: **no**
+          - Apple notarization and stapling: **no**
+          - Broad macOS compatibility claim: **no**
+          - Purpose: publish immutable assets first, then run physical-Mac validation
+
+          Source commit: `${MERGE_SHA}`
+
+          Issue #48 is closed only because the maintainer explicitly moved interactive validation after publication. Remaining physical-Mac validation is tracked separately and may require a replacement build.
+          EOF
+          gh release create "$VERSION" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$MERGE_SHA" \
+            --title "ClipType ${VERSION} — macOS Testing Preview" \
+            --notes-file /tmp/release-notes.md \
+            --prerelease
+
+      - name: Verify published assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir downloaded
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir downloaded
+          test -f downloaded/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip
+          test -f downloaded/ClipType-${VERSION}-macos-universal2-UNSIGNED.dmg
+          test -f downloaded/SHA256SUMS-macos.txt
+          (cd downloaded && shasum -a 256 -c SHA256SUMS-macos.txt)
+          rm -rf extracted
+          mkdir extracted
+          ditto -x -k downloaded/ClipType-${VERSION}-macos-universal2-UNSIGNED.zip extracted
+          lipo -verify_arch x86_64 arm64 extracted/ClipType.app/Contents/MacOS/cliptype-macos
+          codesign --verify --deep --strict extracted/ClipType.app
+          plutil -lint extracted/ClipType.app/Contents/Info.plist
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: release-assets/*
+
+      - name: Close superseded pre-release gate and open post-release validation tracker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ needs.merge.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'P3-R01 in:title' --json number --jq '.[0].number // empty')"
+          if [[ -z "$existing" ]]; then
+            cat > /tmp/post-release-issue.md <<EOF
+          The maintainer explicitly changed the P3 order to publish an unsigned Universal 2 testing preview before physical-Mac validation.
+
+          Release: `${VERSION}`
+          Exact source: `${MERGE_SHA}`
+
+          Required post-release checks:
+          - Apple Silicon and Intel/Rosetta launch behavior;
+          - Accessibility request, grant, revocation, and System Settings remediation;
+          - Unicode/CJK/emoji/multiline/Tab input in representative applications;
+          - custom global hotkey conflict, live replacement, and rollback;
+          - focus change, cancellation, clipboard revision, menu-bar and Settings lifecycle;
+          - Start at Login;
+          - privacy sentinel;
+          - Gatekeeper behavior of the deliberately unnotarized asset;
+          - decision whether to issue a signed/notarized replacement.
+
+          This issue must not be closed by hosted CI alone.
+          EOF
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "P3-R01: Post-release physical Mac validation for ${VERSION}" \
+              --body-file /tmp/post-release-issue.md
+          fi
+          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "Maintainer decision: the validation order is changed to publish first and test the immutable macOS asset afterward. ${VERSION} was published from ${MERGE_SHA} as an explicitly unsigned, unnotarized testing preview. This closure does **not** claim that the original interactive acceptance criteria passed. Remaining physical-Mac checks are tracked by P3-R01."
+          gh issue close 48 --repo "$GITHUB_REPOSITORY" --reason completed
