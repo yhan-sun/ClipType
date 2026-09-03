@@ -1,0 +1,33 @@
+name: P4 Source Export
+
+on:
+  push:
+    branches:
+      - feat/p4-macos-arm64-flutter-rebuild
+    paths:
+      - ".github/workflows/p4-source-export.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Export exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          git archive --format=zip --output=export/cliptype-p4-source.zip HEAD
+          git rev-parse HEAD > export/SOURCE_SHA.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-p4-source
+          path: export/
+          if-no-files-found: error
+          retention-days: 1
