@@ -1,0 +1,107 @@
+name: P3 S01 One-Time Final Evidence File Materializer
+
+on:
+  push:
+    branches: [validation/p3-s01-macos-native-evidence-16cf713]
+    paths: [".github/workflows/p3-s01-materialize-final-evidence-files.yml"]
+
+permissions:
+  contents: write
+
+env:
+  REVIEWED_TOOLING_HEAD: 629960c67841c786b8fe94b7c8c0160ead49d09c
+  OLD_PRODUCT_SHA: ba0b724cfd96bba2161518d50197358b7df35b57
+  NEW_PRODUCT_SHA: 16cf71367506f05c5d40fdcf946dee5c29db596f
+  OLD_VALIDATION_BRANCH: validation/p3-s01-macos-native-evidence-ba0b724
+  NEW_VALIDATION_BRANCH: validation/p3-s01-macos-native-evidence-16cf713
+
+jobs:
+  materialize:
+    name: Commit reviewed non-workflow evidence files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Copy, retarget, verify, and commit evidence files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${NEW_PRODUCT_SHA}^{commit}"
+          git fetch --no-tags origin "$OLD_VALIDATION_BRANCH"
+          git cat-file -e "${REVIEWED_TOOLING_HEAD}^{commit}"
+
+          paths=(
+            crates/cliptype-macos/examples/p3_s01_probe.rs
+            docs/research/P3_MACOS_NATIVE_SPIKE.md
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md
+            tools/macos/p3_s01_cases.tsv
+            tools/macos/p3_s01_finalize.sh
+            tools/macos/p3_s01_guard.sh
+            tools/macos/p3_s01_prepare.sh
+            tools/macos/p3_s01_privacy_sentinel.sh
+            tools/macos/p3_s01_record.sh
+            tools/macos/p3_s01_self_test.sh
+            tools/macos/p3_s01_target.swift
+          )
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            git show "$REVIEWED_TOOLING_HEAD:$path" > "$path"
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          paths = [
+              Path('crates/cliptype-macos/examples/p3_s01_probe.rs'),
+              Path('docs/research/P3_MACOS_NATIVE_SPIKE.md'),
+              Path('docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md'),
+              *sorted(Path('tools/macos').glob('p3_s01_*')),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              text = text.replace(os.environ['OLD_PRODUCT_SHA'], os.environ['NEW_PRODUCT_SHA'])
+              text = text.replace(os.environ['OLD_VALIDATION_BRANCH'], os.environ['NEW_VALIDATION_BRANCH'])
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          chmod +x tools/macos/p3_s01_*.sh
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo +1.98.0 fmt --all
+          tools/macos/p3_s01_self_test.sh
+          swiftc -parse tools/macos/p3_s01_target.swift
+
+          mapfile -t changed < <(git status --short --untracked-files=all | sed -E 's/^...//' | sort)
+          cat > /tmp/expected.txt <<'FILES'
+          crates/cliptype-macos/examples/p3_s01_probe.rs
+          docs/research/P3_MACOS_NATIVE_SPIKE.md
+          docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md
+          tools/macos/p3_s01_cases.tsv
+          tools/macos/p3_s01_finalize.sh
+          tools/macos/p3_s01_guard.sh
+          tools/macos/p3_s01_prepare.sh
+          tools/macos/p3_s01_privacy_sentinel.sh
+          tools/macos/p3_s01_record.sh
+          tools/macos/p3_s01_self_test.sh
+          tools/macos/p3_s01_target.swift
+          FILES
+          diff -u /tmp/expected.txt <(printf '%s\n' "${changed[@]}")
+          ! grep -R -n --fixed-strings "$OLD_PRODUCT_SHA" \
+            crates/cliptype-macos/examples/p3_s01_probe.rs \
+            docs/research/P3_MACOS_NATIVE_SPIKE.md \
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md \
+            tools/macos
+          ! grep -R -n --fixed-strings "$OLD_VALIDATION_BRANCH" \
+            docs/research/P3_MACOS_NATIVE_SPIKE.md \
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md \
+            tools/macos
+          git diff --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${paths[@]}"
+          git diff --cached --check
+          git commit -m "test(p3-s01): bind macOS evidence kit to exact candidate"
+          git push origin HEAD:validation/p3-s01-macos-native-evidence-16cf713
