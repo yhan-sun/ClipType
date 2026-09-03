@@ -1,0 +1,463 @@
+name: P3 Final Gate V5
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-pr-gate-v5.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p3-cross-platform-finalize
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FEATURE_BRANCH: feat/p3-cross-platform-ui-macos
+
+jobs:
+  guard:
+    name: Preserve an existing green candidate
+    runs-on: ubuntu-24.04
+    outputs:
+      already_green: ${{ steps.proof.outputs.already_green }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: proof
+        shell: bash
+        run: |
+          proof=.github/p3-green/platform-gate.txt
+          if [[ -f "$proof" ]] \
+            && grep -qx 'shared=success' "$proof" \
+            && grep -qx 'windows=success' "$proof" \
+            && grep -qx 'macos_arm64=success' "$proof" \
+            && grep -qx 'macos_x86_64=success' "$proof" \
+            && grep -qx 'universal2=success' "$proof"; then
+            echo 'already_green=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'already_green=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  restore-green:
+    name: Remove V5 without disturbing existing green proof
+    needs: guard
+    if: needs.guard.outputs.already_green == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Validate proof ancestry and remove this transport-only commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof=.github/p3-green/platform-gate.txt
+          verified="$(sed -n -e 's/^verified_candidate_sha=//p' -e 's/^verified_sha=//p' "$proof" | head -n1)"
+          test -n "$verified"
+          git cat-file -e "${verified}^{commit}"
+          git merge-base --is-ancestor "$verified" HEAD
+          git rm .github/workflows/p3-pr-gate-v5.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ci(p3): remove redundant final gate"
+          git push origin HEAD:${FEATURE_BRANCH}
+      - name: Ensure existing P3 PR is Ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$FEATURE_BRANCH" --base main --json number --jq '.[0].number // empty')"
+          test -n "$number"
+          if [[ "$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" == 'true' ]]; then
+            gh pr ready "$number" --repo "$GITHUB_REPOSITORY"
+          fi
+
+  prepare:
+    name: Materialize and normalize reviewed source
+    needs: guard
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Materialize SHA-pinned payload
+        run: python3 .github/scripts/materialize_p3.py --repository . --force
+      - name: Normalize Rust 2024 FFI syntax
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          roots = [Path('crates/cliptype-macos'), Path('apps/cliptype-macos')]
+          for root in roots:
+              for path in root.rglob('*.rs'):
+                  text = path.read_text(encoding='utf-8')
+                  text = text.replace('#[no_mangle]', '#[unsafe(no_mangle)]')
+                  text = re.sub(
+                      r'(?m)^(\s*)(pub\s+)?extern "C" \{$',
+                      lambda m: f'{m.group(1)}{m.group(2) or ""}unsafe extern "C" {{',
+                      text,
+                  )
+                  text = text.replace('unsafe unsafe extern "C" {', 'unsafe extern "C" {')
+                  path.write_text(text, encoding='utf-8')
+          PY
+      - name: Install formatter and normalize lockfile
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo fmt --all
+          cargo generate-lockfile
+          git diff --check
+      - name: Create raw source bundle
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=target \
+            --exclude=.github/p3-stage2 \
+            --exclude=.github/p3-ci-diagnostics \
+            -czf /tmp/p3-v5-raw.tar.gz \
+            Cargo.toml Cargo.lock apps crates assets packaging \
+            .github/workflows/p3-cross-platform.yml \
+            .github/workflows/macos-release.yml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-v5-raw-source
+          path: /tmp/p3-v5-raw.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  repair:
+    name: Apply compiler-approved fixes on native arm64 macOS
+    needs: [guard, prepare]
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: macos-15-arm64
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-raw-source
+          path: source-artifact
+      - name: Install raw source
+        run: |
+          tar -xzf source-artifact/p3-v5-raw.tar.gz
+          chmod +x packaging/macos/package.sh
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install 1.98.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy \
+            --target aarch64-apple-darwin \
+            --target x86_64-apple-darwin
+      - name: Iterate machine-applicable fixes
+        shell: bash
+        run: |
+          set +e
+          passed=0
+          for attempt in 1 2 3; do
+            echo "repair_attempt=${attempt}" | tee -a /tmp/p3-v5-repair.log
+            cargo fix \
+              --workspace \
+              --all-targets \
+              --target aarch64-apple-darwin \
+              --allow-dirty \
+              --allow-staged \
+              --broken-code \
+              2>&1 | tee -a /tmp/p3-v5-repair.log
+            cargo clippy \
+              --fix \
+              --workspace \
+              --all-targets \
+              --target aarch64-apple-darwin \
+              --allow-dirty \
+              --allow-staged \
+              --broken-code \
+              -- -D warnings \
+              2>&1 | tee -a /tmp/p3-v5-repair.log
+            cargo fmt --all
+            cargo generate-lockfile
+            cargo check --workspace --all-targets --locked --target aarch64-apple-darwin \
+              2>&1 | tee /tmp/p3-v5-arm-check.log
+            if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+              passed=1
+              break
+            fi
+          done
+          set -e
+          test "$passed" -eq 1
+          git diff --check
+      - name: Create repaired source bundle and manifest
+        shell: bash
+        run: |
+          find Cargo.toml Cargo.lock apps crates assets packaging .github/workflows/p3-cross-platform.yml .github/workflows/macos-release.yml \
+            -type f -print0 \
+            | sort -z \
+            | xargs -0 shasum -a 256 > /tmp/p3-v5-source-manifest.sha256
+          tar \
+            --exclude=.git \
+            --exclude=target \
+            --exclude=.github/p3-stage2 \
+            --exclude=.github/p3-ci-diagnostics \
+            -czf /tmp/p3-v5-source.tar.gz \
+            Cargo.toml Cargo.lock apps crates assets packaging \
+            .github/workflows/p3-cross-platform.yml \
+            .github/workflows/macos-release.yml
+          shasum -a 256 /tmp/p3-v5-source.tar.gz > /tmp/p3-v5-source.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-v5-repaired-source
+          path: |
+            /tmp/p3-v5-source.tar.gz
+            /tmp/p3-v5-source-manifest.sha256
+            /tmp/p3-v5-source.sha256
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload repair diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-v5-repair-diagnostics
+          path: /tmp/p3-v5-*.log
+          if-no-files-found: warn
+          retention-days: 3
+
+  shared:
+    name: Shared Linux-neutral checks
+    needs: [guard, repair]
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-repaired-source
+          path: source-artifact
+      - run: tar -xzf source-artifact/p3-v5-source.tar.gz
+      - name: Install native UI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake pkg-config \
+            libfontconfig1-dev libfreetype6-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-dev \
+            libwayland-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo check --all-targets --locked -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+      - run: cargo test --locked -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui
+      - run: cargo clippy --all-targets --locked -p cliptype-core -p cliptype-platform -p cliptype-app -p cliptype-ui -- -D warnings
+
+  windows:
+    name: Complete Windows workspace
+    needs: [guard, repair]
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-repaired-source
+          path: source-artifact
+      - shell: pwsh
+        run: tar -xzf source-artifact/p3-v5-source.tar.gz
+      - shell: pwsh
+        run: rustup toolchain install 1.98.0 --profile minimal --component clippy
+      - run: cargo check --workspace --all-targets --locked
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  macos:
+    name: Native macOS ${{ matrix.arch }}
+    needs: [guard, repair]
+    if: needs.guard.outputs.already_green != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15-arm64
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-repaired-source
+          path: source-artifact
+      - run: |
+          tar -xzf source-artifact/p3-v5-source.tar.gz
+          chmod +x packaging/macos/package.sh
+      - run: |
+          rustup toolchain install 1.98.0 \
+            --profile minimal \
+            --component clippy \
+            --target ${{ matrix.target }}
+      - run: cargo check --workspace --all-targets --locked --target ${{ matrix.target }}
+      - run: cargo test --workspace --locked --target ${{ matrix.target }}
+      - run: cargo clippy --workspace --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+      - run: cargo build --release --locked -p cliptype-macos-app --target ${{ matrix.target }}
+      - run: |
+          mkdir -p executable
+          cp target/${{ matrix.target }}/release/cliptype-macos executable/cliptype-macos-${{ matrix.arch }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-v5-macos-${{ matrix.arch }}
+          path: executable/cliptype-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 3
+
+  universal:
+    name: Universal 2 verification
+    needs: [guard, macos]
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: macos-15-arm64
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-macos-arm64
+          path: input/arm64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-macos-x86_64
+          path: input/x86_64
+      - run: |
+          mkdir -p output
+          lipo -create input/arm64/cliptype-macos-arm64 input/x86_64/cliptype-macos-x86_64 -output output/cliptype-macos
+          lipo -verify_arch arm64 x86_64 output/cliptype-macos
+          lipo -info output/cliptype-macos | tee output/lipo-info.txt
+
+  finalize:
+    name: Commit exact green tree and promote PR
+    needs: [guard, repair, shared, windows, macos, universal]
+    if: needs.guard.outputs.already_green != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Require stable candidate head
+        run: |
+          git fetch origin "$FEATURE_BRANCH"
+          test "$(git rev-parse "origin/${FEATURE_BRANCH}")" = "$GITHUB_SHA"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p3-v5-repaired-source
+          path: source-artifact
+      - name: Install exact tested tree and verify manifest
+        run: |
+          tar -xzf source-artifact/p3-v5-source.tar.gz
+          chmod +x packaging/macos/package.sh
+          find Cargo.toml Cargo.lock apps crates assets packaging .github/workflows/p3-cross-platform.yml .github/workflows/macos-release.yml \
+            -type f -print0 | sort -z | xargs -0 shasum -a 256 > /tmp/p3-v5-final-manifest.sha256
+          diff -u source-artifact/p3-v5-source-manifest.sha256 /tmp/p3-v5-final-manifest.sha256
+      - name: Remove all one-time machinery
+        run: |
+          rm -rf .github/p3-stage2 .github/p3-ci-diagnostics
+          rm -f \
+            .github/scripts/materialize_p3.py \
+            .github/workflows/p3-stage2-apply.yml \
+            .github/workflows/p3-finalize.yml \
+            .github/workflows/p3-finalize-v2.yml \
+            .github/workflows/p3-unpack-source.yml \
+            .github/workflows/p3-machine-fix.yml \
+            .github/workflows/p3-macos-repair.yml \
+            .github/workflows/p3-pr-gate.yml \
+            .github/workflows/p3-pr-gate-v2.yml \
+            .github/workflows/p3-pr-gate-v3.yml \
+            .github/workflows/p3-pr-gate-v4.yml \
+            .github/workflows/p3-pr-gate-v5.yml \
+            .github/workflows/p3-promote-pr.yml
+      - name: Record immutable all-platform proof
+        run: |
+          mkdir -p .github/p3-green
+          bundle_sha="$(cut -d' ' -f1 source-artifact/p3-v5-source.sha256)"
+          cat > .github/p3-green/platform-gate.txt <<EOF
+          verified_candidate_sha=${GITHUB_SHA}
+          source_payload_sha256=a97a86588b32216988062a58d19c9ad49e5b3f2077764059468fca6bbf9737f9
+          repaired_source_bundle_sha256=${bundle_sha}
+          workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          compiler_machine_fixes=verified
+          shared=success
+          windows=success
+          macos_arm64=success
+          macos_x86_64=success
+          universal2=success
+          EOF
+          git diff --check
+      - name: Commit exact verified source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          git commit -m "P3: add cross-platform settings UI and macOS app"
+          git push origin HEAD:${FEATURE_BRANCH}
+      - name: Create or promote implementation PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$FEATURE_BRANCH" --base main --json number --jq '.[0].number // empty')"
+          body_file="$(mktemp)"
+          cat >"$body_file" <<'EOF'
+          ## Summary
+
+          Implements the complete P3 cross-platform product slice: shared native Slint settings UI, transactional custom shortcuts, Windows live registration probing, macOS native adapters and AppKit menu-bar composition root, Universal 2 packaging, and a protected signed/notarized release workflow.
+
+          ## Safety and privacy invariants
+
+          Clipboard plaintext is never persisted or logged; no global key logger or low-level keyboard hook is introduced; target identity remains content-blind; shortcut replacement is all-or-nothing; Accessibility prompting requires explicit user action; public signed/notarized release remains gated on protected maintainer credentials.
+
+          ## Automated evidence
+
+          The exact repaired source bundle committed by this PR passed shared formatting/checks/tests/Clippy, the complete Windows workspace, native arm64 and Intel macOS checks/tests/Clippy/release builds, and Universal 2 `lipo` verification. Evidence is recorded in `.github/p3-green/platform-gate.txt`.
+
+          ## Manual release validation still required
+
+          Controlled Accessibility authorization/revocation, representative focus-change and Secure Event Input behavior, and Developer ID signing/notarization/stapling/Gatekeeper assessment with protected credentials.
+          EOF
+          if [[ -z "$number" ]]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$FEATURE_BRANCH" --title "P3: cross-platform settings UI and macOS menu-bar app" --body-file "$body_file"
+          else
+            gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --title "P3: cross-platform settings UI and macOS menu-bar app" --body-file "$body_file"
+            if [[ "$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" == 'true' ]]; then
+              gh pr ready "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+          fi
