@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This guard compares every validation commit with the fixed product candidate.
 PRODUCT_SHA="${P3_PRODUCT_SHA:?P3_PRODUCT_SHA is required}"
 git cat-file -e "${PRODUCT_SHA}^{commit}"
 
