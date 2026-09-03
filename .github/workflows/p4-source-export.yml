@@ -31,3 +31,6 @@ jobs:
           path: export/
           if-no-files-found: error
           retention-days: 1
+
+# Triggered after the Flutter scaffold commit so the next implementation payload
+# is based on the exact generated Xcode project rather than a guessed template.
