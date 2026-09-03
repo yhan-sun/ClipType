@@ -1,0 +1,143 @@
+name: P3 S01 One-Time Evidence Tooling Rebase
+
+on:
+  push:
+    branches: [validation/p3-s01-macos-native-evidence-ba0b724]
+    paths: [".github/workflows/p3-s01-rebase-evidence-tooling.yml"]
+
+permissions:
+  contents: write
+
+env:
+  OLD_TOOLING_HEAD: 1a45058b8c40a1a6637f5bccd2cf8127a2f4552b
+  OLD_PRODUCT_SHA: 8c52a74b5ab89ba8fd40ed91c54b5f7bd4270e73
+  NEW_PRODUCT_SHA: ba0b724cfd96bba2161518d50197358b7df35b57
+  OLD_VALIDATION_BRANCH: validation/p3-s01-macos-native-evidence-8c52a74
+  NEW_VALIDATION_BRANCH: validation/p3-s01-macos-native-evidence-ba0b724
+
+jobs:
+  rebase:
+    name: Rebase reviewed P3-S01 tooling onto fixed candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Materialize, update, self-test, and commit tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$NEW_PRODUCT_SHA"
+          git fetch --no-tags origin "$OLD_VALIDATION_BRANCH"
+          git cat-file -e "${OLD_TOOLING_HEAD}^{commit}"
+
+          paths=(
+            .github/workflows/p3-s01-macos-validation.yml
+            crates/cliptype-macos/examples/p3_s01_probe.rs
+            docs/research/P3_MACOS_NATIVE_SPIKE.md
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md
+            tools/macos/p3_s01_cases.tsv
+            tools/macos/p3_s01_finalize.sh
+            tools/macos/p3_s01_guard.sh
+            tools/macos/p3_s01_prepare.sh
+            tools/macos/p3_s01_privacy_sentinel.sh
+            tools/macos/p3_s01_record.sh
+            tools/macos/p3_s01_self_test.sh
+            tools/macos/p3_s01_target.swift
+          )
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            git show "$OLD_TOOLING_HEAD:$path" > "$path"
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          paths = [
+              Path('.github/workflows/p3-s01-macos-validation.yml'),
+              Path('crates/cliptype-macos/examples/p3_s01_probe.rs'),
+              Path('docs/research/P3_MACOS_NATIVE_SPIKE.md'),
+              Path('docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md'),
+              Path('tools/macos/p3_s01_cases.tsv'),
+              Path('tools/macos/p3_s01_finalize.sh'),
+              Path('tools/macos/p3_s01_guard.sh'),
+              Path('tools/macos/p3_s01_prepare.sh'),
+              Path('tools/macos/p3_s01_privacy_sentinel.sh'),
+              Path('tools/macos/p3_s01_record.sh'),
+              Path('tools/macos/p3_s01_self_test.sh'),
+              Path('tools/macos/p3_s01_target.swift'),
+          ]
+          old_sha = os.environ['OLD_PRODUCT_SHA']
+          new_sha = os.environ['NEW_PRODUCT_SHA']
+          old_branch = os.environ['OLD_VALIDATION_BRANCH']
+          new_branch = os.environ['NEW_VALIDATION_BRANCH']
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              text = text.replace(old_sha, new_sha)
+              text = text.replace(old_branch, new_branch)
+              text = text.replace(
+                  'product_accessibility_identity_identity_claim',
+                  'product_accessibility_identity_claim',
+              )
+              path.write_text(text, encoding='utf-8')
+
+          probe = Path('crates/cliptype-macos/examples/p3_s01_probe.rs')
+          text = probe.read_text(encoding='utf-8')
+          if 'Strength::Degraded => "degraded",' not in text:
+              needle = '            Strength::RenderHostLimited => "render_host_limited",\n'
+              if text.count(needle) != 1:
+                  raise RuntimeError('unexpected EvidenceStrength match source')
+              text = text.replace(
+                  needle,
+                  needle + '            Strength::Degraded => "degraded",\n',
+                  1,
+              )
+          probe.write_text(text, encoding='utf-8')
+          PY
+
+          chmod +x tools/macos/p3_s01_*.sh
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo +1.98.0 fmt --all
+          tools/macos/p3_s01_self_test.sh
+          swiftc -parse tools/macos/p3_s01_target.swift
+
+          git rm .github/workflows/p3-s01-rebase-evidence-tooling.yml
+          mapfile -t changed < <(git status --short | sed -E 's/^...//' | sort)
+          printf '%s\n' "${changed[@]}"
+          cat > /tmp/expected.txt <<'FILES'
+          .github/workflows/p3-s01-macos-validation.yml
+          .github/workflows/p3-s01-rebase-evidence-tooling.yml
+          crates/cliptype-macos/examples/p3_s01_probe.rs
+          docs/research/P3_MACOS_NATIVE_SPIKE.md
+          docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md
+          tools/macos/p3_s01_cases.tsv
+          tools/macos/p3_s01_finalize.sh
+          tools/macos/p3_s01_guard.sh
+          tools/macos/p3_s01_prepare.sh
+          tools/macos/p3_s01_privacy_sentinel.sh
+          tools/macos/p3_s01_record.sh
+          tools/macos/p3_s01_self_test.sh
+          tools/macos/p3_s01_target.swift
+          FILES
+          diff -u /tmp/expected.txt <(printf '%s\n' "${changed[@]}")
+          ! grep -R -n --fixed-strings "$OLD_PRODUCT_SHA" \
+            .github/workflows/p3-s01-macos-validation.yml \
+            crates/cliptype-macos/examples/p3_s01_probe.rs \
+            docs/research/P3_MACOS_NATIVE_SPIKE.md \
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md \
+            tools/macos
+          ! grep -R -n --fixed-strings "$OLD_VALIDATION_BRANCH" \
+            .github/workflows/p3-s01-macos-validation.yml \
+            docs/research/P3_MACOS_NATIVE_SPIKE.md \
+            docs/testing/P3_MACOS_INTERACTIVE_RUNBOOK.md \
+            tools/macos
+          git diff --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test(p3-s01): rebase macOS evidence kit onto fixed candidate"
+          git push origin HEAD:validation/p3-s01-macos-native-evidence-ba0b724
