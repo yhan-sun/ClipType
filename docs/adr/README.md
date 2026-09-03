@@ -51,3 +51,4 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0006`](0006-current-clipboard-paste-with-revision-guard.md) — Revision-guarded current-clipboard paste without rewrite/restore.
 - [`ADR-0007`](0007-native-win32-tray-shell.md) — Native Win32 tray-first product shell and persistent settings boundary.
 - [`ADR-0008`](0008-windows-beta-compatibility-and-release-provenance.md) — Windows beta compatibility, Sigstore signing, and GitHub provenance.
+- [`ADR-0009`](0009-shared-slint-settings-ui-native-shells.md) — Shared native-compiled Slint settings window with native Windows/macOS shells and transactional custom hotkeys.
