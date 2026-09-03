@@ -62,7 +62,7 @@ jobs:
           plutil -lint "$APP/Contents/Info.plist"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" = ClipType
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = io.github.yhan-sun.ClipType
-          lipo -verify_arch arm64 x86_64 "$EXE"
+          lipo "$EXE" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$APP"
           codesign -dv --verbose=4 "$APP" 2> codesign-details.txt
           grep -Eq 'Signature=adhoc|Signature=Ad Hoc' codesign-details.txt
