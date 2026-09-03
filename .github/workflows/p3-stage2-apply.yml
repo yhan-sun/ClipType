@@ -1,0 +1,67 @@
+name: P3 Stage 2 Apply And Verify
+
+on:
+  push:
+    branches: [feat/p3-cross-platform-ui-macos]
+    paths: [".github/workflows/p3-stage2-apply.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apply-and-verify:
+    name: Apply macOS adapters, app, packaging, and CI
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/p3-cross-platform-ui-macos
+          fetch-depth: 0
+      - name: Apply staged macOS implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .github/p3-stage2/payload.b64 > /tmp/p3-stage2.tar.gz
+          tar -xzf /tmp/p3-stage2.tar.gz
+          chmod +x packaging/macos/package.sh
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target x86_64-apple-darwin
+      - name: Format and refresh lockfile
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+      - name: Check, test, and lint workspace on macOS Intel
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --workspace --all-targets --target x86_64-apple-darwin 2>&1 | tee /tmp/macos-check.log
+          cargo test --workspace --target x86_64-apple-darwin 2>&1 | tee /tmp/macos-test.log
+          cargo clippy --workspace --all-targets --target x86_64-apple-darwin -- -D warnings 2>&1 | tee /tmp/macos-clippy.log
+      - name: Build macOS composition root
+        run: cargo build --release -p cliptype-macos-app --target x86_64-apple-darwin
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3-macos-stage2-diagnostics
+          path: /tmp/macos-*.log
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Remove one-time staging files
+        run: |
+          git rm -rf .github/p3-stage2
+          git rm .github/workflows/p3-stage2-apply.yml
+      - name: Commit verified macOS implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "P3: add macOS adapters, menu-bar app, and Universal 2 CI"
+          git push origin HEAD:feat/p3-cross-platform-ui-macos
