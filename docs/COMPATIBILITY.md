@@ -2,7 +2,7 @@
 
 ## Current release channel
 
-ClipType `v0.2.0-beta.3` is the current unreleased candidate. Windows x86_64 remains the primary beta channel, with a proposed additive macOS arm64 testing preview. Publication remains blocked by the open physical evidence gate. The compatibility promise is evidence-based and narrower than “all applications.”
+ClipType `v0.2.0-beta.3` is the current prerelease candidate. Windows x86_64 remains the primary beta channel, with an additive macOS arm64 testing preview. Under the current explicit maintainer authorization, this narrowly labelled prerelease may be published after its exact-head automated gates pass. Physical evidence remains required before expanding named-application, Accessibility, or general macOS compatibility claims. The compatibility promise is evidence-based and narrower than “all applications.”
 
 ## Supported Windows environments
 
@@ -20,17 +20,18 @@ ClipType `v0.2.0-beta.3` is the current unreleased candidate. Windows x86_64 rem
 
 ## macOS Apple Silicon testing preview
 
-The P4 local candidate is restricted to an interactive Apple Silicon Mac:
+The P4 candidate is restricted to an interactive Apple Silicon Mac:
 
 | Environment | Support level | Evidence and conditions |
 |---|---|---|
-| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.2` includes a clearly labelled arm64 Flutter preview. The settings shell, Swift/AppKit status item, Carbon hot-key registration, Rust bridge, and arm64 packaging are locally exercised. Accessibility permission and target-application behavior remain separate physical evidence gates. |
+| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.3` carries a clearly labelled arm64 Flutter preview. The exact-main workflow builds, ad-hoc signs, installs `/Applications/ClipType.app`, launch-smokes it, verifies arm64 bundle/ZIP/DMG integrity, and attaches the assets additively. Accessibility permission and real target-application behavior remain separate physical evidence gates. |
 | macOS x86_64 or Rosetta | **Not supported by P4** | No x86_64 build, Universal 2 artifact, or Rosetta claim is made. |
 | Signed/notarized public macOS distribution | **Not provided by P4** | The attached preview is ad-hoc signed and has no Developer ID/notarization evidence. |
 
-P4 does not claim Chinese/Unicode delivery, named-application compatibility,
-permission grant/revocation, conflict rollback, cancellation latency, or
-trigger latency until those physical cases are present in an exact-SHA report.
+P4 does not claim named-application compatibility, persistent Accessibility
+grant/revocation behavior, conflict rollback, cancellation latency, trigger
+latency, or a successful human VS Code/Monaco session until those physical
+cases are present in an exact-release report.
 
 ## Application compatibility
 
@@ -114,11 +115,14 @@ Include only content-free information:
 - Windows edition, version, build, and architecture;
 - application name/version and whether it was elevated;
 - selected backend and outcome category;
-- whether the issue involved hotkey registration, focus evidence, modifiers, clipboard revision, partial input, or destination semantics.
+- whether the issue involved target evidence, modifiers, revision, hotkey ownership, partial input, or destination semantics.
 
 Never attach real clipboard contents, credentials, private messages, focused-field contents, or raw crash dumps containing sensitive process memory.
 
+## Physical-evidence follow-up
 
-## Pre-beta regression gate
-
-The `v0.2.0-beta.3` candidate remains blocked by Issue #41 until the replacement exact-SHA physical validation reconciles Issue #33. Automated Code-mode, Windows, and hosted macOS evidence does not authorize merge, tag, signing, publication, or a broad compatibility claim by itself.
+Publishing the narrowly labelled `v0.2.0-beta.3` prerelease is not itself a
+broad compatibility claim. Issues #41 and #33 remain physical-evidence
+trackers; until an exact-release interactive report reconciles them, the
+project must not claim universal CJK keyboard behavior, completed persistent
+Accessibility onboarding, or verified real VS Code/Monaco Code-mode support.
