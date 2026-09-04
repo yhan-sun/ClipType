@@ -1,0 +1,68 @@
+name: Apply Code Mode beta.3 Patch
+
+on:
+  push:
+    branches:
+      - fix/code-mode-editor-beta3
+    paths:
+      - ".github/workflows/apply-code-mode-beta3.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-code-mode-beta3
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply, format, and verify patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify requested baseline is an ancestor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 0ea8e51056ce2d955dc8b4fed035c97f983f19df HEAD
+          test -f tools/apply_code_mode_beta3.py
+
+      - name: Apply deterministic repository patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/apply_code_mode_beta3.py
+          git diff --check
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Format and verify native-neutral code
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 fmt --all
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+          git diff --check
+
+      - name: Commit reviewable patch and remove bootstrap files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm tools/apply_code_mode_beta3.py .github/workflows/apply-code-mode-beta3.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "ClipType Release Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix: harden code mode editor input and prepare beta.3"
+          git push origin HEAD:fix/code-mode-editor-beta3
