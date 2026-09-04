@@ -6,6 +6,7 @@ members = [
     "crates/cliptype-windows",
     "crates/cliptype-ui",
     "crates/cliptype-macos",
+    "crates/cliptype-flutter-bridge",
     "apps/cliptype-macos",
     "apps/cliptype",
 ]

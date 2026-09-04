@@ -1,0 +1,98 @@
+name: P4 macOS Apple Silicon
+
+on:
+  pull_request:
+    paths:
+      - "apps/cliptype-flutter/**"
+      - "crates/cliptype-*/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - ".github/workflows/p4-macos-arm64.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p4-macos-arm64-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-verify:
+    name: Flutter macOS arm64 build and checks
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+          test "$(arch)" = "arm64"
+
+      - name: Install pinned Flutter toolchain
+        shell: bash
+        env:
+          FLUTTER_VERSION: 3.47.2
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/flutter/bin/flutter" config --enable-macos-desktop
+          "$RUNNER_TEMP/flutter/bin/flutter" --version
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal \
+            --component rustfmt --component clippy \
+            --target aarch64-apple-darwin
+
+      - name: Run Rust arm64 quality gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 check --workspace --all-targets --locked \
+            --target aarch64-apple-darwin
+          cargo +1.98.0 test --workspace --locked \
+            --target aarch64-apple-darwin
+          cargo +1.98.0 clippy --workspace --all-targets --locked \
+            --target aarch64-apple-darwin -- -D warnings
+
+      - name: Run Flutter quality gate and release build
+        shell: bash
+        working-directory: apps/cliptype-flutter
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed lib test
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build macos --release
+
+      - name: Verify arm64 application bundle
+        shell: bash
+        working-directory: apps/cliptype-flutter
+        run: |
+          set -euo pipefail
+          APP_PATH="build/macos/Build/Products/Release/ClipType.app"
+          test -d "$APP_PATH"
+          EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")"
+          EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+          test -x "$EXECUTABLE"
+          test "$(lipo -archs "$EXECUTABLE")" = "arm64"
+          while IFS= read -r -d '' candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              test "$(lipo -archs "$candidate")" = "arm64"
+            fi
+          done < <(find "$APP_PATH" -type f -print0)
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"

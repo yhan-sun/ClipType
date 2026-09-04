@@ -21,6 +21,12 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		A20000000000000000000001 /* AccessibilityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* AccessibilityController.swift */; };
+		A20000000000000000000002 /* ClipTypeNativePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* ClipTypeNativePlugin.swift */; };
+		A20000000000000000000003 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* HotkeyManager.swift */; };
+		A20000000000000000000004 /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* RustBridge.swift */; };
+		A20000000000000000000005 /* StartupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* StartupController.swift */; };
+		A20000000000000000000006 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* StatusItemController.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
@@ -61,11 +67,18 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000001 /* AccessibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityController.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* ClipTypeNativePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipTypeNativePlugin.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* StartupController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupController.swift; sourceTree = "<group>"; };
+		A10000000000000000000006 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		A10000000000000000000007 /* cliptype_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = cliptype_bridge.h; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
-		33CC10ED2044A3C60003C045 /* cliptype_flutter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cliptype_flutter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		33CC10ED2044A3C60003C045 /* ClipType.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ClipType.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		33CC10F22044A3C60003C045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Runner/Assets.xcassets; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
@@ -134,7 +147,7 @@
 		33CC10EE2044A3C60003C045 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				33CC10ED2044A3C60003C045 /* cliptype_flutter.app */,
+				33CC10ED2044A3C60003C045 /* ClipType.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
 			);
 			name = Products;
@@ -168,6 +181,13 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				A10000000000000000000001 /* AccessibilityController.swift */,
+				A10000000000000000000002 /* ClipTypeNativePlugin.swift */,
+				A10000000000000000000003 /* HotkeyManager.swift */,
+				A10000000000000000000004 /* RustBridge.swift */,
+				A10000000000000000000005 /* StartupController.swift */,
+				A10000000000000000000006 /* StatusItemController.swift */,
+				A10000000000000000000007 /* cliptype_bridge.h */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -208,11 +228,13 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				A30000000000000000000001 /* Build Rust bridge */,
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
+				A30000000000000000000002 /* Thin embedded Flutter code to arm64 */,
 			);
 			buildRules = (
 			);
@@ -224,7 +246,7 @@
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
 			);
 			productName = Runner;
-			productReference = 33CC10ED2044A3C60003C045 /* cliptype_flutter.app */;
+			productReference = 33CC10ED2044A3C60003C045 /* ClipType.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -248,7 +270,7 @@
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.Sandbox = {
-								enabled = 1;
+								enabled = 0;
 							};
 						};
 					};
@@ -301,6 +323,48 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A30000000000000000000001 /* Build Rust bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../../../Cargo.toml",
+				"$(SRCROOT)/../../../Cargo.lock",
+				"$(SRCROOT)/../../../crates/cliptype-flutter-bridge/Cargo.toml",
+				"$(SRCROOT)/../../../crates/cliptype-flutter-bridge/src/lib.rs",
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/../../../target/aarch64-apple-darwin/release/libcliptype_flutter_bridge.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nREPO_ROOT=\"$SRCROOT/../../..\"\nCARGO_BIN=\"${CARGO_BIN:-$HOME/.cargo/bin/cargo}\"\nif [ ! -x \"$CARGO_BIN\" ]; then CARGO_BIN=\"$(command -v cargo || true)\"; fi\ntest -x \"$CARGO_BIN\"\ncd \"$REPO_ROOT\"\n\"$CARGO_BIN\" +1.98.0 build --release --locked --target aarch64-apple-darwin -p cliptype-flutter-bridge\ntest -f \"$REPO_ROOT/target/aarch64-apple-darwin/release/libcliptype_flutter_bridge.a\"\n";
+		};
+		A30000000000000000000002 /* Thin embedded Flutter code to arm64 */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Thin embedded Flutter code to arm64";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nAPP_PATH=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\ntest -d \"$APP_PATH/Contents\"\nfind \"$APP_PATH/Contents\" -type f -print0 | while IFS= read -r -d '' candidate; do\n  if file \"$candidate\" | grep -q 'Mach-O'; then\n    archs=\"$(lipo -archs \"$candidate\")\"\n    if [ \"$archs\" != \"arm64\" ]; then\n      temporary=\"$candidate.arm64\"\n      mode=\"$(stat -f '%Lp' \"$candidate\")\"\n      lipo -thin arm64 \"$candidate\" -output \"$temporary\"\n      chmod \"$mode\" \"$temporary\"\n      mv \"$temporary\" \"$candidate\"\n    fi\n  fi\ndone\n";
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -356,6 +420,12 @@
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
+				A20000000000000000000001 /* AccessibilityController.swift in Sources */,
+				A20000000000000000000002 /* ClipTypeNativePlugin.swift in Sources */,
+				A20000000000000000000003 /* HotkeyManager.swift in Sources */,
+				A20000000000000000000004 /* RustBridge.swift in Sources */,
+				A20000000000000000000005 /* StartupController.swift in Sources */,
+				A20000000000000000000006 /* StatusItemController.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -398,7 +468,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.cliptype.cliptypeFlutter.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/cliptype_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/cliptype_flutter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClipType.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ClipType";
 			};
 			name = Debug;
 		};
@@ -412,7 +482,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.cliptype.cliptypeFlutter.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/cliptype_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/cliptype_flutter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClipType.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ClipType";
 			};
 			name = Release;
 		};
@@ -426,7 +496,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.cliptype.cliptypeFlutter.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/cliptype_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/cliptype_flutter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClipType.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ClipType";
 			};
 			name = Profile;
 		};

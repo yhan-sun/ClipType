@@ -22,6 +22,7 @@ Coverage includes:
 - strict configuration and limits;
 - Unicode normalization and line-break semantics;
 - explicit mode no-fallback and auto backend selection;
+- Auto preference for short CJK, emoji, combining, and mixed-Unicode text;
 - clipboard revision/snapshot behavior;
 - one-session concurrency, cancellation, bounded retry/wait/shutdown;
 - destination and integrity revalidation;
@@ -113,6 +114,19 @@ The process exit code and controlled `status=stopped` record are both required. 
 These are Windows Server Desktop Experience CI environments. They establish a stable Win32 mechanism/build range but do not certify physical client hotkey timing or every named application.
 
 Client support is defined in `docs/COMPATIBILITY.md`: Windows 11 x64 is recommended; Windows 10 22H2 x64 is best-effort API-compatible with an operating-system support/security caveat.
+
+## macOS arm64 local candidate gate
+
+`.github/workflows/p4-macos-arm64.yml` is a PR/manual quality gate for the P4
+Flutter runner. It requires an Apple Silicon runner, installs Flutter 3.47.2
+and Rust 1.98.0, runs the locked arm64 workspace checks/tests/Clippy, runs the
+Flutter format/analyze/test gate, builds `ClipType.app`, scans every bundled
+Mach-O file for the arm64 slice, and verifies bundle codesign integrity.
+
+This workflow does not grant Accessibility, exercise a physical target
+application, collect clipboard fixtures, sign with Developer ID, notarize, or
+publish an artifact. Those cases remain local/physical evidence gates and are
+reported separately in `local-evidence/`.
 
 ## Release pipeline validation
 

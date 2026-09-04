@@ -15,7 +15,7 @@ There must not be two competing live state machines in core and app.
 
 - `keyboard`: native synthetic text/key events. P1 implements this path.
 - `clipboard`: temporary clipboard write, paste, and safe restore. P2 scope.
-- `auto`: capability/target/size-based selection. P2 scope; no threshold is frozen before benchmarks.
+- `auto`: capability/target/Unicode-shape/size-based selection. Non-ASCII text prefers a revision-guarded paste when available; the configured threshold remains the size crossover for otherwise keyboard-friendly text.
 
 ## Trigger order
 

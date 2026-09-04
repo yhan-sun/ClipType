@@ -34,7 +34,12 @@ ClipType does not write, clear, own, restore, cache, or retain clipboard content
 
 ### Auto
 
-`auto` chooses one backend from payload size and proven capabilities. The choice is immutable for the session. It can select clipboard only when both paste dispatch and revision guarding are fully available. Explicit modes never silently fall back.
+`auto` chooses one backend from payload shape, payload size, and proven
+capabilities. For non-ASCII text—including CJK, emoji, combining marks, and
+mixed Unicode—it prefers one revision-guarded paste even when the payload is
+short. The choice is immutable for the session. If guarded paste is
+unavailable, Auto may use the Unicode keyboard path. Explicit modes never
+silently fall back.
 
 ## Product surface
 

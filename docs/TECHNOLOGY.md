@@ -39,11 +39,27 @@ ADR-0009 selects a shared `cliptype-ui` crate using **Slint `=1.17.1`** for the 
 
 The distributed desktop binaries use the Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0. The top-level About screen includes the required `AboutSlint` attribution widget, and release dependency inventories record the selected Slint version/license. The project does not distribute the complete application under GPLv3 merely to consume the UI dependency.
 
-A future move to separate WinUI and SwiftUI settings implementations requires a superseding ADR and evidence that the maintenance cost is justified by measured platform-quality gaps.
+A future move to separate WinUI and SwiftUI settings implementations requires a superseding ADR and evidence that the maintenance cost is justified by measured platform-quality gaps. The P4 local macOS runner is a deliberate exception to the shared Slint macOS path and is documented by ADR-0010.
+
+## P4 macOS Flutter runner
+
+The P4 local Apple Silicon candidate uses Flutter macOS desktop for the
+settings presentation only. It is pinned to Flutter `3.47.2` / Dart `3.13.2`
+for the local gate and is built for `aarch64-apple-darwin` only.
+
+The Swift/AppKit shell registers `io.cliptype/native` and
+`io.cliptype/events`, retains the status item and Settings window, and owns
+Carbon global hot-key registration, Accessibility onboarding, and
+`SMAppService`. A small `cliptype-flutter-bridge` Rust `staticlib` exposes
+bounded integers, enums, counters, and settings operations through a fixed C
+ABI. No clipboard or focused content crosses the boundary.
+
+This composition root is not a claim that Flutter controls are native AppKit
+widgets, nor is it a public Universal 2 or signed/notarized release path.
 
 ## Settings surface
 
-The P3 graphical settings window provides:
+The P3 shared settings window provides:
 
 - General — enabled, notifications, start at login;
 - Shortcuts — local Trigger/Cancel recorders, static validation, platform registration probe, Apply/Reset, and rollback status;

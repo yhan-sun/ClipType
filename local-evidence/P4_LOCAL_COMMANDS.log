@@ -1,0 +1,63 @@
+ClipType P4 local command log
+Evidence is content-free; paths are repository-relative or shell variables.
+
+Source and host
+git fetch --prune origin main
+git fetch origin pull/64/head:refs/remotes/origin/pr-64
+git rev-parse refs/remotes/origin/pr-64
+git rev-parse origin/main
+git switch --create local/p4-arm64-run refs/remotes/origin/pr-64
+git status --short --branch
+uname -m
+arch
+sw_vers
+xcodebuild -version
+swift --version
+flutter --version
+flutter doctor -v
+dart --version
+rustc +1.98.0 -Vv
+cargo +1.98.0 -V
+pod --version
+
+Flutter quality gate (apps/cliptype-flutter)
+dart format --output=none --set-exit-if-changed lib test
+flutter pub get
+flutter analyze
+flutter test
+
+Rust quality gate (repository root)
+cargo +1.98.0 fmt --all -- --check
+cargo +1.98.0 check --workspace --all-targets --locked --target aarch64-apple-darwin
+cargo +1.98.0 test --workspace --locked --target aarch64-apple-darwin  # includes short CJK/Unicode Auto policy regression
+cargo +1.98.0 clippy --workspace --all-targets --locked --target aarch64-apple-darwin -- -D warnings
+
+Release and package checks (apps/cliptype-flutter)
+cargo +1.98.0 build --release --locked --target aarch64-apple-darwin -p cliptype-flutter-bridge
+flutter build macos --release
+/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist"
+file "$EXECUTABLE"
+lipo -archs "$EXECUTABLE"
+find "$APP_PATH" -type f -print0  # inspect every Mach-O, not only executable-mode files
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+Interactive/process smoke
+open "$APP_PATH"
+ps -axo pid,ppid,%cpu,rss,etime,command
+CUA: inspect General, Shortcuts, Typing, Permissions, About pages
+CUA: switch display language between English and Simplified Chinese
+CUA: probe Trigger and Cancel availability
+CUA: record Escape cancellation and Delete clearing
+CUA: close/hide Settings and verify process remains
+CUA: reopen Settings and verify one window/status item
+osascript -e 'tell application id "io.cliptype.ClipType" to quit'
+pgrep -x ClipType
+
+Idle resource sample
+ps -p "$PID" -o pid,%cpu,rss,etime
+top -l 1 -pid "$PID" -stats pid,cpu,mem,time,command
+
+Repository self-review
+git diff --check
+git status --short --branch
+git diff --stat

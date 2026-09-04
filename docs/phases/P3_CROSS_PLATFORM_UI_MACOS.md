@@ -10,6 +10,12 @@
 
 The existing `v0.1.0-beta.1` remains a Windows-only prerelease. P3 does not retroactively claim macOS support.
 
+The repository also contains a P4 local Apple Silicon Flutter composition
+root. It supersedes the macOS UI composition described by ADR-0009 for that
+local candidate only; the broader P3 Universal 2, signing/notarization, and
+physical evidence gate remains open. See
+[P4 macOS Apple Silicon local runner](P4_MACOS_ARM64_LOCAL.md).
+
 ## User outcomes
 
 P3 is complete only when a user can:

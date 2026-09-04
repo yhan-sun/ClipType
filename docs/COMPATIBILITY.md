@@ -18,6 +18,20 @@ ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibil
 
 “Supported beta” means the shipped x86_64 binary and documented native mechanisms are supported within the constraints below. It does not assert that every application exposes sufficient focus evidence or consumes synthetic input identically.
 
+## macOS Apple Silicon local candidate
+
+The P4 local candidate is restricted to an interactive Apple Silicon Mac:
+
+| Environment | Support level | Evidence and conditions |
+|---|---|---|
+| macOS arm64 with an unlocked interactive desktop | **Local candidate / evidence required** | Flutter macOS settings shell, Swift/AppKit status item, Carbon hot-key registration, Rust bridge, and arm64 release packaging are locally exercised. Accessibility permission and target-application behavior remain separate physical evidence gates. |
+| macOS x86_64 or Rosetta | **Not supported by P4** | No x86_64 build, Universal 2 artifact, or Rosetta claim is made. |
+| Signed/notarized public macOS distribution | **Not provided by P4** | The local candidate is unsigned and has no Developer ID/notarization evidence. |
+
+P4 does not claim Chinese/Unicode delivery, named-application compatibility,
+permission grant/revocation, conflict rollback, cancellation latency, or
+trigger latency until those physical cases are present in an exact-SHA report.
+
 ## Application compatibility
 
 ### Supported application category
@@ -35,7 +49,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
-| `auto` | Freezes one backend at session start from payload size and proven capabilities. Explicit modes never silently fall back. |
+| `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
 
@@ -53,7 +67,7 @@ A terminal may execute a pasted or injected line break. Multiline clipboard cont
 
 ### Global hotkeys
 
-Global trigger and cancel commands use reviewed `RegisterHotKey` presets with no-repeat behavior. Registration can fail because another application owns the combination. The tray remains the control surface. A preset change is persisted immediately and becomes active after a controlled restart.
+Global trigger and cancel commands use reviewed system registrations with no-repeat behavior. Registration can fail because another application owns the combination. The menu bar remains the control surface. P4 applies a complete pair transactionally and keeps the old pair when a candidate fails; a successful OS registration still cannot prove that application-local shortcuts or hook-based tools will remain silent.
 
 ### Rich clipboard formats
 

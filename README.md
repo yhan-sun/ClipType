@@ -17,7 +17,7 @@ See [Compatibility](docs/COMPATIBILITY.md) for the exact support contract and li
 
 - `keyboard` — bounded Unicode-oriented `SendInput` batches with target, modifier, cancellation, and partial-progress guards.
 - `clipboard` — verifies the current clipboard revision and sends one ordinary `Ctrl+V`; ClipType never rewrites or restores the clipboard.
-- `auto` — freezes one proven backend per session from payload size and available capabilities.
+- `auto` — freezes one proven backend per session from Unicode shape, payload size, and available capabilities; non-ASCII text prefers guarded paste.
 
 Explicit modes never silently fall back.
 

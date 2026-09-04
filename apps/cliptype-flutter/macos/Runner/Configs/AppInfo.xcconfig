@@ -5,10 +5,17 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = cliptype_flutter
+PRODUCT_NAME = ClipType
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = io.cliptype.cliptypeFlutter
+PRODUCT_BUNDLE_IDENTIFIER = io.cliptype.ClipType
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 io.cliptype. All rights reserved.
+
+// P4 is a native Apple Silicon build. The bridge is linked into this one
+// Runner process; it is not a second helper or a Flutter plugin executable.
+ARCHS = arm64
+SWIFT_OBJC_BRIDGING_HEADER = Runner/cliptype_bridge.h
+LIBRARY_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../../../target/aarch64-apple-darwin/release"
+OTHER_LDFLAGS = $(inherited) -lcliptype_flutter_bridge -framework AppKit -framework ApplicationServices -framework Carbon -framework CoreGraphics -framework Foundation -framework ServiceManagement

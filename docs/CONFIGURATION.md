@@ -61,7 +61,13 @@ Explicit modes do not silently fall back. Clipboard mode requires both Paste and
 
 ### `auto_clipboard_threshold`
 
-A non-zero semantic-element count. In auto mode, clipboard becomes preferred at or above this point when its capabilities are fully available. Auto can also choose clipboard for text that the keyboard planner cannot safely represent.
+A non-zero semantic-element count. In auto mode, clipboard becomes preferred
+at or above this point when its capabilities are fully available. Auto also
+prefers the revision-guarded clipboard path for any non-ASCII text, including
+CJK, emoji, combining marks, and mixed Unicode, even below this threshold.
+When guarded paste is unavailable, Auto can choose the Unicode keyboard path
+when that path is proven safe. The threshold remains the size crossover for
+otherwise keyboard-friendly text.
 
 The default is `256`. It is a policy crossover covered by the backend benchmark, not a universal statement about every destination's performance.
 

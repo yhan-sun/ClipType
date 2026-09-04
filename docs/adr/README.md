@@ -51,4 +51,6 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0006`](0006-current-clipboard-paste-with-revision-guard.md) — Revision-guarded current-clipboard paste without rewrite/restore.
 - [`ADR-0007`](0007-native-win32-tray-shell.md) — Native Win32 tray-first product shell and persistent settings boundary.
 - [`ADR-0008`](0008-windows-beta-compatibility-and-release-provenance.md) — Windows beta compatibility, Sigstore signing, and GitHub provenance.
-- [`ADR-0009`](0009-shared-slint-settings-ui-native-shells.md) — Shared native-compiled Slint settings window with native Windows/macOS shells and transactional custom hotkeys.
+- [`ADR-0009`](0009-shared-slint-settings-ui-native-shells.md) — Shared native-compiled Slint settings window with native Windows/macOS shells; superseded for the macOS P4 composition root.
+- [`ADR-0010`](0010-flutter-macos-arm64-runner.md) — Flutter macOS arm64 runner over the Rust application core with a Swift/AppKit shell.
+- [`ADR-0011`](0011-unicode-first-auto-selection.md) — Non-ASCII Auto selection prefers revision-guarded paste before the size threshold.

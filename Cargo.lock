@@ -822,6 +822,15 @@ name = "cliptype-core"
 version = "0.1.0"
 
 [[package]]
+name = "cliptype-flutter-bridge"
+version = "0.1.0"
+dependencies = [
+ "cliptype-app",
+ "cliptype-core",
+ "cliptype-macos",
+]
+
+[[package]]
 name = "cliptype-macos"
 version = "0.1.0"
 dependencies = [

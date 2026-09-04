@@ -84,25 +84,40 @@ Windows is the first production-quality target over P1/P2. P1 itself produces ev
 
 ## macOS
 
+P4 includes a local, Apple Silicon-only Flutter/AppKit composition root. The
+candidate is one normal per-user process with one Flutter engine, one
+`NSStatusItem`, one Settings window, and one global shortcut owner. It is an
+unsigned local candidate and does not change the public Universal 2,
+Developer ID, notarization, or named-application support gates.
+
 ### Clipboard
 
-Use `NSPasteboard.general` for text access. `NSPasteboard.changeCount` can indicate ownership/content changes; a lightweight observation strategy is used only when continuous observation is actually needed.
+Use `NSPasteboard.general` for text access. `NSPasteboard.changeCount` can indicate ownership/content changes; the P4 bridge requests current clipboard data only inside a Rust-triggered session. No clipboard value crosses the Flutter/Swift status boundary, and no history or restore transaction is added.
 
 ### Keyboard injection
 
-Use Core Graphics `CGEvent` facilities for synthetic keyboard/text events, with explicit Unicode behavior tests.
+Use Core Graphics `CGEvent` facilities for synthetic keyboard/text events, with explicit Unicode behavior tests. The P4 Swift shell does not perform input itself; it delegates the bounded session to the Rust coordinator and `cliptype-macos` adapter.
 
 ### Permissions
 
-Cross-application synthetic input commonly requires user-granted system permission. Use Accessibility trust APIs to detect/onboard, never to bypass consent.
+Cross-application synthetic input commonly requires user-granted system permission. Use Accessibility trust APIs to detect/onboard, never to bypass consent. P4 requests permission only after an explicit UI/menu action and observes the result for a bounded interval.
 
 ### Focus/target
 
-Use workspace/accessibility/window APIs only for target identity and permission-safe focus evidence. Do not inspect focused text.
+Use workspace/accessibility/window APIs only for target identity and permission-safe focus evidence. Do not inspect focused text or window titles. The fixed bridge returns only content-free session categories and counters.
 
 ### Distribution
 
-macOS release requires code signing/notarization planning before claiming general availability.
+macOS release requires code signing/notarization planning before claiming general availability. The P4 local arm64 `.app` is for local inspection only; it is not a public release artifact.
+
+### Shell and command ownership
+
+The Flutter runner uses `io.cliptype/native` and `io.cliptype/events`. Swift/AppKit
+owns one `NSStatusItem`, native menu commands, Carbon Trigger/Cancel
+registration, `SMAppService`, and the Flutter window lifecycle. Candidate hotkey
+pairs are probed and applied transactionally. The local recorder captures only
+while its Flutter control has focus; no event tap, global monitor, or keylogger
+is installed.
 
 ## Linux X11
 

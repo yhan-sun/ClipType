@@ -1,0 +1,20 @@
+[package]
+name = "cliptype-flutter-bridge"
+description = "Fixed C ABI bridge for the ClipType Flutter macOS shell."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+cliptype-app.workspace = true
+cliptype-core.workspace = true
+cliptype-macos.workspace = true
+
+[lints]
+workspace = true

@@ -6,6 +6,12 @@ The first public channel is the Windows x86_64 beta declared by `release/VERSION
 
 The release workflow is `.github/workflows/windows-release.yml`. It rebuilds from the exact `main` commit, re-runs workspace checks/tests/Clippy, assembles the package, creates a dependency inventory and build metadata, signs the assets, generates GitHub artifact attestations, and creates an immutable GitHub prerelease.
 
+The P4 macOS Flutter runner is a local arm64 candidate only. Its PR/manual
+quality gate is `.github/workflows/p4-macos-arm64.yml`; it never publishes a
+macOS artifact and does not replace the separate Universal 2,
+Developer ID, notarization, and stapling requirements for a future public
+macOS release.
+
 ## Required assets
 
 Every Windows beta release contains:

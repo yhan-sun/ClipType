@@ -1,6 +1,6 @@
 # ADR-0009: Shared Slint settings UI with native platform shells
 
-- Status: Accepted
+- Status: Superseded by ADR-0010
 - Date: 2026-09-03
 - Scope: P3 cross-platform settings UI, custom hotkeys, and macOS productization
 - Related: #43, #44, #45, #46, #47, #48, #49, #50, #51

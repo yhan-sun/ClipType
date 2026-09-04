@@ -92,6 +92,19 @@ Shortcut availability is evidence-based. ClipType can detect many OS-level globa
 
 ### P4 — field compatibility, trusted publisher, and operational hardening
 
+The P4 macOS Apple Silicon local runner is now an implementation track within
+this milestone. It provides an arm64-only Flutter/AppKit/Rust candidate and
+does not close the public Universal 2 or signing gates.
+
+#### P4-A — Apple Silicon local runner
+
+- [x] Replace the Flutter counter scaffold with the real ClipType settings UI;
+- [x] Integrate the fixed Flutter channels, Swift/AppKit shell, and Rust C ABI;
+- [x] Build and scan an arm64-only release `.app` locally;
+- [x] Record content-free automated and interactive local evidence;
+- [ ] Complete physical target-application, permission grant/revoke, conflict,
+  cancellation, Unicode, and latency evidence.
+
 - close post-fix Windows and macOS named-application evidence gaps;
 - configure a trusted Windows Authenticode certificate or managed signing service;
 - retain Sigstore and GitHub attestations as additional provenance;

@@ -22,6 +22,8 @@ ClipType uses ports and adapters around a platform-independent Rust core. Policy
 - `cliptype-app` owns the live one-session coordinator, immutable session/configuration snapshots, cancellation, settings parsing, persistence, and recovery.
 - `cliptype-windows` owns Win32 clipboard, target/integrity evidence, keyboard dispatch, paste, hotkey/message loop, tray, and startup adapters.
 - `apps/cliptype` is the Windows composition root and owns process lifecycle, settings application, content-free status, and user command wiring.
+- `apps/cliptype-flutter` is the P4 macOS arm64 composition root. Flutter owns presentation; its Swift/AppKit shell owns channels, menu-bar lifecycle, global hotkeys, Accessibility/login-item adapters, and the fixed Rust bridge.
+- `crates/cliptype-flutter-bridge` owns the narrow content-free C ABI that keeps the Rust coordinator and `cliptype-macos` adapters behind the Swift shell.
 - packaging/release workflows own reproducible assets, compatibility checks, signatures, attestations, and public publication.
 
 Core never imports platform APIs. Platform adapters do not choose product policy. Presentation does not implement injection policy directly.
@@ -59,6 +61,12 @@ The clipboard plan is content-free except for element count and backend identity
 ### Auto selection
 
 Auto uses pure policy and current capability evidence. It can select clipboard only when paste and revision guarding are fully available. It selects one backend before dispatch and never changes backend mid-session. Explicit modes never silently fall back.
+
+For any non-ASCII text—including CJK, emoji, combining marks, and mixed
+Unicode—Auto prefers the already-current, revision-guarded paste path even
+when the payload is below the size threshold. If that path is unavailable,
+Auto may use the proven Unicode keyboard path; explicit Keyboard mode keeps
+its requested semantics and never silently switches backends.
 
 ## Native-neutral ports
 
@@ -128,6 +136,50 @@ Foreground top-level window, process/thread identity, GUI-thread active/focus ev
 
 A dedicated Win32 tray thread owns the hidden window, notification icon, menu, and message loop. The host coordinates tray events with the coordinator and settings store. Start-at-login uses one product-owned value under the current user's Run key and a quoted executable command.
 
+## macOS Flutter composition root (P4 local arm64)
+
+The local macOS candidate has one process and one Flutter engine. Swift/AppKit
+retains one `NSStatusItem`, one `NSMenu`, and one Settings window. Closing the
+window hides it so the status item and registered commands remain alive; Quit
+performs bounded Rust shutdown and removes native state.
+
+The fixed Flutter boundary is:
+
+```text
+Flutter MethodChannel: io.cliptype/native
+Flutter EventChannel:  io.cliptype/events
+             │ bounded settings/commands/content-free events
+Swift/AppKit shell → cliptype-flutter-bridge static library
+             │ fixed integer status and enum/counter snapshot
+Rust Coordinator → cliptype-core + cliptype-platform + cliptype-macos
+```
+
+The channel and C ABI do not carry clipboard text, injected text, focused
+values, window titles, recorded-key history, user identity, or content
+fingerprints. Flutter does not read the pasteboard or execute input. Rust
+continues to own validation, session reservation, backend selection, target
+and modifier safety, revision guarding, pacing, cancellation, and terminal
+outcomes. Swift owns only native shell mechanisms and command registration.
+
+The display language is a separate non-sensitive presentation preference. The
+Flutter window and the native status menu synchronize its English/Simplified
+Chinese value through the fixed method channel; it is not part of the Rust
+product settings or injection policy.
+
+Trigger/Cancel are registered with the system hot-key API as a transactional
+pair. A candidate is validated and probed before the old pair is released;
+failure removes temporary registrations and leaves the prior pair active.
+The local recorder is a focused Flutter control and is not a global event tap,
+key logger, or broad keyboard monitor.
+
+Observation is event-driven while idle. A bounded timer may refresh state only
+while a session is active, and a separate short-lived observation may follow an
+explicit Accessibility request. There is no permanent 40 ms application poll.
+
+P4 is an Apple Silicon-only local candidate (`aarch64-apple-darwin`). It does
+not widen the public P3 Universal 2, signing, notarization, or compatibility
+claims. See [ADR-0010](adr/0010-flutter-macos-arm64-runner.md).
+
 ## Settings
 
 The fixed versioned schema includes enabled state, mode, auto threshold, speed, notifications, start-at-login, and reviewed hotkey preset. Parsing rejects unknown, duplicate, missing, malformed, or unsupported fields without echoing their values.
@@ -190,3 +242,4 @@ Authenticode trusted-publisher signing is a separate future boundary because it 
 12. Compatibility wording cannot exceed evidence.
 13. Public assets are versioned, checksummed, signed, attested, and never silently replaced.
 14. Cross-cutting changes require an ADR.
+15. The Flutter/native boundary remains fixed, bounded, and content-free.

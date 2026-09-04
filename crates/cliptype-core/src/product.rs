@@ -255,9 +255,15 @@ pub fn build_injection_plan(
             let clipboard_available = clipboard_is_available(capabilities, revision_available);
             let keyboard_available =
                 keyboard_is_available(&text, config.safety, capabilities.keyboard);
+            // Text outside ASCII is safer through the already-current,
+            // revision-guarded paste path. This covers CJK, emoji, combining
+            // marks, and mixed Unicode text even when the payload is short.
+            let prefers_clipboard = !text.expose().is_ascii();
 
             if clipboard_available
-                && (elements.get() >= config.auto_clipboard_threshold.get() || !keyboard_available)
+                && (prefers_clipboard
+                    || elements.get() >= config.auto_clipboard_threshold.get()
+                    || !keyboard_available)
             {
                 Ok(InjectionPlan::Clipboard(ClipboardPlan { elements }))
             } else {
@@ -463,6 +469,45 @@ mod tests {
         )
         .expect("clipboard can deliver text without emitting the control as a key");
         assert_eq!(plan.backend(), InjectionBackend::Clipboard);
+    }
+
+    #[test]
+    fn auto_prefers_revision_guarded_clipboard_for_short_unicode_text() {
+        for text in [
+            "你好，世界",
+            "繁體中文測試",
+            "こんにちは世界",
+            "안녕하세요",
+            "中文与 ASCII 123 混合",
+            "😀👍",
+            "e\u{0301}",
+        ] {
+            let plan = build_injection_plan(
+                SensitiveText::new(text.to_owned()),
+                true,
+                config(InjectionMode::Auto, 256),
+                capabilities(),
+            )
+            .expect("short Unicode text should use the guarded paste path");
+            assert_eq!(plan.backend(), InjectionBackend::Clipboard, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn auto_can_use_unicode_keyboard_only_when_clipboard_guard_is_unavailable() {
+        let capabilities = ProductCapabilities {
+            clipboard_paste: CapabilityState::Unavailable,
+            clipboard_revision_guard: CapabilityState::Unavailable,
+            ..capabilities()
+        };
+        let plan = build_injection_plan(
+            SensitiveText::new("你好".to_owned()),
+            false,
+            config(InjectionMode::Auto, 256),
+            capabilities,
+        )
+        .expect("Auto retains the Unicode keyboard fallback when paste is unavailable");
+        assert_eq!(plan.backend(), InjectionBackend::Keyboard);
     }
 
     #[test]
