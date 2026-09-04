@@ -48,6 +48,10 @@ permission-state observation; macOS consent remains user-controlled.
 The visible Trigger button hides the settings window and yields one bounded
 run-loop handoff before target capture, so it does not accidentally target the
 ClipType settings controls themselves.
+Local release builds are ad-hoc signed in this phase. macOS can bind
+Accessibility consent to the current code hash, so replacing a local build may
+require removing stale ClipType entries and adding the current
+`/Applications/ClipType.app` again before testing input.
 
 ## Local verification gate
 

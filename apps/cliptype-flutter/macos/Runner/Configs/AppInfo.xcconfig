@@ -7,8 +7,9 @@
 // The application's name. By default this is also the title of the Flutter window.
 PRODUCT_NAME = ClipType
 
-// Keep the product identity stable across the Flutter frontend migration so
-// macOS Accessibility consent remains associated with ClipType.
+// Keep the product identity stable across the Flutter frontend migration.
+// Signed builds can retain the product identity; local ad-hoc builds may
+// require re-adding the current app after a new code hash is produced.
 PRODUCT_BUNDLE_IDENTIFIER = io.github.yhan-sun.ClipType
 
 // The copyright displayed in application information

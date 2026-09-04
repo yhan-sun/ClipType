@@ -28,8 +28,10 @@ separate migration decision.
 
 Keep the existing product bundle identifier,
 `io.github.yhan-sun.ClipType`, for the Flutter replacement. This preserves the
-macOS application identity used by Accessibility consent while removing the
-legacy frontend itself.
+product identity used by signed macOS Accessibility consent while removing the
+legacy frontend itself. Local Flutter builds are ad-hoc signed and macOS may
+bind consent to their code hash as well; replacing such a build can therefore
+require removing stale entries and adding the current app again.
 
 The Flutter shell remains one ordinary application process. It does not bypass
 macOS Accessibility consent, move clipboard or injected plaintext into the UI

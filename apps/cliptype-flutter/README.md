@@ -27,8 +27,11 @@ The Xcode target builds the Rust static library for
 `aarch64-apple-darwin` before compiling and linking the Swift shell. The
 release output is `ClipType.app` with bundle identifier
 `io.github.yhan-sun.ClipType`. The identifier is kept stable across the
-frontend migration so macOS Accessibility consent continues to refer to the
-ClipType product rather than a new app identity.
+frontend migration so signed macOS builds continue to refer to the ClipType
+product rather than a new app identity. Local Flutter builds use an ad-hoc
+signature, whose code hash changes when the app is rebuilt; after replacing a
+local app, remove any stale ClipType entry and add the current
+`/Applications/ClipType.app` again under Accessibility.
 
 ## Runtime boundary
 
