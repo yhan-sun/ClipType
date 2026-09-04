@@ -173,6 +173,11 @@ impl fmt::Debug for ClipboardPlan {
 pub enum CodeAction {
     Atom(TextAtom),
     CursorRight,
+    /// Consumes a matching closer that the editor placed on its own generated
+    /// line. The platform first crosses the existing line boundary with
+    /// CursorRight, then uses its right-arrow line-end chord to pass both the
+    /// editor's indentation and closer without reading destination text.
+    CursorRightToLineEnd,
 }
 
 impl fmt::Debug for CodeAction {
@@ -180,6 +185,7 @@ impl fmt::Debug for CodeAction {
         match self {
             Self::Atom(atom) => formatter.debug_tuple("Atom").field(atom).finish(),
             Self::CursorRight => formatter.write_str("CursorRight"),
+            Self::CursorRightToLineEnd => formatter.write_str("CursorRightToLineEnd"),
         }
     }
 }
@@ -420,7 +426,27 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
 
                 match atom {
                     TextAtom::LineBreak => {
-                        actions.push(CodeAction::Atom(atom));
+                        if let Some(line_closers) =
+                            line_leading_matching_closers(atoms, index, &pair_stack)
+                        {
+                            // The first Return inside an empty pair is still
+                            // needed to ask the editor for its indented body
+                            // line. Once a prior Return has already moved the
+                            // generated closer to a following line, emitting
+                            // the source Return here would create an extra
+                            // blank line and leave CursorRight short of it.
+                            if !line_closers.were_line_separated {
+                                push_code_line_break(&mut actions, &mut pair_stack);
+                            }
+                            pair_stack
+                                .truncate(pair_stack.len().saturating_sub(line_closers.pair_count));
+                            actions.push(CodeAction::CursorRightToLineEnd);
+                            line_start = false;
+                            index = line_closers.end_index;
+                            continue;
+                        }
+
+                        push_code_line_break(&mut actions, &mut pair_stack);
                         line_start = true;
                     }
                     TextAtom::Tab => {
@@ -458,9 +484,15 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                             continue;
                         } else if let Some(expected) = opening_pair(value) {
                             actions.push(CodeAction::Atom(atom));
-                            pair_stack.push(Pair::Bracket(expected));
+                            pair_stack.push(Pair::Bracket {
+                                closer: expected,
+                                line_separated: false,
+                            });
                             line_start = false;
-                        } else if pair_stack.last() == Some(&Pair::Bracket(value)) {
+                        } else if pair_stack
+                            .last()
+                            .is_some_and(|pair| pair.matches_bracket(value))
+                        {
                             pair_stack.pop();
                             actions.push(CodeAction::CursorRight);
                             line_start = false;
@@ -472,33 +504,51 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                 }
             }
             CodeLexState::LineComment => {
-                actions.push(CodeAction::Atom(atom));
                 if matches!(atom, TextAtom::LineBreak) {
-                    state = CodeLexState::Normal;
-                    line_start = true;
-                }
-            }
-            CodeLexState::BlockComment { closing } => {
-                actions.push(CodeAction::Atom(atom));
-                match atom {
-                    TextAtom::Scalar(value) if closing && value == '/' => {
+                    if let Some(line_closers) =
+                        line_leading_matching_closers(atoms, index, &pair_stack)
+                    {
+                        if !line_closers.were_line_separated {
+                            push_code_line_break(&mut actions, &mut pair_stack);
+                        }
+                        pair_stack
+                            .truncate(pair_stack.len().saturating_sub(line_closers.pair_count));
+                        actions.push(CodeAction::CursorRightToLineEnd);
                         state = CodeLexState::Normal;
                         line_start = false;
+                        index = line_closers.end_index;
+                        continue;
                     }
-                    TextAtom::Scalar(value)
-                        if !closing && value == '*' && next == Some(TextAtom::Scalar('/')) =>
-                    {
-                        state = CodeLexState::BlockComment { closing: true };
-                        line_start = false;
-                    }
-                    TextAtom::LineBreak => {
-                        line_start = true;
-                    }
-                    _ => {
-                        line_start = false;
-                    }
+
+                    push_code_line_break(&mut actions, &mut pair_stack);
+                    state = CodeLexState::Normal;
+                    line_start = true;
+                } else {
+                    actions.push(CodeAction::Atom(atom));
                 }
             }
+            CodeLexState::BlockComment { closing } => match atom {
+                TextAtom::Scalar(value) if closing && value == '/' => {
+                    actions.push(CodeAction::Atom(atom));
+                    state = CodeLexState::Normal;
+                    line_start = false;
+                }
+                TextAtom::Scalar(value)
+                    if !closing && value == '*' && next == Some(TextAtom::Scalar('/')) =>
+                {
+                    actions.push(CodeAction::Atom(atom));
+                    state = CodeLexState::BlockComment { closing: true };
+                    line_start = false;
+                }
+                TextAtom::LineBreak => {
+                    push_code_line_break(&mut actions, &mut pair_stack);
+                    line_start = true;
+                }
+                _ => {
+                    actions.push(CodeAction::Atom(atom));
+                    line_start = false;
+                }
+            },
             CodeLexState::String { quote, escaped } => match atom {
                 TextAtom::Scalar(_) if escaped => {
                     actions.push(CodeAction::Atom(atom));
@@ -533,27 +583,9 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                     index = index.saturating_add(quote.length());
                     continue;
                 }
-                TextAtom::Scalar(value) if !quote.is_triple() && opening_pair(value).is_some() => {
-                    // Some editors also auto-complete brackets typed inside a
-                    // string. Keep those generated closers in the same logical
-                    // stack so a later source closer or string boundary can
-                    // consume them with CursorRight.
-                    actions.push(CodeAction::Atom(atom));
-                    pair_stack.push(Pair::Bracket(opening_pair(value).expect("checked above")));
-                    line_start = false;
-                }
-                TextAtom::Scalar(value)
-                    if !quote.is_triple() && pair_stack.last() == Some(&Pair::Bracket(value)) =>
-                {
-                    pair_stack.pop();
-                    actions.push(CodeAction::CursorRight);
-                    line_start = false;
-                }
                 TextAtom::Scalar(value) if !quote.is_triple() && value == quote.delimiter() => {
-                    // A bracket such as the `{` in `"{"` can be auto-completed
-                    // before the editor's generated quote. Move over all such
-                    // generated closers first, then move over the quote.
-                    flush_string_bracket_pairs(&mut actions, &mut pair_stack);
+                    // Brackets inside strings are source literals. Only the
+                    // editor-generated closing quote is skipped.
                     if pair_stack.last() == Some(&Pair::Quote(quote)) {
                         pair_stack.pop();
                         actions.push(CodeAction::CursorRight);
@@ -564,7 +596,7 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                     line_start = false;
                 }
                 TextAtom::LineBreak => {
-                    actions.push(CodeAction::Atom(atom));
+                    push_code_line_break(&mut actions, &mut pair_stack);
                     line_start = true;
                 }
                 _ => {
@@ -580,17 +612,77 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
     actions
 }
 
-fn flush_string_bracket_pairs(actions: &mut Vec<CodeAction>, pair_stack: &mut Vec<Pair>) {
-    while matches!(pair_stack.last(), Some(Pair::Bracket(_))) {
-        pair_stack.pop();
-        actions.push(CodeAction::CursorRight);
+fn push_code_line_break(actions: &mut Vec<CodeAction>, pair_stack: &mut [Pair]) {
+    actions.push(CodeAction::Atom(TextAtom::LineBreak));
+    for pair in pair_stack {
+        pair.mark_line_separated();
     }
+}
+
+struct LineClosers {
+    end_index: usize,
+    pair_count: usize,
+    were_line_separated: bool,
+}
+
+fn line_leading_matching_closers(
+    atoms: &[TextAtom],
+    line_break_index: usize,
+    pair_stack: &[Pair],
+) -> Option<LineClosers> {
+    let (_, were_line_separated) = pair_stack.last()?.bracket()?;
+    let mut index = line_break_index.saturating_add(1);
+
+    while atoms.get(index).copied().is_some_and(is_code_indentation) {
+        index = index.saturating_add(1);
+    }
+
+    let mut pair_count = 0;
+    while pair_count < pair_stack.len() {
+        let pair = &pair_stack[pair_stack.len() - pair_count - 1];
+        let Some(TextAtom::Scalar(value)) = atoms.get(index).copied() else {
+            break;
+        };
+        if !pair.matches_bracket(value) {
+            break;
+        }
+        pair_count = pair_count.saturating_add(1);
+        index = index.saturating_add(1);
+    }
+
+    (pair_count > 0).then_some(LineClosers {
+        end_index: index,
+        pair_count,
+        were_line_separated,
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pair {
-    Bracket(char),
+    Bracket { closer: char, line_separated: bool },
     Quote(QuoteKind),
+}
+
+impl Pair {
+    const fn matches_bracket(self, value: char) -> bool {
+        matches!(self, Self::Bracket { closer, .. } if closer == value)
+    }
+
+    const fn bracket(self) -> Option<(char, bool)> {
+        match self {
+            Self::Bracket {
+                closer,
+                line_separated,
+            } => Some((closer, line_separated)),
+            Self::Quote(_) => None,
+        }
+    }
+
+    fn mark_line_separated(&mut self) {
+        if let Self::Bracket { line_separated, .. } = self {
+            *line_separated = true;
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -633,7 +725,7 @@ const fn opening_pair(value: char) -> Option<char> {
 
 const fn quote_delimiter(value: char) -> Option<char> {
     match value {
-        '\'' | '"' | '`' => Some(value),
+        '\'' | '"' => Some(value),
         _ => None,
     }
 }
@@ -863,7 +955,14 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(action, super::CodeAction::CursorRight))
                 .count(),
-            6
+            4
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRightToLineEnd))
+                .count(),
+            1
         );
         assert_eq!(
             plan.actions()
@@ -875,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn code_mode_consumes_string_brackets_before_quote_and_paren_boundaries() {
+    fn code_mode_keeps_string_brackets_literal_before_quote_and_paren_boundaries() {
         let plan = build_injection_plan(
             SensitiveText::new(r#"if (value[0] == "{") {"#.to_owned()),
             true,
@@ -893,16 +992,111 @@ mod tests {
             .position(|action| *action == super::CodeAction::Atom(crate::TextAtom::Scalar('"')))
             .expect("string opener");
         assert_eq!(
-            &plan.actions()[first_quote..first_quote.saturating_add(7)],
+            &plan.actions()[first_quote..first_quote.saturating_add(6)],
             &[
                 super::CodeAction::Atom(crate::TextAtom::Scalar('"')),
                 super::CodeAction::Atom(crate::TextAtom::Scalar('{')),
                 super::CodeAction::CursorRight,
                 super::CodeAction::CursorRight,
-                super::CodeAction::CursorRight,
                 super::CodeAction::Atom(crate::TextAtom::Scalar(' ')),
                 super::CodeAction::Atom(crate::TextAtom::Scalar('{')),
             ]
+        );
+    }
+
+    #[test]
+    fn code_mode_navigates_to_line_leading_generated_closers() {
+        let plan = build_injection_plan(
+            SensitiveText::new(
+                "fn main() {\nlet value = {\"x\": [1, 2]};\nif (value[0] == \"{\") {\nprintln!(\"value = {}\", value);\n}\n}\nNEXT"
+                    .to_owned(),
+            ),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("line-leading generated closers are supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRightToLineEnd))
+                .count(),
+            2
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(
+                    action,
+                    super::CodeAction::Atom(crate::TextAtom::LineBreak)
+                ))
+                .count(),
+            4
+        );
+        assert_eq!(
+            plan.actions().last(),
+            Some(&super::CodeAction::Atom(crate::TextAtom::Scalar('T')))
+        );
+    }
+
+    #[test]
+    fn code_mode_keeps_first_line_break_for_an_empty_multiline_pair() {
+        let plan = build_injection_plan(
+            SensitiveText::new("fn main() {\n}\nNEXT".to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("empty multiline pair is supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+        let navigation = plan
+            .actions()
+            .iter()
+            .position(|action| *action == super::CodeAction::CursorRightToLineEnd)
+            .expect("line closer navigation");
+
+        assert_eq!(
+            plan.actions().get(navigation.saturating_sub(1)),
+            Some(&super::CodeAction::Atom(crate::TextAtom::LineBreak))
+        );
+        assert_eq!(
+            plan.actions().get(navigation.saturating_add(1)),
+            Some(&super::CodeAction::Atom(crate::TextAtom::LineBreak))
+        );
+    }
+
+    #[test]
+    fn code_mode_consumes_grouped_closers_on_one_generated_line() {
+        let plan = build_injection_plan(
+            SensitiveText::new("call({\nvalue();\n});\nNEXT".to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("grouped line closers are supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRightToLineEnd))
+                .count(),
+            1
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRight))
+                .count(),
+            1
         );
     }
 
@@ -986,7 +1180,14 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(action, super::CodeAction::CursorRight))
                 .count(),
-            2
+            1
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRightToLineEnd))
+                .count(),
+            1
         );
     }
 
@@ -1050,7 +1251,7 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(action, super::CodeAction::CursorRight))
                 .count(),
-            3
+            1
         );
     }
 

@@ -22,12 +22,17 @@ Coverage includes:
 - strict configuration and limits;
 - Unicode normalization and line-break semantics;
 - explicit mode no-fallback and auto backend selection;
-- Code mode's FIFO keyboard actions, leading-indentation stripping, pair skipping,
-  explicit triple-quoted boundaries, and string/comment literal handling;
+- Code mode's FIFO keyboard-only actions, five bounded pair families,
+  leading-indentation stripping, same-line and line-leading pair skipping,
+  comment-boundary closing-line navigation, literal string/comment brackets,
+  explicit triple-quoted boundaries, and long-tail completion;
 - Auto preference for short CJK, emoji, combining, and mixed-Unicode text;
 - clipboard revision/snapshot behavior;
 - one-session concurrency, cancellation, bounded retry/wait/shutdown;
 - destination and integrity revalidation;
+- macOS render-host focus-node replacement versus real process/window changes;
+- Chromium render hosts identified through supported web-only attribute names
+  without reading their values;
 - modifier conflicts;
 - partial/progress-unknown no-retry behavior;
 - settings parsing, atomic persistence, backup recovery, and redacted errors;

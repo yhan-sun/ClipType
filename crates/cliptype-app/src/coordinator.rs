@@ -37,6 +37,12 @@ static TYPING_SEED_COUNTER: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
 // configured action rate.
 const CODE_ACTION_SETTLE_INTERVAL: Duration = Duration::from_millis(8);
 
+// A destination editor may publish an auto-completed pair after accepting the
+// opener's synthetic Unicode event. Navigation actions are the only actions
+// that depend on that generated state, so give them a larger Code-only barrier
+// without slowing ordinary Keyboard, Clipboard, or Auto sessions.
+const CODE_NAVIGATION_SETTLE_INTERVAL: Duration = Duration::from_millis(40);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionCompletion {
     PreparationFailed(PreparationFailure),
@@ -606,6 +612,7 @@ enum KeyboardAction {
     Atom(TextAtom),
     Backspace,
     CursorRight,
+    CursorRightToLineEnd,
 }
 
 fn run_code_plan(context: &mut SessionContext, plan: &CodePlan) -> SessionCompletion {
@@ -619,7 +626,20 @@ fn run_code_plan(context: &mut SessionContext, plan: &CodePlan) -> SessionComple
         let action = match action {
             CodeAction::Atom(atom) => KeyboardAction::Atom(atom),
             CodeAction::CursorRight => KeyboardAction::CursorRight,
+            CodeAction::CursorRightToLineEnd => KeyboardAction::CursorRightToLineEnd,
         };
+
+        if matches!(
+            action,
+            KeyboardAction::CursorRight | KeyboardAction::CursorRightToLineEnd
+        ) && sleep_interruptibly(
+            &context.cancellation,
+            CODE_NAVIGATION_SETTLE_INTERVAL,
+            context.config.safety.modifier_poll_interval,
+        ) {
+            return SessionCompletion::Finished(TerminalOutcome::Cancelled);
+        }
+
         if let Err(outcome) = dispatch_timed_action(context, plan.config(), action, &mut random) {
             return SessionCompletion::Finished(outcome);
         }
@@ -682,6 +702,11 @@ fn dispatch_timed_action(
             .ports
             .keyboard
             .dispatch_cursor_right()
+            .map_err(map_keyboard_error)?,
+        KeyboardAction::CursorRightToLineEnd => context
+            .ports
+            .keyboard
+            .dispatch_cursor_right_to_line_end()
             .map_err(map_keyboard_error)?,
     };
     accept_dispatch(context, native)

@@ -5,6 +5,8 @@ on:
     paths:
       - "apps/cliptype-flutter/**"
       - "crates/cliptype-*/**"
+      - "docs/**"
+      - "release/**"
       - "Cargo.lock"
       - "Cargo.toml"
       - ".github/workflows/p4-macos-arm64.yml"
@@ -21,10 +23,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-verify:
-    name: Flutter macOS arm64 build and checks
+  build-install-package:
+    name: Flutter macOS arm64 build, install, and preview checks
     runs-on: macos-14
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,6 +37,18 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = "arm64"
           test "$(arch)" = "arm64"
+          sw_vers
+
+      - name: Validate immutable candidate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < release/VERSION)"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+          test -f "docs/releases/$version.md"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_without_v=${version#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install pinned Flutter toolchain
         shell: bash
@@ -56,19 +70,15 @@ jobs:
             --component rustfmt --component clippy \
             --target aarch64-apple-darwin
 
-      - name: Run Rust arm64 quality gate
+      - name: Run requested Rust quality gate
         shell: bash
         run: |
           set -euo pipefail
           cargo +1.98.0 fmt --all -- --check
-          cargo +1.98.0 check --workspace --all-targets --locked \
-            --target aarch64-apple-darwin
-          cargo +1.98.0 test --workspace --locked \
-            --target aarch64-apple-darwin
-          cargo +1.98.0 clippy --workspace --all-targets --locked \
-            --target aarch64-apple-darwin -- -D warnings
+          cargo +1.98.0 test --workspace --locked
+          cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Run Flutter quality gate and release build
+      - name: Run requested Flutter quality gate and release build
         shell: bash
         working-directory: apps/cliptype-flutter
         run: |
@@ -79,20 +89,140 @@ jobs:
           flutter test
           flutter build macos --release
 
-      - name: Verify arm64 application bundle
+      - name: Ad-hoc sign and verify arm64 application bundle
+        id: bundle
         shell: bash
-        working-directory: apps/cliptype-flutter
         run: |
           set -euo pipefail
-          APP_PATH="build/macos/Build/Products/Release/ClipType.app"
-          test -d "$APP_PATH"
-          EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")"
-          EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
-          test -x "$EXECUTABLE"
-          test "$(lipo -archs "$EXECUTABLE")" = "arm64"
+          app="$GITHUB_WORKSPACE/apps/cliptype-flutter/build/macos/Build/Products/Release/ClipType.app"
+          test -d "$app"
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          executable="$app/Contents/MacOS/$executable_name"
+          test -x "$executable"
+
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=4 "$app" 2>&1 | tee "$RUNNER_TEMP/codesign.txt"
+          grep -q "Signature=adhoc" "$RUNNER_TEMP/codesign.txt"
+
+          test "$(lipo -archs "$executable")" = "arm64"
           while IFS= read -r -d '' candidate; do
             if file "$candidate" | grep -q 'Mach-O'; then
               test "$(lipo -archs "$candidate")" = "arm64"
             fi
-          done < <(find "$APP_PATH" -type f -print0)
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          done < <(find "$app" -type f -print0)
+
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "executable_name=$executable_name" >> "$GITHUB_OUTPUT"
+
+      - name: Install exact bundle at /Applications and launch-smoke it
+        shell: bash
+        env:
+          BUILT_APP: ${{ steps.bundle.outputs.app }}
+          EXECUTABLE_NAME: ${{ steps.bundle.outputs.executable_name }}
+        run: |
+          set -euo pipefail
+          installed="/Applications/ClipType.app"
+          sudo rm -rf "$installed"
+          sudo ditto "$BUILT_APP" "$installed"
+          test -d "$installed"
+          codesign --verify --deep --strict --verbose=2 "$installed"
+          cmp \
+            "$BUILT_APP/Contents/MacOS/$EXECUTABLE_NAME" \
+            "$installed/Contents/MacOS/$EXECUTABLE_NAME"
+
+          log="$RUNNER_TEMP/cliptype-launch.log"
+          "$installed/Contents/MacOS/$EXECUTABLE_NAME" >"$log" 2>&1 &
+          pid=$!
+          sleep 8
+          if ! kill -0 "$pid" 2>/dev/null; then
+            cat "$log"
+            exit 1
+          fi
+          kill "$pid"
+          wait "$pid" || true
+
+      - name: Package and independently verify preview assets
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_WITHOUT_V: ${{ steps.version.outputs.version_without_v }}
+          BUILT_APP: ${{ steps.bundle.outputs.app }}
+        run: |
+          set -euo pipefail
+          dist="$GITHUB_WORKSPACE/dist/macos-arm64"
+          rm -rf "$dist"
+          mkdir -p "$dist"
+          zip_name="ClipType-${VERSION_WITHOUT_V}-macos-arm64-testing-preview.zip"
+          dmg_name="ClipType-${VERSION_WITHOUT_V}-macos-arm64-testing-preview.dmg"
+
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$dist/$zip_name"
+          hdiutil create \
+            -volname "ClipType ${VERSION} arm64 preview" \
+            -srcfolder "$BUILT_APP" \
+            -ov -format UDZO "$dist/$dmg_name"
+
+          cat > "$dist/BUILD-INFO-macos.txt" <<INFO
+          release_candidate=$VERSION
+          source_commit=$GITHUB_SHA
+          target=aarch64-apple-darwin
+          frontend=Flutter
+          installed_path=/Applications/ClipType.app
+          signing=ad-hoc
+          developer_id=NOT_CONFIGURED
+          notarization=NOT_RUN
+          stapling=NOT_RUN
+          gatekeeper=NOT_CLAIMED
+          universal_2=NO
+          accessibility_interactive=NOT_RUN
+          vscode_real_input=NOT_RUN
+          compatibility_claim=macOS_arm64_testing_preview_only
+          INFO
+
+          cat > "$dist/README-macos-arm64-testing-preview.txt" <<'README'
+          ClipType macOS arm64 testing preview
+
+          This artifact is Apple-Silicon-only, ad-hoc signed, not Developer ID
+          signed, not notarized, not stapled, and not a Universal 2 or general
+          macOS release. Hosted CI builds, installs, verifies, and launch-smokes
+          the bundle. It cannot grant persistent Accessibility permission or
+          perform a human VS Code/Monaco input session; those checks remain
+          NOT RUN until an exact-release physical report is recorded.
+          README
+
+          (
+            cd "$dist"
+            shasum -a 256 "$zip_name" "$dmg_name" \
+              BUILD-INFO-macos.txt README-macos-arm64-testing-preview.txt \
+              > SHA256SUMS-macos-arm64.txt
+          )
+          shasum -a 256 -c "$dist/SHA256SUMS-macos-arm64.txt"
+
+          extract="$RUNNER_TEMP/cliptype-zip-extract"
+          rm -rf "$extract"
+          mkdir -p "$extract"
+          /usr/bin/ditto -x -k "$dist/$zip_name" "$extract"
+          test -d "$extract/ClipType.app"
+          codesign --verify --deep --strict --verbose=2 "$extract/ClipType.app"
+
+          mount="$RUNNER_TEMP/cliptype-dmg-mount"
+          rm -rf "$mount"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dist/$dmg_name"
+          trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
+          test -d "$mount/ClipType.app"
+          codesign --verify --deep --strict --verbose=2 "$mount/ClipType.app"
+          hdiutil detach "$mount"
+          trap - EXIT
+
+          echo "artifact_name=macos-arm64-${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "dist=$dist" >> "$GITHUB_OUTPUT"
+
+      - name: Upload candidate artifacts without publishing a release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.dist }}
+          if-no-files-found: error
+          retention-days: 14

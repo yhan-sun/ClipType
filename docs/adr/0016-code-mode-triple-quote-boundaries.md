@@ -1,6 +1,6 @@
 # ADR-0016: Code mode types triple-quoted boundaries explicitly
 
-- Status: Accepted
+- Status: Superseded by ADR-0017
 - Date: 2026-09-04
 - Scope: shared Code-mode lexer and keyboard action planning
 - Supersedes: ADR-0014
