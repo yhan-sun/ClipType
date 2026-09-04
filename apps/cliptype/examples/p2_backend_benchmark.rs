@@ -220,6 +220,7 @@ mod benchmark {
             let expected_backend = match mode {
                 InjectionMode::Keyboard => InjectionBackend::Keyboard,
                 InjectionMode::Clipboard => InjectionBackend::Clipboard,
+                InjectionMode::Code => InjectionBackend::Code,
                 InjectionMode::Auto => return Err(BenchmarkError::UnexpectedBackend),
             };
             if status.backend != Some(expected_backend) {

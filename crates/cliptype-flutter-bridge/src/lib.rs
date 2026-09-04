@@ -204,6 +204,7 @@ fn settings_from_args(args: SettingsArgs) -> Result<cliptype_core::ProductSettin
         0 => cliptype_core::InjectionMode::Keyboard,
         1 => cliptype_core::InjectionMode::Clipboard,
         2 => cliptype_core::InjectionMode::Auto,
+        3 => cliptype_core::InjectionMode::Code,
         _ => return Err(CT_INVALID),
     };
     let threshold = cliptype_core::AutoClipboardThreshold::new(
@@ -257,6 +258,7 @@ fn backend_code(backend: Option<cliptype_core::InjectionBackend>) -> i32 {
     match backend {
         Some(cliptype_core::InjectionBackend::Keyboard) => 0,
         Some(cliptype_core::InjectionBackend::Clipboard) => 1,
+        Some(cliptype_core::InjectionBackend::Code) => 2,
         None => -1,
     }
 }
@@ -304,6 +306,7 @@ fn fill_state(runtime: &BridgeRuntime, output: &mut CtBridgeState) -> Result<(),
                 cliptype_core::InjectionMode::Keyboard => 0,
                 cliptype_core::InjectionMode::Clipboard => 1,
                 cliptype_core::InjectionMode::Auto => 2,
+                cliptype_core::InjectionMode::Code => 3,
             },
             characters_per_second: settings.characters_per_second,
             jitter_percent: settings.jitter_percent,

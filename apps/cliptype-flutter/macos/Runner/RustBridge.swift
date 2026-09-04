@@ -28,6 +28,7 @@ struct RustSnapshot {
         switch backend {
         case CT_BRIDGE_BACKEND_KEYBOARD: return "keyboard"
         case CT_BRIDGE_BACKEND_CLIPBOARD: return "clipboard"
+        case CT_BRIDGE_BACKEND_CODE: return "code"
         default: return nil
         }
     }

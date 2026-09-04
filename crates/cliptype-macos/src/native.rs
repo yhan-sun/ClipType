@@ -557,6 +557,7 @@ impl MacStatusItem {
             InjectionMode::Keyboard => 0,
             InjectionMode::Clipboard => 1,
             InjectionMode::Auto => 2,
+            InjectionMode::Code => 3,
         };
         let permission = match permission {
             AccessibilityPermissionState::NotRequired => 0,

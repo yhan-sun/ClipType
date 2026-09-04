@@ -1,6 +1,6 @@
 # ADR-0003: Keyboard, Clipboard, and Auto Injection Modes
 
-- Status: Accepted
+- Status: Superseded by ADR-0013
 - Date: 2026-09-01
 
 ## Context

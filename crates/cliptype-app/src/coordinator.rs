@@ -546,7 +546,9 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
 
     match plan {
         InjectionPlan::Keyboard(plan) => run_keyboard_plan(context, &plan),
-        InjectionPlan::Clipboard(_) => run_clipboard_plan(context, revision),
+        InjectionPlan::Clipboard(_) | InjectionPlan::Code(_) => {
+            run_clipboard_plan(context, revision)
+        }
     }
 }
 

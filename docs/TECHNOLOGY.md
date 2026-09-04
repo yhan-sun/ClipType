@@ -73,7 +73,7 @@ The Windows Slint settings window provides:
 
 - General — enabled, notifications, start at login;
 - Shortcuts — local Trigger/Cancel recorders, static validation, platform registration probe, Apply/Reset, and rollback status;
-- Typing — Keyboard/Clipboard/Auto, exact characters per second, jitter, corrected typo probability, and Auto threshold;
+- Typing — Keyboard/Clipboard/Code/Auto, exact characters per second, jitter, corrected typo probability, and Auto threshold;
 - Permissions — macOS Accessibility status and fixed remediation;
 - About & Updates — version/channel, release notes, licenses, dependency notices, and Slint attribution on Windows.
 

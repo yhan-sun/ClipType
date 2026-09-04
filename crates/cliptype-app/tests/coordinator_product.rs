@@ -300,6 +300,28 @@ fn explicit_clipboard_uses_one_revision_guarded_paste_only() {
 }
 
 #[test]
+fn code_mode_uses_one_revision_guarded_paste_only() {
+    let clipboard = RevisionedClipboard::stable("if (x[0]) { return {}; }", 7, 1);
+    let keyboard = CountingKeyboard::default();
+    let paste = ScriptedPaste::complete();
+    let coordinator = coordinator(
+        clipboard,
+        StableTarget::default(),
+        keyboard.clone(),
+        GateModifiers::clear(),
+        paste.clone(),
+        config(InjectionMode::Code, 256),
+    );
+
+    start_and_wait(&coordinator);
+
+    assert_eq!(keyboard.calls(), 0);
+    assert_eq!(paste.calls(), 1);
+    assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
+    assert_eq!(coordinator.status().batches_completed, 1);
+}
+
+#[test]
 fn auto_selects_keyboard_below_threshold_and_clipboard_at_threshold() {
     let short_keyboard = CountingKeyboard::default();
     let short_paste = ScriptedPaste::complete();

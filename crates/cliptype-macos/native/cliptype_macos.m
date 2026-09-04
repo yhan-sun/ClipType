@@ -560,8 +560,8 @@ void ct_macos_hotkey_destroy(void *pointer) {
 
 - (void)updateEnabled:(BOOL)enabled mode:(int)mode permission:(int)permission startup:(BOOL)startup {
     _enabledItem.state = enabled ? NSControlStateValueOn : NSControlStateValueOff;
-    NSArray<NSString *> *modes = @[ @"Keyboard", @"Clipboard", @"Auto" ];
-    int safeMode = (mode >= 0 && mode < 3) ? mode : 2;
+    NSArray<NSString *> *modes = @[ @"Keyboard", @"Clipboard", @"Auto", @"Code" ];
+    int safeMode = (mode >= 0 && mode < 4) ? mode : 2;
     _modeItem.title = [NSString stringWithFormat:@"Mode: %@", modes[(NSUInteger)safeMode]];
     NSArray<NSString *> *permissions = @[
         @"Not required", @"Not requested", @"Not granted",

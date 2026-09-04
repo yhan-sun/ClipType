@@ -15,6 +15,12 @@ void main() {
     expect(settings.triggerHotkey, 'ctrl+alt+shift+v');
   });
 
+  test('code mode round-trips through the native settings map', () {
+    final settings = AppSettings.defaults().copyWith(mode: InjectionMode.code);
+
+    expect(AppSettings.fromMap(settings.toMap()), settings);
+  });
+
   test('invalid settings are rejected before native calls', () {
     final invalid = AppSettings.defaults().copyWith(
       charactersPerSecond: 0,
@@ -44,6 +50,7 @@ void main() {
     expect(l10n.general, '常规');
     expect(l10n.interfaceLanguage, '界面语言');
     expect(l10n.modeLabel(InjectionMode.clipboard), '剪贴板');
+    expect(l10n.modeLabel(InjectionMode.code), '代码');
     expect(l10n.permissionLabel('not_granted'), '未授权');
     expect(l10n.resultMessage('permission_required'), contains('辅助功能'));
   });

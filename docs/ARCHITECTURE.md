@@ -38,7 +38,7 @@ tray / reviewed global trigger
   -> capture initial destination evidence
   -> wait boundedly for physical trigger modifiers to clear
   -> read bounded current clipboard text and revision
-  -> build and freeze keyboard or clipboard plan
+  -> build and freeze keyboard, clipboard, or code plan
   -> reject known higher-integrity target
   -> revalidate destination and modifiers
   -> dispatch bounded keyboard batches or one guarded Paste chord
@@ -58,6 +58,14 @@ The core normalizes the owned clipboard text into semantic atoms. A validated pl
 ### Clipboard plan
 
 The clipboard plan is content-free except for element count and backend identity. It refers to the already-current OS clipboard and requires both paste capability and a known revision witness. No text is written into a paste plan for later clipboard restoration.
+
+### Code plan
+
+The Code plan is a named guarded-paste plan. It uses the current clipboard and
+the same content-blind revision witness as the Clipboard plan, but keeps a
+distinct backend identity so status and tests show that the user explicitly
+selected code-safe whole-block delivery. It never enters the per-character
+keyboard path.
 
 ### Auto selection
 

@@ -173,7 +173,7 @@ export component ClipTypeSettings inherits Window {
                         VerticalLayout {
                             Text { text: "Mode"; }
                             ComboBox {
-                                model: ["Keyboard", "Clipboard", "Auto"];
+                                model: ["Keyboard", "Clipboard", "Auto", "Code"];
                                 current-index <=> root.mode-index;
                             }
                             HorizontalLayout { Text { text: "Characters per second"; horizontal-stretch: 1; } SpinBox { minimum: 1; maximum: 250; value <=> root.characters-per-second; } }

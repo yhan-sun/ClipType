@@ -32,6 +32,15 @@ The path supports ASCII, CJK, supplementary Unicode scalars, combining marks, no
 
 ClipType does not write, clear, own, restore, cache, or retain clipboard contents. The destination application chooses its ordinary paste behavior and may select an existing rich-text format.
 
+### Code
+
+`code` is an explicit whole-block mode for source code and structured text. It
+uses the same revision-guarded paste path as Clipboard mode, preserving the
+clipboard's `()`, `{}`, `[]`, quotes, line breaks, and existing indentation.
+Because it does not emit per-character openers or Return/Tab events, ordinary
+editor auto-pair and auto-indent handlers do not duplicate the copied block.
+Editor-specific format-on-paste behavior remains outside ClipType's control.
+
 ### Auto
 
 `auto` chooses one backend from payload shape, payload size, and proven
@@ -47,7 +56,7 @@ The Windows beta provides:
 
 - native notification-area icon and context menu;
 - trigger, cancel, enable/disable, and quit commands;
-- keyboard/clipboard/auto selection;
+- keyboard/clipboard/code/auto selection;
 - slow/normal/fast keyboard pacing;
 - notification control;
 - reviewed trigger/cancel hotkey presets;

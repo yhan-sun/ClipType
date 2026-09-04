@@ -347,6 +347,7 @@ fn parse_mode(value: &str, line: usize) -> Result<InjectionMode, SettingsError> 
         "keyboard" => Ok(InjectionMode::Keyboard),
         "clipboard" => Ok(InjectionMode::Clipboard),
         "auto" => Ok(InjectionMode::Auto),
+        "code" => Ok(InjectionMode::Code),
         _ => Err(SettingsError::InvalidValue { line }),
     }
 }
@@ -411,6 +412,7 @@ const fn mode_name(mode: InjectionMode) -> &'static str {
         InjectionMode::Keyboard => "keyboard",
         InjectionMode::Clipboard => "clipboard",
         InjectionMode::Auto => "auto",
+        InjectionMode::Code => "code",
     }
 }
 
@@ -475,6 +477,12 @@ mod tests {
         assert!(!serialized.contains("history"));
         assert!(serialized.contains("trigger_hotkey = \"ctrl+alt+v\""));
         assert!(serialized.contains("cancel_hotkey = \"ctrl+alt+x\""));
+
+        let code = ProductSettings {
+            mode: InjectionMode::Code,
+            ..settings
+        };
+        assert_eq!(parse_settings(&serialize_settings(code)), Ok(code));
     }
 
     #[test]

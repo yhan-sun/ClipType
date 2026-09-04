@@ -63,6 +63,7 @@ const CMD_NOTIFICATIONS: usize = 1101;
 const CMD_MODE_AUTO: usize = 1200;
 const CMD_MODE_KEYBOARD: usize = 1201;
 const CMD_MODE_CLIPBOARD: usize = 1202;
+const CMD_MODE_CODE: usize = 1203;
 const CMD_SPEED_SLOW: usize = 1300;
 const CMD_SPEED_NORMAL: usize = 1301;
 const CMD_SPEED_FAST: usize = 1302;
@@ -479,6 +480,13 @@ fn show_context_menu(window: HWND) {
         settings.mode == InjectionMode::Clipboard,
         false,
     );
+    append(
+        menu,
+        CMD_MODE_CODE,
+        "Mode: Code",
+        settings.mode == InjectionMode::Code,
+        false,
+    );
     append_separator(menu);
     let speed_label = format!("Typing speed: {} chars/s", settings.characters_per_second);
     append(menu, CMD_SPEED_HEADER, &speed_label, false, true);
@@ -606,6 +614,10 @@ fn apply_command(command: usize, mut settings: ProductSettings) {
         }
         CMD_MODE_CLIPBOARD => {
             settings.mode = InjectionMode::Clipboard;
+            Some(TrayEvent::SettingsChanged(settings))
+        }
+        CMD_MODE_CODE => {
+            settings.mode = InjectionMode::Code;
             Some(TrayEvent::SettingsChanged(settings))
         }
         CMD_SPEED_SLOW => {
@@ -762,6 +774,9 @@ const fn notice_text(notice: TrayNotice) -> (&'static str, &'static str, u32) {
         TrayNotice::Completed(InjectionBackend::Clipboard) => {
             ("ClipType", "Clipboard paste command completed.", NIIF_INFO)
         }
+        TrayNotice::Completed(InjectionBackend::Code) => {
+            ("ClipType", "Code block paste completed.", NIIF_INFO)
+        }
         TrayNotice::Busy => ("ClipType", "Another session is active.", NIIF_WARNING),
         TrayNotice::Cancelled => ("ClipType", "The active session was cancelled.", NIIF_INFO),
         TrayNotice::ClipboardUnavailable => {
@@ -862,8 +877,8 @@ mod tests {
     use cliptype_core::{InjectionMode, ProductSettings, SpeedPreset};
 
     use super::{
-        CMD_ENABLED, CMD_HOTKEY, CMD_MODE_CLIPBOARD, CMD_SPEED_FAST, CMD_SPEED_PLUS_ONE, TrayEvent,
-        adjust_speed, apply_command,
+        CMD_ENABLED, CMD_HOTKEY, CMD_MODE_CLIPBOARD, CMD_MODE_CODE, CMD_SPEED_FAST,
+        CMD_SPEED_PLUS_ONE, TrayEvent, adjust_speed, apply_command,
     };
 
     #[test]
@@ -881,6 +896,8 @@ mod tests {
         enabled.enabled = false;
         let mut clipboard = settings;
         clipboard.mode = InjectionMode::Clipboard;
+        let mut code = settings;
+        code.mode = InjectionMode::Code;
         let mut fast = settings;
         fast.speed = SpeedPreset::Fast;
         let mut faster = settings;
@@ -889,6 +906,7 @@ mod tests {
         for (command, expected) in [
             (CMD_ENABLED, TrayEvent::SettingsChanged(enabled)),
             (CMD_MODE_CLIPBOARD, TrayEvent::SettingsChanged(clipboard)),
+            (CMD_MODE_CODE, TrayEvent::SettingsChanged(code)),
             (CMD_SPEED_FAST, TrayEvent::SettingsChanged(fast)),
             (CMD_SPEED_PLUS_ONE, TrayEvent::SettingsChanged(faster)),
         ] {

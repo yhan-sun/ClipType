@@ -8,6 +8,10 @@
 
 **Clipboard backend / clipboard-paste mode** — Backend that temporarily writes clipboard content, triggers paste, and attempts safe restoration.
 
+**Code mode** — Explicit whole-block guarded-paste mode for source code and
+structured text. It preserves existing delimiters and indentation without
+emitting per-character keyboard or auto-indent-triggering events.
+
 **Auto planner** — Policy that selects an eligible backend based on payload, configuration, target, and runtime capabilities.
 
 **Target** — The application/window/control context intended to receive input. ClipType primarily identifies it through OS focus/foreground evidence, not screen coordinates.

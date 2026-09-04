@@ -1,18 +1,20 @@
 import 'package:flutter/foundation.dart';
 
-enum InjectionMode { keyboard, clipboard, auto }
+enum InjectionMode { keyboard, clipboard, auto, code }
 
 extension InjectionModeLabel on InjectionMode {
   String get label => switch (this) {
     InjectionMode.keyboard => 'Keyboard',
     InjectionMode.clipboard => 'Clipboard',
     InjectionMode.auto => 'Auto',
+    InjectionMode.code => 'Code',
   };
 
   String get wireName => switch (this) {
     InjectionMode.keyboard => 'keyboard',
     InjectionMode.clipboard => 'clipboard',
     InjectionMode.auto => 'auto',
+    InjectionMode.code => 'code',
   };
 }
 

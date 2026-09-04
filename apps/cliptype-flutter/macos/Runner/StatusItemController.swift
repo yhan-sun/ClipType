@@ -125,6 +125,7 @@ final class StatusItemController {
         switch mode {
         case CT_BRIDGE_MODE_KEYBOARD: return text(english: "Keyboard", chinese: "键盘")
         case CT_BRIDGE_MODE_CLIPBOARD: return text(english: "Clipboard", chinese: "剪贴板")
+        case CT_BRIDGE_MODE_CODE: return text(english: "Code", chinese: "代码")
         default: return text(english: "Auto", chinese: "自动")
         }
     }

@@ -339,6 +339,7 @@ fn settings_from_window(
         0 => InjectionMode::Keyboard,
         1 => InjectionMode::Clipboard,
         2 => InjectionMode::Auto,
+        3 => InjectionMode::Code,
         _ => return Err("Invalid injection mode."),
     };
     let threshold = usize::try_from(window.get_auto_threshold())
@@ -504,6 +505,7 @@ fn set_settings(
         InjectionMode::Keyboard => 0,
         InjectionMode::Clipboard => 1,
         InjectionMode::Auto => 2,
+        InjectionMode::Code => 3,
     });
     window.set_characters_per_second(i32::from(settings.characters_per_second));
     window.set_jitter_percent(i32::from(settings.jitter_percent));

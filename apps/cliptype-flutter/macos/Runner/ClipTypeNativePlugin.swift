@@ -132,6 +132,7 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
             switch snapshot.mode {
             case CT_BRIDGE_MODE_KEYBOARD: mode = "keyboard"
             case CT_BRIDGE_MODE_CLIPBOARD: mode = "clipboard"
+            case CT_BRIDGE_MODE_CODE: mode = "code"
             default: mode = "auto"
             }
         } else {
@@ -448,6 +449,7 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         switch mode {
         case CT_BRIDGE_MODE_KEYBOARD: return "keyboard"
         case CT_BRIDGE_MODE_CLIPBOARD: return "clipboard"
+        case CT_BRIDGE_MODE_CODE: return "code"
         default: return "auto"
         }
     }
@@ -470,6 +472,7 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         case "keyboard": return Int32(CT_BRIDGE_MODE_KEYBOARD)
         case "clipboard": return Int32(CT_BRIDGE_MODE_CLIPBOARD)
         case "auto": return Int32(CT_BRIDGE_MODE_AUTO)
+        case "code": return Int32(CT_BRIDGE_MODE_CODE)
         default: return nil
         }
     }

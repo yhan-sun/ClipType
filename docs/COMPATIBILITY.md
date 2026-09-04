@@ -71,7 +71,7 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 
 ### Rich clipboard formats
 
-Clipboard mode leaves all formats unchanged and invokes ordinary paste. Rich targets may prefer HTML, RTF, image, or application-specific formats already present beside `CF_UNICODETEXT`. Use keyboard mode when Unicode text-event semantics are required.
+Clipboard and Code modes leave all formats unchanged and invoke ordinary paste. Rich targets may prefer HTML, RTF, image, or application-specific formats already present beside `CF_UNICODETEXT`. Use keyboard mode when Unicode text-event semantics are required; use Code mode when an editor's per-character pair completion or auto-indent must not duplicate the copied block.
 
 ### Remote and virtual desktops
 

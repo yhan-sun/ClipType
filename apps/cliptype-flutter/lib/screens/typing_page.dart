@@ -80,6 +80,10 @@ class _TypingPageState extends State<TypingPage> {
             },
           ),
         ),
+        if (_draft.mode == InjectionMode.code) ...[
+          const SizedBox(height: 12),
+          SettingCard(child: Text(l10n.codeModeSubtitle)),
+        ],
         const SizedBox(height: 16),
         SettingCard(
           title: l10n.humanPacedControls,

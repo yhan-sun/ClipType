@@ -132,15 +132,19 @@ class ClipTypeLocalizations {
       _text('Trigger and Cancel must be different.', '触发和取消快捷键必须不同。');
 
   String get typingDescription => _text(
-    'Rust freezes one backend and one immutable settings snapshot per session. Explicit Keyboard and Clipboard choices never silently fall back.',
-    'Rust 会为每个会话冻结一个后端和一份不可变设置快照。明确选择 Keyboard 或 Clipboard 时不会静默切换。',
+    'Rust freezes one backend and one immutable settings snapshot per session. Explicit Keyboard, Clipboard, and Code choices never silently fall back.',
+    'Rust 会为每个会话冻结一个后端和一份不可变设置快照。明确选择 Keyboard、Clipboard 或 Code 时不会静默切换。',
   );
   String get deliveryMode => _text('Delivery mode', '传输模式');
   String get humanPacedControls =>
       _text('Human-paced keyboard controls', '模拟键入控制');
   String get keyboardControlsSubtitle => _text(
-    'These controls affect Keyboard mode. Clipboard paste remains one bounded Command+V action.',
-    '这些控制项只影响 Keyboard 模式。Clipboard 粘贴仍是一次有界的 Command+V 操作。',
+    'These controls affect Keyboard mode. Clipboard and Code remain one bounded Command+V action.',
+    '这些控制项只影响 Keyboard 模式。Clipboard 和 Code 仍是一次有界的 Command+V 操作。',
+  );
+  String get codeModeSubtitle => _text(
+    'Code mode uses one revision-guarded paste for the whole block. It preserves (), {}, [], quotes, line breaks, and existing indentation without triggering per-character auto-pair or auto-indent handlers.',
+    'Code 模式会对整段代码执行一次带版本保护的粘贴，保留 ()、{}、[]、引号、换行和原有缩进，避免逐字符触发编辑器的括号补全和自动缩进。',
   );
   String get charactersPerSecond => _text('Characters per second', '每秒字符数');
   String get charactersPerSecondHelper =>
@@ -217,6 +221,7 @@ class ClipTypeLocalizations {
     InjectionMode.keyboard => _text('Keyboard', '键盘'),
     InjectionMode.clipboard => _text('Clipboard', '剪贴板'),
     InjectionMode.auto => _text('Auto', '自动'),
+    InjectionMode.code => _text('Code', '代码'),
   };
 
   String phaseLabel(SessionPhase phase) => switch (phase) {
@@ -229,6 +234,7 @@ class ClipTypeLocalizations {
   String backendLabel(String? backend) => switch (backend) {
     'keyboard' => modeLabel(InjectionMode.keyboard),
     'clipboard' => modeLabel(InjectionMode.clipboard),
+    'code' => modeLabel(InjectionMode.code),
     _ => _text('Unknown', '未知'),
   };
 

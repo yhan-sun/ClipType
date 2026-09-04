@@ -59,6 +59,11 @@ configured threshold remains the size crossover for otherwise ASCII-safe
 text; Auto may use the bounded Unicode keyboard path when guarded paste is
 unavailable.
 
+Code mode is the explicit choice for source code and structured text. It uses
+one revision-guarded Command+V for the complete clipboard block, preserving
+delimiters, line breaks, and existing indentation instead of triggering an
+editor's per-character bracket completion or auto-indent behavior.
+
 The bridge carries bounded settings, commands, enum categories, and counters
 only. It never carries clipboard text, injected text, focused values, window
 titles, key history, or content fingerprints. The local shortcut recorder is

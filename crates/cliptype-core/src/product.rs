@@ -14,6 +14,9 @@ pub enum InjectionMode {
     Clipboard,
     #[default]
     Auto,
+    /// Paste the current clipboard as one guarded code block so editor
+    /// auto-pair and auto-indent handlers do not process each character.
+    Code,
 }
 
 /// Backend selected immutably for one session.
@@ -21,6 +24,7 @@ pub enum InjectionMode {
 pub enum InjectionBackend {
     Keyboard,
     Clipboard,
+    Code,
 }
 
 /// Non-zero semantic-element threshold at which `auto` prefers clipboard paste.
@@ -160,6 +164,7 @@ impl fmt::Debug for ClipboardPlan {
 pub enum InjectionPlan {
     Keyboard(KeyboardPlan),
     Clipboard(ClipboardPlan),
+    Code(ClipboardPlan),
 }
 
 impl InjectionPlan {
@@ -167,13 +172,14 @@ impl InjectionPlan {
         match self {
             Self::Keyboard(_) => InjectionBackend::Keyboard,
             Self::Clipboard(_) => InjectionBackend::Clipboard,
+            Self::Code(_) => InjectionBackend::Code,
         }
     }
 
     pub fn element_count(&self) -> SemanticElementCount {
         match self {
             Self::Keyboard(plan) => plan.text().element_count(),
-            Self::Clipboard(plan) => plan.element_count(),
+            Self::Clipboard(plan) | Self::Code(plan) => plan.element_count(),
         }
     }
 }
@@ -183,6 +189,7 @@ impl fmt::Debug for InjectionPlan {
         match self {
             Self::Keyboard(plan) => formatter.debug_tuple("Keyboard").field(plan).finish(),
             Self::Clipboard(plan) => formatter.debug_tuple("Clipboard").field(plan).finish(),
+            Self::Code(plan) => formatter.debug_tuple("Code").field(plan).finish(),
         }
     }
 }
@@ -250,6 +257,10 @@ pub fn build_injection_plan(
         InjectionMode::Clipboard => {
             require_clipboard(capabilities, revision_available)?;
             Ok(InjectionPlan::Clipboard(ClipboardPlan { elements }))
+        }
+        InjectionMode::Code => {
+            require_clipboard(capabilities, revision_available)?;
+            Ok(InjectionPlan::Code(ClipboardPlan { elements }))
         }
         InjectionMode::Auto => {
             let clipboard_available = clipboard_is_available(capabilities, revision_available);
@@ -435,6 +446,42 @@ mod tests {
                 unavailable_keyboard,
             ),
             Err(ProductPlanError::Keyboard(_))
+        ));
+    }
+
+    #[test]
+    fn code_mode_uses_guarded_paste_for_short_ascii_code() {
+        let unavailable_keyboard = ProductCapabilities {
+            keyboard: PlanCapabilities {
+                unicode_text: CapabilityState::Unavailable,
+                line_break: CapabilityState::Unavailable,
+                tab: CapabilityState::Unavailable,
+                modifier_observation: CapabilityState::Unavailable,
+            },
+            ..capabilities()
+        };
+        let plan = build_injection_plan(
+            SensitiveText::new("if (items[0] == '{') {\n\treturn {};\n}".to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            unavailable_keyboard,
+        )
+        .expect("Code mode only needs the guarded paste capabilities");
+
+        assert_eq!(plan.backend(), InjectionBackend::Code);
+        assert!(matches!(plan, InjectionPlan::Code(_)));
+    }
+
+    #[test]
+    fn code_mode_requires_a_known_clipboard_revision() {
+        assert!(matches!(
+            build_injection_plan(
+                SensitiveText::new("fn main() {}".to_owned()),
+                false,
+                config(InjectionMode::Code, 256),
+                capabilities(),
+            ),
+            Err(ProductPlanError::ClipboardRevisionUnavailable)
         ));
     }
 

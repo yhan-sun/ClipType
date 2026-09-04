@@ -55,9 +55,15 @@ Accepted values:
 
 - `"keyboard"` — bounded Unicode-oriented keyboard actions;
 - `"clipboard"` — one revision-guarded ordinary paste command;
+- `"code"` — one revision-guarded whole-block paste for source code and
+  structured text;
 - `"auto"` — freeze one eligible backend from payload size and capabilities.
 
 Explicit modes do not silently fall back. Clipboard mode requires both Paste and a known content-blind revision witness. Auto uses clipboard only when both are fully available.
+
+Code mode requires the same Paste and revision capabilities as Clipboard mode.
+It preserves the clipboard's delimiters, line breaks, and indentation and does
+not emit per-character keyboard, Return, Tab, or typo-correction actions.
 
 ### `auto_clipboard_threshold`
 
@@ -87,7 +93,7 @@ Independent bounded timing jitter from 0 through 95 percent. Jitter is sampled f
 
 An opt-in corrected-typo probability from 0 through 25 percent. The default is 0. Eligible ASCII characters may be replaced by a US-QWERTY adjacent character, followed by Backspace and the intended character. CJK, emoji, combining marks, whitespace, line breaks, and Tab are never mutated.
 
-Do not enable typo simulation for passwords, source code, terminals, commands, identifiers, checksums, or exact-data entry. Clipboard mode never applies typo simulation.
+Do not enable typo simulation for passwords, source code, terminals, commands, identifiers, checksums, or exact-data entry. Clipboard and Code modes never apply typo simulation.
 
 ### `notifications`
 
