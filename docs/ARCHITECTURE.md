@@ -69,7 +69,10 @@ cursor-right action so the destination editor's already-generated pair is
 skipped. Python-style triple-quoted runs (`"""` and `'''`) are emitted as
 explicit atoms at both boundaries and never use cursor-right because editors
 do not reliably generate their three-character closing pair. Brackets and
-quotes inside recognized strings and comments remain literal. Markdown
+quotes inside recognized strings and comments remain literal. If the
+destination editor also generates ordinary bracket pairs inside a normal
+single- or double-quoted string, the plan tracks and consumes those generated
+closers before the string boundary, preserving source order. Markdown
 triple-backtick fences are emitted literally and do not put the lexer into
 backtick-string state, so pair handling continues for code between the fences.
 The plan requires keyboard and cursor-right capabilities and never uses

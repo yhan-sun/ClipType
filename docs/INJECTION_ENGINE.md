@@ -27,8 +27,11 @@ There must not be two competing live state machines in core and app.
   both boundaries because editors do not reliably synthesize a skippable
   three-character pair. Markdown triple-backtick fences are also typed
   literally; code inside a fence remains subject to normal Code-mode pair
-  handling. Recognized strings and comments remain literal; no clipboard
-  revision witness is used.
+  handling. Ordinary brackets inside a normal single- or double-quoted string
+  are kept in the pair queue too, so any generated inner closers are consumed
+  before the string boundary;
+  their source characters remain literal. Recognized comments remain literal;
+  no clipboard revision witness is used.
 - `auto`: capability/target/Unicode-shape/size-based selection. Non-ASCII text prefers a revision-guarded paste when available; the configured threshold remains the size crossover for otherwise keyboard-friendly text.
 
 ## Trigger order

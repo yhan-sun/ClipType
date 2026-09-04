@@ -522,8 +522,8 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                         && has_scalar_run(atoms, index, value, quote.length()) =>
                 {
                     // Triple-quoted strings are not treated as an editor-generated
-                    // pair. Type both boundaries explicitly, then resume normal
-                    // pair handling after the closing run.
+                    // pair. Type both boundaries and the body explicitly, then
+                    // resume normal pair handling after the closing run.
                     push_quote_run(&mut actions, quote);
                     if pair_stack.last() == Some(&Pair::Quote(quote)) {
                         pair_stack.pop();
@@ -533,7 +533,27 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                     index = index.saturating_add(quote.length());
                     continue;
                 }
+                TextAtom::Scalar(value) if !quote.is_triple() && opening_pair(value).is_some() => {
+                    // Some editors also auto-complete brackets typed inside a
+                    // string. Keep those generated closers in the same logical
+                    // stack so a later source closer or string boundary can
+                    // consume them with CursorRight.
+                    actions.push(CodeAction::Atom(atom));
+                    pair_stack.push(Pair::Bracket(opening_pair(value).expect("checked above")));
+                    line_start = false;
+                }
+                TextAtom::Scalar(value)
+                    if !quote.is_triple() && pair_stack.last() == Some(&Pair::Bracket(value)) =>
+                {
+                    pair_stack.pop();
+                    actions.push(CodeAction::CursorRight);
+                    line_start = false;
+                }
                 TextAtom::Scalar(value) if !quote.is_triple() && value == quote.delimiter() => {
+                    // A bracket such as the `{` in `"{"` can be auto-completed
+                    // before the editor's generated quote. Move over all such
+                    // generated closers first, then move over the quote.
+                    flush_string_bracket_pairs(&mut actions, &mut pair_stack);
                     if pair_stack.last() == Some(&Pair::Quote(quote)) {
                         pair_stack.pop();
                         actions.push(CodeAction::CursorRight);
@@ -558,6 +578,13 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
     }
 
     actions
+}
+
+fn flush_string_bracket_pairs(actions: &mut Vec<CodeAction>, pair_stack: &mut Vec<Pair>) {
+    while matches!(pair_stack.last(), Some(Pair::Bracket(_))) {
+        pair_stack.pop();
+        actions.push(CodeAction::CursorRight);
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -836,7 +863,7 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(action, super::CodeAction::CursorRight))
                 .count(),
-            5
+            6
         );
         assert_eq!(
             plan.actions()
@@ -844,6 +871,38 @@ mod tests {
                 .filter(|action| matches!(action, super::CodeAction::Atom(crate::TextAtom::Tab)))
                 .count(),
             0
+        );
+    }
+
+    #[test]
+    fn code_mode_consumes_string_brackets_before_quote_and_paren_boundaries() {
+        let plan = build_injection_plan(
+            SensitiveText::new(r#"if (value[0] == "{") {"#.to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("Code mode needs the keyboard code capabilities");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        let first_quote = plan
+            .actions()
+            .iter()
+            .position(|action| *action == super::CodeAction::Atom(crate::TextAtom::Scalar('"')))
+            .expect("string opener");
+        assert_eq!(
+            &plan.actions()[first_quote..first_quote.saturating_add(7)],
+            &[
+                super::CodeAction::Atom(crate::TextAtom::Scalar('"')),
+                super::CodeAction::Atom(crate::TextAtom::Scalar('{')),
+                super::CodeAction::CursorRight,
+                super::CodeAction::CursorRight,
+                super::CodeAction::CursorRight,
+                super::CodeAction::Atom(crate::TextAtom::Scalar(' ')),
+                super::CodeAction::Atom(crate::TextAtom::Scalar('{')),
+            ]
         );
     }
 
@@ -991,7 +1050,7 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(action, super::CodeAction::CursorRight))
                 .count(),
-            1
+            3
         );
     }
 

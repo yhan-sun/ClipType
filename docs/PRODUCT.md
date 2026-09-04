@@ -46,7 +46,10 @@ active inside them. It assumes the destination editor's ordinary auto-pair and
 auto-indent behavior is enabled. Code actions are dispatched in source order
 with a short bounded settle interval so asynchronous editor auto-pair and
 auto-indent updates are not overtaken by the next action. It does not read
-target content or claim editor-specific formatting semantics.
+target content or claim editor-specific formatting semantics. Ordinary
+brackets generated inside a normal single- or double-quoted string are also
+consumed in source order before the string boundary; the source characters
+remain literal.
 
 ### Auto
 
