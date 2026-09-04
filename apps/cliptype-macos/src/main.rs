@@ -87,7 +87,7 @@ mod macos_host {
         quitting: bool,
     }
 
-    pub fn run() -> Result<(), HostError> {
+    pub(super) fn run() -> Result<(), HostError> {
         initialize_application();
 
         let store = SettingsStore::new(settings_path()?);
