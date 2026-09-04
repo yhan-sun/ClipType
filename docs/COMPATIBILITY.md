@@ -49,7 +49,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
-| `code` | Sends bounded keyboard actions, skips leading indentation, and uses cursor-right for matching auto-generated delimiters/quotes. It assumes editor auto-pair and auto-indent are enabled. |
+| `code` | Sends bounded keyboard actions, skips leading indentation, and uses cursor-right for matching auto-generated ordinary delimiters/quotes. Python-style triple-quoted boundaries (`"""`, `'''`) and Markdown triple-backtick fences are typed explicitly. It assumes editor auto-pair and auto-indent are enabled for ordinary pairs. |
 | `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
@@ -74,7 +74,10 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 
 Clipboard mode leaves all formats unchanged and invokes ordinary paste. Code
 mode uses Unicode keyboard events and cursor-right actions, so it is intended
-for text editors with auto-pair and auto-indent enabled. Rich targets may
+for text editors with ordinary auto-pair and auto-indent enabled. Python-style
+triple-quoted boundaries are sent explicitly because they are not reliably
+auto-completed; Markdown triple-backtick fences are literal boundaries and
+pair handling continues inside them. Rich targets may
 prefer HTML, RTF, image, or application-specific formats already present beside
 `CF_UNICODETEXT`; use Clipboard mode for those formats.
 

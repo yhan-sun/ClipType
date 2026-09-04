@@ -1,6 +1,6 @@
 # ADR-0014: Code mode uses keyboard-aware editor pairs
 
-- Status: Accepted
+- Status: Superseded by ADR-0016
 - Date: 2026-09-04
 - Scope: shared injection policy and keyboard ports
 - Supersedes: ADR-0013

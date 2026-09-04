@@ -4,7 +4,7 @@ This note records the release-blocking keyboard contract implemented for issue #
 
 ## Scope
 
-The keyboard backend turns normalized clipboard text into a bounded sequence of semantic typing actions. Each action is dispatched separately and is paced independently. Code mode uses the same keyboard boundary with code-aware indentation and pair actions; Clipboard-paste mode is unchanged and never uses humanized typo simulation.
+The keyboard backend turns normalized clipboard text into a bounded sequence of semantic typing actions. Each action is dispatched separately and is paced independently. Code mode uses the same keyboard boundary with code-aware indentation, ordinary pair actions, and explicit Python-style triple-quote actions; Clipboard-paste mode is unchanged and never uses humanized typo simulation.
 
 ## Required invariants
 

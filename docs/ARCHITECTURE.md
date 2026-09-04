@@ -66,13 +66,19 @@ text, drops leading spaces and Tabs at the start of each normal-code line, and
 emits a bounded action sequence. Opening `()`, `{}`, `[]`, and quote
 delimiters are typed normally; a matching closer or quote is represented as a
 cursor-right action so the destination editor's already-generated pair is
-skipped. Brackets and quotes inside recognized strings and comments remain
-literal. The plan requires keyboard and cursor-right capabilities and never
-uses clipboard paste or revision evidence.
+skipped. Python-style triple-quoted runs (`"""` and `'''`) are emitted as
+explicit atoms at both boundaries and never use cursor-right because editors
+do not reliably generate their three-character closing pair. Brackets and
+quotes inside recognized strings and comments remain literal. Markdown
+triple-backtick fences are emitted literally and do not put the lexer into
+backtick-string state, so pair handling continues for code between the fences.
+The plan requires keyboard and cursor-right capabilities and never uses
+clipboard paste or revision evidence.
 
 This is intentionally a destination-editor contract: Code mode assumes
-auto-pair is enabled. It cannot verify the editor's completion setting or read
-target content without violating the content-free target boundary.
+ordinary auto-pair is enabled, while triple-quoted boundaries are explicit.
+It cannot verify the editor's completion setting or read target content without
+violating the content-free target boundary.
 
 ### Auto selection
 

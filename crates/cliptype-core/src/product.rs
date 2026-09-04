@@ -164,7 +164,11 @@ impl fmt::Debug for ClipboardPlan {
 ///
 /// `CursorRight` passes over a closing delimiter or quote that the destination
 /// editor generated after the corresponding opener. The planner only reasons
-/// about the source text; it never reads destination content.
+/// about the source text; it never reads destination content. Triple-quoted
+/// delimiters are emitted as ordinary atoms because editors do not reliably
+/// synthesize a skippable three-character closing delimiter. Markdown
+/// triple-backtick fences are also emitted as literal atoms and do not enter
+/// quote state.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CodeAction {
     Atom(TextAtom),
@@ -393,7 +397,7 @@ enum CodeLexState {
     Normal,
     LineComment,
     BlockComment { closing: bool },
-    String { delimiter: char, escaped: bool },
+    String { quote: QuoteKind, escaped: bool },
 }
 
 fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
@@ -401,13 +405,16 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
     let mut state = CodeLexState::Normal;
     let mut pair_stack = Vec::with_capacity(atoms.len().min(32));
     let mut line_start = true;
+    let mut index = 0;
 
-    for (index, atom) in atoms.iter().copied().enumerate() {
+    while index < atoms.len() {
+        let atom = atoms[index];
         let next = atoms.get(index.saturating_add(1)).copied();
 
         match state {
             CodeLexState::Normal => {
                 if line_start && is_code_indentation(atom) {
+                    index = index.saturating_add(1);
                     continue;
                 }
 
@@ -429,14 +436,26 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                             actions.push(CodeAction::Atom(atom));
                             state = CodeLexState::BlockComment { closing: false };
                             line_start = false;
-                        } else if let Some(delimiter) = quote_delimiter(value) {
-                            actions.push(CodeAction::Atom(atom));
-                            pair_stack.push(Pair::Quote(delimiter));
+                        } else if let Some(fence_length) =
+                            markdown_fence_length(atoms, index, value)
+                        {
+                            // Markdown fences are delimiters, not backtick
+                            // strings. Keep their fence atoms literal so code
+                            // inside the fence remains pair-aware.
+                            push_scalar_run(&mut actions, value, fence_length);
+                            line_start = false;
+                            index = index.saturating_add(fence_length);
+                            continue;
+                        } else if let Some(quote) = quote_kind_at(atoms, index, value) {
+                            push_quote_run(&mut actions, quote);
+                            pair_stack.push(Pair::Quote(quote));
                             state = CodeLexState::String {
-                                delimiter,
+                                quote,
                                 escaped: false,
                             };
                             line_start = false;
+                            index = index.saturating_add(quote.length());
+                            continue;
                         } else if let Some(expected) = opening_pair(value) {
                             actions.push(CodeAction::Atom(atom));
                             pair_stack.push(Pair::Bracket(expected));
@@ -480,11 +499,11 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                     }
                 }
             }
-            CodeLexState::String { delimiter, escaped } => match atom {
+            CodeLexState::String { quote, escaped } => match atom {
                 TextAtom::Scalar(_) if escaped => {
                     actions.push(CodeAction::Atom(atom));
                     state = CodeLexState::String {
-                        delimiter,
+                        quote,
                         escaped: false,
                     };
                     line_start = false;
@@ -492,13 +511,30 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                 TextAtom::Scalar('\\') => {
                     actions.push(CodeAction::Atom(atom));
                     state = CodeLexState::String {
-                        delimiter,
+                        quote,
                         escaped: true,
                     };
                     line_start = false;
                 }
-                TextAtom::Scalar(value) if value == delimiter => {
-                    if pair_stack.last() == Some(&Pair::Quote(delimiter)) {
+                TextAtom::Scalar(value)
+                    if quote.is_triple()
+                        && value == quote.delimiter()
+                        && has_scalar_run(atoms, index, value, quote.length()) =>
+                {
+                    // Triple-quoted strings are not treated as an editor-generated
+                    // pair. Type both boundaries explicitly, then resume normal
+                    // pair handling after the closing run.
+                    push_quote_run(&mut actions, quote);
+                    if pair_stack.last() == Some(&Pair::Quote(quote)) {
+                        pair_stack.pop();
+                    }
+                    state = CodeLexState::Normal;
+                    line_start = false;
+                    index = index.saturating_add(quote.length());
+                    continue;
+                }
+                TextAtom::Scalar(value) if !quote.is_triple() && value == quote.delimiter() => {
+                    if pair_stack.last() == Some(&Pair::Quote(quote)) {
                         pair_stack.pop();
                         actions.push(CodeAction::CursorRight);
                     } else {
@@ -517,6 +553,8 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
                 }
             },
         }
+
+        index = index.saturating_add(1);
     }
 
     actions
@@ -525,7 +563,32 @@ fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pair {
     Bracket(char),
-    Quote(char),
+    Quote(QuoteKind),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QuoteKind {
+    Single(char),
+    Triple(char),
+}
+
+impl QuoteKind {
+    const fn delimiter(self) -> char {
+        match self {
+            Self::Single(delimiter) | Self::Triple(delimiter) => delimiter,
+        }
+    }
+
+    const fn length(self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Triple(_) => 3,
+        }
+    }
+
+    const fn is_triple(self) -> bool {
+        matches!(self, Self::Triple(_))
+    }
 }
 
 const fn is_code_indentation(atom: TextAtom) -> bool {
@@ -545,6 +608,56 @@ const fn quote_delimiter(value: char) -> Option<char> {
     match value {
         '\'' | '"' | '`' => Some(value),
         _ => None,
+    }
+}
+
+fn quote_kind_at(atoms: &[TextAtom], index: usize, value: char) -> Option<QuoteKind> {
+    let delimiter = quote_delimiter(value)?;
+    if supports_triple_quote(delimiter) && has_scalar_run(atoms, index, delimiter, 3) {
+        Some(QuoteKind::Triple(delimiter))
+    } else {
+        Some(QuoteKind::Single(delimiter))
+    }
+}
+
+const fn supports_triple_quote(value: char) -> bool {
+    matches!(value, '\'' | '"')
+}
+
+fn has_scalar_run(atoms: &[TextAtom], start: usize, value: char, length: usize) -> bool {
+    atoms
+        .get(start..start.saturating_add(length))
+        .map(|run| run.iter().all(|atom| *atom == TextAtom::Scalar(value)))
+        .unwrap_or(false)
+}
+
+fn scalar_run_length(atoms: &[TextAtom], start: usize, value: char) -> usize {
+    atoms
+        .get(start..)
+        .map(|run| {
+            run.iter()
+                .take_while(|atom| **atom == TextAtom::Scalar(value))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn markdown_fence_length(atoms: &[TextAtom], start: usize, value: char) -> Option<usize> {
+    if value != '`' {
+        return None;
+    }
+
+    let length = scalar_run_length(atoms, start, value);
+    (length >= 3).then_some(length)
+}
+
+fn push_quote_run(actions: &mut Vec<CodeAction>, quote: QuoteKind) {
+    push_scalar_run(actions, quote.delimiter(), quote.length());
+}
+
+fn push_scalar_run(actions: &mut Vec<CodeAction>, value: char, length: usize) {
+    for _ in 0..length {
+        actions.push(CodeAction::Atom(TextAtom::Scalar(value)));
     }
 }
 
@@ -731,6 +844,90 @@ mod tests {
                 .filter(|action| matches!(action, super::CodeAction::Atom(crate::TextAtom::Tab)))
                 .count(),
             0
+        );
+    }
+
+    #[test]
+    fn code_mode_types_triple_quote_delimiters_explicitly() {
+        for source in [
+            "const doc = \"\"\"hello\"\"\";",
+            "const doc = \"\"\"it's fine\"\"\";",
+            "const doc = '''hello''';",
+            "const doc = '''it's fine''';",
+        ] {
+            let plan = build_injection_plan(
+                SensitiveText::new(source.to_owned()),
+                true,
+                config(InjectionMode::Code, 256),
+                capabilities(),
+            )
+            .expect("triple-quoted source is supported");
+            let InjectionPlan::Code(plan) = plan else {
+                panic!("Code mode must produce a Code plan");
+            };
+
+            let expected: Vec<_> = source
+                .chars()
+                .map(|value| super::CodeAction::Atom(crate::TextAtom::Scalar(value)))
+                .collect();
+            assert_eq!(plan.actions(), expected.as_slice());
+        }
+    }
+
+    #[test]
+    fn code_mode_keeps_triple_quoted_body_indentation() {
+        let source = "const doc = \"\"\"\n  body\n\"\"\";";
+        let plan = build_injection_plan(
+            SensitiveText::new(source.to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("multiline triple-quoted source is supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        let expected: Vec<_> = source
+            .chars()
+            .map(|value| match value {
+                '\n' => super::CodeAction::Atom(crate::TextAtom::LineBreak),
+                '\t' => super::CodeAction::Atom(crate::TextAtom::Tab),
+                value => super::CodeAction::Atom(crate::TextAtom::Scalar(value)),
+            })
+            .collect();
+        assert_eq!(plan.actions(), expected.as_slice());
+    }
+
+    #[test]
+    fn code_mode_keeps_markdown_fences_literal_and_parses_code_inside() {
+        let plan = build_injection_plan(
+            SensitiveText::new("```cpp\nif (x) {\n    return;\n}\n```".to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("fenced source is supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(
+                    action,
+                    super::CodeAction::Atom(crate::TextAtom::Scalar('`'))
+                ))
+                .count(),
+            6
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRight))
+                .count(),
+            2
         );
     }
 

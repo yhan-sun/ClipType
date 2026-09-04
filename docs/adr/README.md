@@ -56,5 +56,6 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0011`](0011-unicode-first-auto-selection.md) — Non-ASCII Auto selection prefers revision-guarded paste before the size threshold.
 - [`ADR-0012`](0012-flutter-sole-macos-frontend.md) — Remove the legacy macOS Slint composition root and keep Flutter as the sole macOS front end.
 - [`ADR-0013`](0013-code-mode-guarded-paste.md) — Superseded whole-block paste decision for Code mode.
-- [`ADR-0014`](0014-code-mode-keyboard-pair-aware.md) — Use keyboard code actions that delegate indentation and auto-pairing to the destination editor.
+- [`ADR-0014`](0014-code-mode-keyboard-pair-aware.md) — Superseded keyboard code-action decision that delegates indentation and auto-pairing to the destination editor.
 - [`ADR-0015`](0015-flutter-settings-auto-save.md) — Automatically persist Flutter settings with responsive save-state feedback.
+- [`ADR-0016`](0016-code-mode-triple-quote-boundaries.md) — Type triple-quoted string boundaries explicitly in Code mode.

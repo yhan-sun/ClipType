@@ -343,6 +343,58 @@ fn code_mode_uses_keyboard_actions_and_skips_auto_pairs() {
 }
 
 #[test]
+fn code_mode_types_triple_quotes_without_cursor_right() {
+    let source = "const doc = \"\"\"hello\"\"\";";
+    let clipboard = RevisionedClipboard::stable(source, 8, 1);
+    let keyboard = CountingKeyboard::default();
+    let paste = ScriptedPaste::new([], unavailable_paste_capabilities());
+    let coordinator = coordinator(
+        clipboard,
+        StableTarget::default(),
+        keyboard.clone(),
+        GateModifiers::clear(),
+        paste,
+        config(InjectionMode::Code, 256),
+    );
+
+    start_and_wait(&coordinator);
+
+    assert_eq!(keyboard.calls(), source.chars().count());
+    assert_eq!(keyboard.cursor_right_calls(), 0);
+    assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
+    assert_eq!(
+        coordinator.status().completion,
+        Some(SessionCompletion::Finished(TerminalOutcome::Completed))
+    );
+}
+
+#[test]
+fn code_mode_keeps_markdown_fences_and_skips_pairs_inside_them() {
+    let source = "```cpp\nif (x) {\n    return;\n}\n```";
+    let clipboard = RevisionedClipboard::stable(source, 9, 1);
+    let keyboard = CountingKeyboard::default();
+    let paste = ScriptedPaste::new([], unavailable_paste_capabilities());
+    let coordinator = coordinator(
+        clipboard,
+        StableTarget::default(),
+        keyboard.clone(),
+        GateModifiers::clear(),
+        paste,
+        config(InjectionMode::Code, 256),
+    );
+
+    start_and_wait(&coordinator);
+
+    assert_eq!(keyboard.cursor_right_calls(), 2);
+    assert_eq!(keyboard.calls(), source.chars().count() - 6);
+    assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
+    assert_eq!(
+        coordinator.status().completion,
+        Some(SessionCompletion::Finished(TerminalOutcome::Completed))
+    );
+}
+
+#[test]
 fn auto_selects_keyboard_below_threshold_and_clipboard_at_threshold() {
     let short_keyboard = CountingKeyboard::default();
     let short_paste = ScriptedPaste::complete();

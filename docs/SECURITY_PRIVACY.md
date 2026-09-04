@@ -21,10 +21,13 @@ ClipType is a local, single-user, normal-integrity desktop process. It is not a 
 Clipboard mode uses the clipboard value that is already current. It never writes, clears, owns, replaces, snapshots for restoration, or restores clipboard contents.
 
 Code mode reads the current clipboard text and uses the keyboard adapter. It
-skips source indentation and emits cursor-right actions for matching pairs the
-editor is expected to have generated; it does not use Clipboard paste or a
-revision-guarded paste transaction. It does not add a second clipboard storage
-path or read destination content.
+skips source indentation and emits cursor-right actions for matching ordinary
+pairs the editor is expected to have generated. Python-style triple-quoted
+boundaries are emitted explicitly rather than assumed to be editor-generated.
+Markdown triple-backtick fences are likewise emitted literally without reading
+the fenced content. It does not use Clipboard paste or a revision-guarded paste
+transaction. It does not add a second clipboard storage path or read destination
+content.
 
 The flow is:
 
