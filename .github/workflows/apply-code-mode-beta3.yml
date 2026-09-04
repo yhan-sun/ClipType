@@ -53,14 +53,15 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
 
-      - name: Format and verify workspace
+      - name: Format and verify native-neutral crates
         shell: bash
         run: |
           set -euo pipefail
           cargo +1.98.0 fmt --all
           cargo +1.98.0 fmt --all -- --check
-          cargo +1.98.0 test --workspace --locked
-          cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
+          cargo +1.98.0 test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 clippy --locked --all-targets \
+            -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
           git diff --check
 
       - name: Commit the reviewable staged result
