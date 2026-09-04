@@ -2,7 +2,7 @@
 
 ## Current release channel
 
-ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibility promise is evidence-based and narrower than “all Windows applications.”
+ClipType `v0.2.0-beta.3` is the current prerelease candidate. Windows x86_64 remains the primary beta channel, with an additive macOS arm64 testing preview. Under the current explicit maintainer authorization, this narrowly labelled prerelease may be published after its exact-head automated gates pass. Physical evidence remains required before expanding named-application, Accessibility, or general macOS compatibility claims. The compatibility promise is evidence-based and narrower than “all applications.”
 
 ## Supported Windows environments
 
@@ -20,17 +20,18 @@ ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibil
 
 ## macOS Apple Silicon testing preview
 
-The P4 local candidate is restricted to an interactive Apple Silicon Mac:
+The P4 candidate is restricted to an interactive Apple Silicon Mac:
 
 | Environment | Support level | Evidence and conditions |
 |---|---|---|
-| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.2` includes a clearly labelled arm64 Flutter preview. The settings shell, Swift/AppKit status item, Carbon hot-key registration, Rust bridge, and arm64 packaging are locally exercised. Accessibility permission and target-application behavior remain separate physical evidence gates. |
+| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.3` carries a clearly labelled arm64 Flutter preview. The exact-main workflow builds, ad-hoc signs, installs `/Applications/ClipType.app`, launch-smokes it, verifies arm64 bundle/ZIP/DMG integrity, and attaches the assets additively. Accessibility permission and real target-application behavior remain separate physical evidence gates. |
 | macOS x86_64 or Rosetta | **Not supported by P4** | No x86_64 build, Universal 2 artifact, or Rosetta claim is made. |
 | Signed/notarized public macOS distribution | **Not provided by P4** | The attached preview is ad-hoc signed and has no Developer ID/notarization evidence. |
 
-P4 does not claim Chinese/Unicode delivery, named-application compatibility,
-permission grant/revocation, conflict rollback, cancellation latency, or
-trigger latency until those physical cases are present in an exact-SHA report.
+P4 does not claim named-application compatibility, persistent Accessibility
+grant/revocation behavior, conflict rollback, cancellation latency, trigger
+latency, or a successful human VS Code/Monaco session until those physical
+cases are present in an exact-release report.
 
 ## Application compatibility
 
@@ -49,7 +50,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
-| `code` | Sends bounded keyboard actions, skips leading indentation, and uses cursor-right for matching auto-generated ordinary delimiters/quotes. Python-style triple-quoted boundaries (`"""`, `'''`) and Markdown triple-backtick fences are typed explicitly. It assumes editor auto-pair and auto-indent are enabled for ordinary pairs. |
+| `code` | Separate keyboard-only backend; Paste is unavailable by design. Pair-aware behavior is limited to `()`, `{}`, `[]`, `""`, and `''`. Matching source closers skip editor-generated closers; line-leading closers, including after `//` comments, cross the editor-generated closing line without a duplicate Return. Brackets in strings/comments, triple quotes, Markdown fences, and single backticks are literal. It assumes ordinary auto-pair and auto-indent are enabled. |
 | `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
@@ -60,7 +61,15 @@ A normal-integrity ClipType process does not inject into a higher-integrity appl
 
 ### Focus evidence
 
-ClipType captures and revalidates non-content destination evidence. Native controls can usually be distinguished. Applications that host multiple logical fields inside one shared render surface may expose only a top-level/render-host identity. In that case ClipType does not claim an exact logical-field or caret guarantee.
+ClipType captures and revalidates non-content destination evidence. Native
+controls can usually be distinguished. On macOS, an initial `AXWebArea`
+classification selects a sticky frontmost-process plus focused-window policy,
+so repeated Monaco focus-node replacement in the same window, including a
+temporarily unclassified replacement node, does not look like a target switch.
+Switching process/window or losing stable window evidence still stops before
+the next action. Multiple logical fields inside one shared render surface may
+remain indistinguishable, so ClipType does not claim an exact logical-field or
+caret guarantee there.
 
 ### Terminals and operational input
 
@@ -73,13 +82,14 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 ### Rich clipboard formats
 
 Clipboard mode leaves all formats unchanged and invokes ordinary paste. Code
-mode uses Unicode keyboard events and cursor-right actions, so it is intended
-for text editors with ordinary auto-pair and auto-indent enabled. Python-style
-triple-quoted boundaries are sent explicitly because they are not reliably
-auto-completed; Markdown triple-backtick fences are literal boundaries and
-pair handling continues inside them. Rich targets may
-prefer HTML, RTF, image, or application-specific formats already present beside
-`CF_UNICODETEXT`; use Clipboard mode for those formats.
+mode uses only Unicode keyboard/key-navigation events and is intended for text
+editors with ordinary auto-pair and auto-indent enabled. Its pair grammar is
+limited to `()`, `{}`, `[]`, `""`, and `''`; string/comment brackets and
+single backticks are literal, while triple-quoted boundaries are sent
+explicitly. Markdown fences are literal boundaries and pair handling continues
+inside them. Rich targets may prefer HTML, RTF, image, or application-specific
+formats already present beside `CF_UNICODETEXT`; use Clipboard mode for those
+formats.
 
 ### Remote and virtual desktops
 
@@ -105,11 +115,14 @@ Include only content-free information:
 - Windows edition, version, build, and architecture;
 - application name/version and whether it was elevated;
 - selected backend and outcome category;
-- whether the issue involved hotkey registration, focus evidence, modifiers, clipboard revision, partial input, or destination semantics.
+- whether the issue involved target evidence, modifiers, revision, hotkey ownership, partial input, or destination semantics.
 
 Never attach real clipboard contents, credentials, private messages, focused-field contents, or raw crash dumps containing sensitive process memory.
 
+## Physical-evidence follow-up
 
-## Pre-beta regression gate
-
-The current public-beta candidate remains blocked by Issue #41 until Chinese input reliability, per-action pacing, tray controls, and a replacement exact-SHA interactive validation are complete. Earlier Issue #33 beta-ready wording is superseded and must not be used as a release authorization.
+Publishing the narrowly labelled `v0.2.0-beta.3` prerelease is not itself a
+broad compatibility claim. Issues #41 and #33 remain physical-evidence
+trackers; until an exact-release interactive report reconciles them, the
+project must not claim universal CJK keyboard behavior, completed persistent
+Accessibility onboarding, or verified real VS Code/Monaco Code-mode support.

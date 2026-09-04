@@ -20,14 +20,15 @@ ClipType is a local, single-user, normal-integrity desktop process. It is not a 
 
 Clipboard mode uses the clipboard value that is already current. It never writes, clears, owns, replaces, snapshots for restoration, or restores clipboard contents.
 
-Code mode reads the current clipboard text and uses the keyboard adapter. It
-skips source indentation and emits cursor-right actions for matching ordinary
-pairs the editor is expected to have generated. Python-style triple-quoted
-boundaries are emitted explicitly rather than assumed to be editor-generated.
-Markdown triple-backtick fences are likewise emitted literally without reading
-the fenced content. It does not use Clipboard paste or a revision-guarded paste
-transaction. It does not add a second clipboard storage path or read destination
-content.
+Code mode transiently reads the current clipboard source after an explicit
+trigger and uses only the keyboard adapter for delivery. It never invokes
+Paste, changes clipboard ownership, or creates a second clipboard storage path.
+Pair navigation is limited to `()`, `{}`, `[]`, `""`, and `''`; brackets in
+strings/comments are literal, and triple-quote boundaries are explicit.
+Markdown fences and single backticks are literal. The source exists only in the
+bounded active plan/worker lifetime and is never logged, persisted, hashed,
+transmitted, or exposed through Flutter/Swift status channels. Code mode never
+reads destination content.
 
 The flow is:
 
@@ -70,7 +71,17 @@ The intended destination is captured before plaintext acquisition. Content-free 
 
 ### Revalidation
 
-Before native dispatch, and between keyboard batches, ClipType re-captures evidence and compares it with the original. It stops when the target changed, disappeared, became ambiguous, or lost detail required by the original guarantee.
+Before native dispatch, and between keyboard actions/batches, ClipType
+re-captures evidence and compares it with the original. It stops when the
+target process/window changed, disappeared, or lost stable identity required by
+the original guarantee. On macOS, native controls require exact
+focused-element identity. An initial `AXWebArea` renderer classification
+selects a sticky same-process and same-focused-window policy for that session,
+so a rebuilt same-window node is not mistaken for a target change even if its
+later sample briefly lacks web classification. Render-host detection examines
+only supported Accessibility attribute names; it never reads DOM identifier
+values, class-list values, field values, selections, titles, or document
+content.
 
 ClipType never refocuses the old target and never redirects remaining input to a new target.
 

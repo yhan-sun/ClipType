@@ -6,12 +6,17 @@ The first public channel is the Windows x86_64 beta declared by `release/VERSION
 
 The release workflow is `.github/workflows/windows-release.yml`. It rebuilds from the exact `main` commit, re-runs workspace checks/tests/Clippy, assembles the package, creates a dependency inventory and build metadata, signs the assets, generates GitHub artifact attestations, and creates an immutable GitHub prerelease.
 
-The P4 macOS Flutter runner remains an arm64 candidate gate. Its PR/manual
-quality gate is `.github/workflows/p4-macos-arm64.yml`; that workflow does not
-publish an artifact and does not replace the separate Universal 2,
-Developer ID, notarization, and stapling requirements for a general public
-macOS release. `v0.2.0-beta.2` additionally carries a manually validated,
-clearly labelled arm64 testing preview from the exact release source.
+The P4 macOS Flutter runner remains an arm64 testing-preview gate. Its PR and
+manual quality gate is `.github/workflows/p4-macos-arm64.yml`. For a new
+`release/VERSION` merged to `main`, the same workflow rebuilds the exact merge
+commit on Apple Silicon, installs and launch-smokes
+`/Applications/ClipType.app`, packages arm64-only ZIP/DMG assets, verifies
+checksums and ad-hoc signing, and attaches the assets only after the exact tag
+and prerelease exist. It refuses existing asset names and re-downloads the
+published files for comparison. This does not replace the Universal 2,
+Developer ID, notarization, stapling, Gatekeeper, physical Accessibility, or
+real-editor requirements. `v0.2.0-beta.2` and all older releases remain
+immutable.
 
 ## Required assets
 

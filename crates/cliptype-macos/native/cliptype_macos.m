@@ -138,17 +138,89 @@ int ct_macos_open_accessibility_settings(void) {
     }
 }
 
+static int ct_ax_has_web_area_ancestor(AXUIElementRef element) {
+    if (element == NULL) return 0;
+
+    AXUIElementRef current = (AXUIElementRef)CFRetain(element);
+    for (size_t depth = 0; depth < 32 && current != NULL; depth++) {
+        CFTypeRef role = NULL;
+        AXError role_error = AXUIElementCopyAttributeValue(current, kAXRoleAttribute, &role);
+        int is_web_area = role_error == kAXErrorSuccess && role != NULL &&
+            CFGetTypeID(role) == CFStringGetTypeID() &&
+            CFEqual(role, CFSTR("AXWebArea"));
+        if (role != NULL) CFRelease(role);
+        if (is_web_area) {
+            CFRelease(current);
+            return 1;
+        }
+
+        CFTypeRef parent = NULL;
+        AXError parent_error = AXUIElementCopyAttributeValue(current, kAXParentAttribute, &parent);
+        CFRelease(current);
+        current = NULL;
+        if (parent_error != kAXErrorSuccess || parent == NULL) {
+            if (parent != NULL) CFRelease(parent);
+            break;
+        }
+        if (CFGetTypeID(parent) != AXUIElementGetTypeID()) {
+            CFRelease(parent);
+            break;
+        }
+        current = (AXUIElementRef)parent;
+    }
+
+    if (current != NULL) CFRelease(current);
+    return 0;
+}
+
+static int ct_ax_supports_web_attributes(AXUIElementRef element) {
+    if (element == NULL) return 0;
+
+    CFArrayRef names = NULL;
+    AXError error = AXUIElementCopyAttributeNames(element, &names);
+    if (error != kAXErrorSuccess || names == NULL) {
+        if (names != NULL) CFRelease(names);
+        return 0;
+    }
+
+    CFIndex count = CFArrayGetCount(names);
+    CFRange range = CFRangeMake(0, count);
+    int supports_web_attributes =
+        CFArrayContainsValue(names, range, CFSTR("AXDOMIdentifier")) ||
+        CFArrayContainsValue(names, range, CFSTR("AXDOMClassList"));
+    CFRelease(names);
+    return supports_web_attributes;
+}
+
+static int ct_ax_is_render_host_element(AXUIElementRef element) {
+    // Chromium-derived editors do not consistently expose a traversable
+    // AXParent chain for their transient focused node. Attribute-name support
+    // is a content-free fallback: it identifies a DOM-backed Accessibility
+    // element without reading its value, identifier, class list, or any other
+    // document data.
+    return ct_ax_has_web_area_ancestor(element) ||
+        ct_ax_supports_web_attributes(element);
+}
+
 int ct_macos_capture_target(
     int32_t *out_process_id,
+    uint64_t *out_window_hash,
+    int *out_window_available,
     uint64_t *out_focus_hash,
-    int *out_focus_available
+    int *out_focus_available,
+    int *out_render_host_limited
 ) {
-    if (out_process_id == NULL || out_focus_hash == NULL || out_focus_available == NULL) {
+    if (out_process_id == NULL || out_window_hash == NULL ||
+        out_window_available == NULL || out_focus_hash == NULL ||
+        out_focus_available == NULL || out_render_host_limited == NULL) {
         return 0;
     }
     *out_process_id = 0;
+    *out_window_hash = 0;
+    *out_window_available = 0;
     *out_focus_hash = 0;
     *out_focus_available = 0;
+    *out_render_host_limited = 0;
 
     @autoreleasepool {
         NSRunningApplication *application =
@@ -160,6 +232,28 @@ int ct_macos_capture_target(
 
         if (!AXIsProcessTrusted()) {
             return 1;
+        }
+
+        AXUIElementRef application_element =
+            AXUIElementCreateApplication(application.processIdentifier);
+        if (application_element != NULL) {
+            CFTypeRef window = NULL;
+            AXError window_error = AXUIElementCopyAttributeValue(
+                application_element,
+                kAXFocusedWindowAttribute,
+                &window
+            );
+            if (window_error == kAXErrorSuccess && window != NULL &&
+                CFGetTypeID(window) == AXUIElementGetTypeID()) {
+                pid_t window_pid = 0;
+                if (AXUIElementGetPid((AXUIElementRef)window, &window_pid) == kAXErrorSuccess &&
+                    window_pid == *out_process_id) {
+                    *out_window_hash = (uint64_t)CFHash(window);
+                    *out_window_available = 1;
+                }
+            }
+            if (window != NULL) CFRelease(window);
+            CFRelease(application_element);
         }
 
         AXUIElementRef system = AXUIElementCreateSystemWide();
@@ -181,6 +275,9 @@ int ct_macos_capture_target(
             focus_pid == *out_process_id) {
             *out_focus_hash = (uint64_t)CFHash(focused);
             *out_focus_available = 1;
+            if (*out_window_available != 0 && ct_ax_is_render_host_element((AXUIElementRef)focused)) {
+                *out_render_host_limited = 1;
+            }
         }
         CFRelease(focused);
         return 1;
@@ -252,6 +349,37 @@ int ct_macos_post_backspace(void) {
 
 int ct_macos_post_cursor_right(void) {
     return ct_post_balanced_key(kVK_RightArrow, 0);
+}
+
+int ct_macos_post_cursor_right_to_line_end(void) {
+    if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return 0;
+
+    // Code mode calls this only when the source closer starts a line and the
+    // editor has already placed its generated closer on the following line.
+    // Allocate the whole bounded sequence before posting any event so an
+    // allocation failure cannot leave the cursor between the two steps.
+    CGEventRef events[4] = {
+        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, true),
+        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, false),
+        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, true),
+        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, false),
+    };
+    for (size_t index = 0; index < 4; index++) {
+        if (events[index] == NULL) {
+            for (size_t release_index = 0; release_index < 4; release_index++) {
+                if (events[release_index] != NULL) CFRelease(events[release_index]);
+            }
+            return 0;
+        }
+    }
+
+    CGEventSetFlags(events[2], kCGEventFlagMaskCommand);
+    CGEventSetFlags(events[3], kCGEventFlagMaskCommand);
+    for (size_t index = 0; index < 4; index++) {
+        CGEventPost(kCGHIDEventTap, events[index]);
+        CFRelease(events[index]);
+    }
+    return 1;
 }
 
 int ct_macos_post_paste(int64_t expected_revision) {
