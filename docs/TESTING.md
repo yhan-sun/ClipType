@@ -22,7 +22,7 @@ Coverage includes:
 - strict configuration and limits;
 - Unicode normalization and line-break semantics;
 - explicit mode no-fallback and auto backend selection;
-- Code mode's keyboard actions, leading-indentation stripping, pair skipping,
+- Code mode's FIFO keyboard actions, leading-indentation stripping, pair skipping,
   explicit triple-quoted boundaries, and string/comment literal handling;
 - Auto preference for short CJK, emoji, combining, and mixed-Unicode text;
 - clipboard revision/snapshot behavior;

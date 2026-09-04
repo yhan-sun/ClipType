@@ -75,6 +75,13 @@ backtick-string state, so pair handling continues for code between the fences.
 The plan requires keyboard and cursor-right capabilities and never uses
 clipboard paste or revision evidence.
 
+The live Code-mode worker drains the immutable actions through a strict FIFO
+queue. Each native action is followed by a short cancellable settle barrier,
+which gives asynchronous editor auto-pair and auto-indent handlers time to
+update before the next source action is dispatched. This barrier does not
+inspect target text or change the behavior of Keyboard, Clipboard, or Auto
+backends.
+
 This is intentionally a destination-editor contract: Code mode assumes
 ordinary auto-pair is enabled, while triple-quoted boundaries are explicit.
 It cannot verify the editor's completion setting or read target content without

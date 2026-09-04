@@ -43,8 +43,10 @@ triple-quoted boundaries (`"""` and `'''`) are typed explicitly and do not use
 cursor-right because editors do not reliably auto-complete them. Code mode
 also types Markdown triple-backtick fences literally and keeps pair handling
 active inside them. It assumes the destination editor's ordinary auto-pair and
-auto-indent behavior is enabled; it does not read target content or claim
-editor-specific formatting semantics.
+auto-indent behavior is enabled. Code actions are dispatched in source order
+with a short bounded settle interval so asynchronous editor auto-pair and
+auto-indent updates are not overtaken by the next action. It does not read
+target content or claim editor-specific formatting semantics.
 
 ### Auto
 

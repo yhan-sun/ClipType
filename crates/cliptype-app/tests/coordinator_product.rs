@@ -10,7 +10,7 @@ use std::{
 use cliptype_app::{Coordinator, SessionCompletion, TriggerResult, WaitResult};
 use cliptype_core::{
     AutoClipboardThreshold, CapabilityState, InjectionBackend, InjectionMode, NativeEventCount,
-    PreparationFailure, ProductConfig, SensitiveText, TerminalOutcome,
+    PreparationFailure, ProductConfig, SensitiveText, TerminalOutcome, TextAtom,
 };
 use cliptype_platform::{
     ClipboardError, ClipboardPort, ClipboardRevision, DispatchResult, KeyboardCapabilities,
@@ -109,6 +109,13 @@ impl TargetPort for StableTarget {
 struct CountingKeyboard {
     calls: Arc<AtomicUsize>,
     cursor_right_calls: Arc<AtomicUsize>,
+    actions: Arc<Mutex<Vec<KeyboardAction>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyboardAction {
+    Atom(TextAtom),
+    CursorRight,
 }
 
 impl CountingKeyboard {
@@ -118,6 +125,10 @@ impl CountingKeyboard {
 
     fn cursor_right_calls(&self) -> usize {
         self.cursor_right_calls.load(Ordering::Relaxed)
+    }
+
+    fn actions(&self) -> Vec<KeyboardAction> {
+        lock(&self.actions).clone()
     }
 }
 
@@ -134,9 +145,16 @@ impl KeyboardPort for CountingKeyboard {
 
     fn dispatch(
         &self,
-        _batch: cliptype_core::TextBatch<'_>,
+        batch: cliptype_core::TextBatch<'_>,
     ) -> Result<DispatchResult, KeyboardError> {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        lock(&self.actions).push(KeyboardAction::Atom(
+            batch
+                .atoms()
+                .first()
+                .copied()
+                .expect("one atom per test action"),
+        ));
         Ok(DispatchResult::Complete {
             events: NativeEventCount::new(2),
         })
@@ -144,6 +162,7 @@ impl KeyboardPort for CountingKeyboard {
 
     fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
         self.cursor_right_calls.fetch_add(1, Ordering::Relaxed);
+        lock(&self.actions).push(KeyboardAction::CursorRight);
         Ok(DispatchResult::Complete {
             events: NativeEventCount::new(2),
         })
@@ -340,6 +359,48 @@ fn code_mode_uses_keyboard_actions_and_skips_auto_pairs() {
     assert_eq!(paste.calls(), 0);
     assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
     assert_eq!(coordinator.status().batches_completed, 24);
+}
+
+#[test]
+fn code_mode_keeps_cursor_right_in_source_order() {
+    let clipboard = RevisionedClipboard::stable("fn() { value }\nNEXT", 10, 1);
+    let keyboard = CountingKeyboard::default();
+    let paste = ScriptedPaste::new([], unavailable_paste_capabilities());
+    let coordinator = coordinator(
+        clipboard,
+        StableTarget::default(),
+        keyboard.clone(),
+        GateModifiers::clear(),
+        paste,
+        config(InjectionMode::Code, 256),
+    );
+
+    start_and_wait(&coordinator);
+
+    assert_eq!(
+        keyboard.actions(),
+        vec![
+            KeyboardAction::Atom(TextAtom::Scalar('f')),
+            KeyboardAction::Atom(TextAtom::Scalar('n')),
+            KeyboardAction::Atom(TextAtom::Scalar('(')),
+            KeyboardAction::CursorRight,
+            KeyboardAction::Atom(TextAtom::Scalar(' ')),
+            KeyboardAction::Atom(TextAtom::Scalar('{')),
+            KeyboardAction::Atom(TextAtom::Scalar(' ')),
+            KeyboardAction::Atom(TextAtom::Scalar('v')),
+            KeyboardAction::Atom(TextAtom::Scalar('a')),
+            KeyboardAction::Atom(TextAtom::Scalar('l')),
+            KeyboardAction::Atom(TextAtom::Scalar('u')),
+            KeyboardAction::Atom(TextAtom::Scalar('e')),
+            KeyboardAction::Atom(TextAtom::Scalar(' ')),
+            KeyboardAction::CursorRight,
+            KeyboardAction::Atom(TextAtom::LineBreak),
+            KeyboardAction::Atom(TextAtom::Scalar('N')),
+            KeyboardAction::Atom(TextAtom::Scalar('E')),
+            KeyboardAction::Atom(TextAtom::Scalar('X')),
+            KeyboardAction::Atom(TextAtom::Scalar('T')),
+        ]
+    );
 }
 
 #[test]

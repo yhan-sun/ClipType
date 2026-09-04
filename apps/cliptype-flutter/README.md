@@ -74,6 +74,9 @@ already auto-generated. Python-style triple-quoted boundaries (`"""` and
 Markdown triple-backtick fences are typed literally, and pair handling remains
 active inside them. Brackets and quotes inside strings/comments remain literal.
 This mode assumes the destination editor's ordinary auto-pair behavior is on.
+Actions are sent in source order with a short bounded settle interval so
+asynchronous auto-pair and auto-indent updates can finish before the next
+action.
 
 The bridge carries bounded settings, commands, enum categories, and counters
 only. It never carries clipboard text, injected text, focused values, window

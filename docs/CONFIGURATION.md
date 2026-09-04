@@ -90,7 +90,7 @@ Accepted values are `"slow"`, `"normal"`, `"fast"`, and `"custom"`. The three pr
 
 ### `characters_per_second`
 
-The exact Keyboard/Code target pacing rate, from 1 through 250 actions per second. Operating-system scheduling and destination processing can make the measured rate lower. One Unicode scalar, line break, Tab, cursor-right action, wrong adjacent character, corrective Backspace, or corrected character consumes one timing slot. The configured value is therefore an action rate; enabling corrected typos intentionally reduces the throughput of original text.
+The exact Keyboard/Code target pacing rate, from 1 through 250 actions per second. Operating-system scheduling and destination processing can make the measured rate lower. One Unicode scalar, line break, Tab, cursor-right action, wrong adjacent character, corrective Backspace, or corrected character consumes one timing slot. Code mode additionally inserts a short bounded settle barrier between actions so asynchronous editor auto-pair and auto-indent work can finish; its observed throughput can therefore be lower than this rate. The configured value is therefore an action rate; enabling corrected typos intentionally reduces the throughput of original text.
 
 ### `jitter_percent`
 

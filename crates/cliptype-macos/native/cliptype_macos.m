@@ -197,14 +197,14 @@ int ct_macos_secure_input_enabled(void) {
 
 static int ct_post_balanced_key(CGKeyCode keycode, CGEventFlags flags) {
     if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return 0;
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
-    if (source == NULL) return 0;
-    CGEventRef down = CGEventCreateKeyboardEvent(source, keycode, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(source, keycode, false);
+    // A NULL source asks Quartz to use its default keyboard source. This is
+    // the native path intended for synthesized key presses and avoids tying a
+    // navigation event to a stale observed-session state.
+    CGEventRef down = CGEventCreateKeyboardEvent(NULL, keycode, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(NULL, keycode, false);
     if (down == NULL || up == NULL) {
         if (down != NULL) CFRelease(down);
         if (up != NULL) CFRelease(up);
-        CFRelease(source);
         return 0;
     }
     CGEventSetFlags(down, flags);
@@ -213,7 +213,6 @@ static int ct_post_balanced_key(CGKeyCode keycode, CGEventFlags flags) {
     CGEventPost(kCGHIDEventTap, up);
     CFRelease(down);
     CFRelease(up);
-    CFRelease(source);
     return 1;
 }
 
@@ -252,7 +251,7 @@ int ct_macos_post_backspace(void) {
 }
 
 int ct_macos_post_cursor_right(void) {
-    return ct_post_balanced_key((CGKeyCode)124, 0);
+    return ct_post_balanced_key(kVK_RightArrow, 0);
 }
 
 int ct_macos_post_paste(int64_t expected_revision) {

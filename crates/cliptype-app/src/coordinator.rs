@@ -2,6 +2,7 @@
 //! current-clipboard paste paths.
 
 use std::{
+    collections::VecDeque,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
@@ -28,6 +29,13 @@ use cliptype_platform::{
 use crate::CancellationFlag;
 
 static TYPING_SEED_COUNTER: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
+
+// Code mode relies on the destination editor's asynchronous auto-pair and
+// auto-indent handlers. Keep a bounded gap after every queued action so a
+// generated closer exists before the following CursorRight action is posted.
+// This is deliberately local to Code mode; normal Keyboard mode retains its
+// configured action rate.
+const CODE_ACTION_SETTLE_INTERVAL: Duration = Duration::from_millis(8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionCompletion {
@@ -602,14 +610,28 @@ enum KeyboardAction {
 
 fn run_code_plan(context: &mut SessionContext, plan: &CodePlan) -> SessionCompletion {
     let mut random = TypingRandom::new(context.typing_seed);
+    let mut queue: VecDeque<CodeAction> = plan.actions().iter().copied().collect();
 
-    for action in plan.actions().iter().copied() {
+    // This is a strict FIFO action queue. `CursorRight` is already the core
+    // planner's decision for the current source closer; we never inspect the
+    // destination editor or infer its text.
+    while let Some(action) = queue.pop_front() {
         let action = match action {
             CodeAction::Atom(atom) => KeyboardAction::Atom(atom),
             CodeAction::CursorRight => KeyboardAction::CursorRight,
         };
         if let Err(outcome) = dispatch_timed_action(context, plan.config(), action, &mut random) {
             return SessionCompletion::Finished(outcome);
+        }
+
+        if !queue.is_empty()
+            && sleep_interruptibly(
+                &context.cancellation,
+                CODE_ACTION_SETTLE_INTERVAL,
+                context.config.safety.modifier_poll_interval,
+            )
+        {
+            return SessionCompletion::Finished(TerminalOutcome::Cancelled);
         }
     }
 
