@@ -24,6 +24,7 @@ ClipType uses ports and adapters around a platform-independent Rust core. Policy
 - `apps/cliptype` is the Windows composition root and owns process lifecycle, settings application, content-free status, and user command wiring.
 - `apps/cliptype-flutter` is the P4 macOS arm64 composition root. Flutter owns presentation; its Swift/AppKit shell owns channels, menu-bar lifecycle, global hotkeys, Accessibility/login-item adapters, and the fixed Rust bridge.
 - `crates/cliptype-flutter-bridge` owns the narrow content-free C ABI that keeps the Rust coordinator and `cliptype-macos` adapters behind the Swift shell.
+- There is no Rust/Slint macOS application composition root. `apps/cliptype-flutter` is the only macOS settings/front-end entry point; `crates/cliptype-ui` remains a Windows presentation dependency.
 - packaging/release workflows own reproducible assets, compatibility checks, signatures, attestations, and public publication.
 
 Core never imports platform APIs. Platform adapters do not choose product policy. Presentation does not implement injection policy directly.

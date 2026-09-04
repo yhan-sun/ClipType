@@ -7,7 +7,6 @@ members = [
     "crates/cliptype-ui",
     "crates/cliptype-macos",
     "crates/cliptype-flutter-bridge",
-    "apps/cliptype-macos",
     "apps/cliptype",
 ]
 resolver = "3"

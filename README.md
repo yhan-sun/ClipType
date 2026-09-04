@@ -2,6 +2,11 @@
 
 ClipType is a privacy-first Windows tray utility that reads the current clipboard only after an explicit trigger and delivers it to the current destination through bounded native input.
 
+The repository also contains the local macOS Apple Silicon candidate. On macOS,
+`apps/cliptype-flutter` is the only settings/front-end composition root; the
+legacy Rust/Slint macOS application has been removed. The Rust core and macOS
+adapters remain shared runtime components.
+
 ## Public beta
 
 The first public release channel is `v0.1.0-beta.1` for Windows x86_64.
@@ -87,10 +92,13 @@ Controlled E2E harnesses are opt-in because they temporarily place generated fix
 
 ```text
 apps/cliptype/          Windows product composition root and controlled harnesses
+apps/cliptype-flutter/  macOS Apple Silicon Flutter settings/menu-bar app
 crates/cliptype-core/   platform-independent policy, limits, state, and settings vocabulary
 crates/cliptype-app/    coordinator and persistent settings application boundary
 crates/cliptype-platform/ native-neutral ports and result contracts
 crates/cliptype-windows/ Win32 clipboard, target, input, hotkey, tray, paste, and startup adapters
+crates/cliptype-macos/  macOS clipboard, target, input, hotkey, permission, and startup adapters
+crates/cliptype-flutter-bridge/ fixed content-free Rust ABI used by the Flutter shell
 packaging/windows/      per-user install/uninstall package scripts
 docs/                   architecture, security, compatibility, testing, ADRs, and release process
 ```

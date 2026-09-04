@@ -28,18 +28,28 @@ A native-compiled cross-platform settings toolkit does not imply that every cont
 
 ## P3 UI strategy
 
-ADR-0009 selects a shared `cliptype-ui` crate using **Slint `=1.17.1`** for the Windows and macOS settings window.
+ADR-0009 established a shared `cliptype-ui` crate using **Slint `=1.17.1`**.
+ADR-0012 removes its macOS composition root; the crate remains a Windows-only
+presentation dependency until a separate Windows UI decision.
 
 - Slint markup and Rust callbacks compile to native machine code.
 - No HTML, JavaScript, Electron, Chromium, or system WebView is part of the settings window.
 - Product policy remains in `cliptype-core` and `cliptype-app`; UI callbacks invoke typed application services.
 - Windows keeps its native Win32 notification-area shell.
-- macOS uses an AppKit `NSStatusItem`/`NSMenu` shell and platform Accessibility/login-item adapters.
+- macOS uses the Flutter settings window plus an AppKit `NSStatusItem`/`NSMenu` shell and platform Accessibility/login-item adapters.
 - The settings UI is required to support keyboard navigation, accessibility metadata, focus indicators, dark/light themes, DPI/Retina scaling, and content-free diagnostics.
 
-The distributed desktop binaries use the Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0. The top-level About screen includes the required `AboutSlint` attribution widget, and release dependency inventories record the selected Slint version/license. The project does not distribute the complete application under GPLv3 merely to consume the UI dependency.
+The Windows distributed desktop binary uses the Slint Royalty-free Desktop,
+Mobile, and Web Applications License 2.0. Its About screen includes the
+required `AboutSlint` attribution widget, and release dependency inventories
+record the selected Slint version/license. The macOS Flutter candidate does not
+use Slint. The project does not distribute the complete application under
+GPLv3 merely to consume the UI dependency.
 
-A future move to separate WinUI and SwiftUI settings implementations requires a superseding ADR and evidence that the maintenance cost is justified by measured platform-quality gaps. The P4 local macOS runner is a deliberate exception to the shared Slint macOS path and is documented by ADR-0010.
+A future move to separate WinUI and another Windows settings implementation
+requires a superseding ADR and evidence that the maintenance cost is justified
+by measured platform-quality gaps. The Flutter macOS runner is the sole macOS
+front end and is documented by ADR-0010 and ADR-0012.
 
 ## P4 macOS Flutter runner
 
@@ -59,13 +69,13 @@ widgets, nor is it a public Universal 2 or signed/notarized release path.
 
 ## Settings surface
 
-The P3 shared settings window provides:
+The Windows Slint settings window provides:
 
 - General — enabled, notifications, start at login;
 - Shortcuts — local Trigger/Cancel recorders, static validation, platform registration probe, Apply/Reset, and rollback status;
 - Typing — Keyboard/Clipboard/Auto, exact characters per second, jitter, corrected typo probability, and Auto threshold;
 - Permissions — macOS Accessibility status and fixed remediation;
-- About & Updates — version/channel, release notes, licenses, dependency notices, and Slint attribution.
+- About & Updates — version/channel, release notes, licenses, dependency notices, and Slint attribution on Windows.
 
 The recorder receives key events only while its control has local focus. It is not a global keylogger and does not install a broad low-level keyboard hook.
 

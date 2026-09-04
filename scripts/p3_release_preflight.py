@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Content-blind preflight for ClipType P3 release candidates.
+"""Content-blind preflight for ClipType Flutter macOS candidates.
 
-This command verifies repository provenance, bundle metadata, Universal 2 slices,
-Developer ID verification, notarization stapling, Gatekeeper assessment, and artifact
-digests without printing credentials or application content.
+This command verifies repository provenance, Flutter bundle metadata, optional
+architecture/signing/notarization evidence, and artifact digests without
+printing credentials or application content.
 """
 
 from __future__ import annotations
@@ -26,10 +26,11 @@ EXPECTED_REPOSITORY_FILES = (
     "Cargo.toml",
     "Cargo.lock",
     "rust-toolchain.toml",
-    "apps/cliptype-macos/Cargo.toml",
+    "apps/cliptype-flutter/pubspec.yaml",
+    "apps/cliptype-flutter/macos/Runner/Info.plist",
     "crates/cliptype-macos/Cargo.toml",
-    "packaging/macos/package.sh",
-    ".github/workflows/macos-release.yml",
+    "crates/cliptype-flutter-bridge/Cargo.toml",
+    ".github/workflows/p4-macos-arm64.yml",
 )
 
 
@@ -124,13 +125,6 @@ def check_repository(results: Results, repo: Path, expected_commit: str, require
         results.fail("repository.release_inputs", "missing: " + ", ".join(missing))
     else:
         results.pass_("repository.release_inputs", f"{len(EXPECTED_REPOSITORY_FILES)} inputs present")
-
-    package = repo / "packaging/macos/package.sh"
-    if package.is_file() and os.access(package, os.X_OK):
-        results.pass_("repository.package_script_executable", "packaging/macos/package.sh")
-    else:
-        results.fail("repository.package_script_executable", "package.sh is missing or not executable")
-
 
 def read_bundle_metadata(app: Path) -> tuple[Path, dict[str, Any]]:
     info_path = app / "Contents" / "Info.plist"
@@ -352,7 +346,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     payload = {
         "schema_version": 1,
-        "gate": "p3-release-preflight",
+        "gate": "p4-macos-flutter-preflight",
         "repository": "yhan-sun/ClipType",
         "commit": args.commit,
         "app": str(app) if app else None,

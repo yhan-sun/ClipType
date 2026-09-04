@@ -10,10 +10,11 @@
 
 The existing `v0.1.0-beta.1` remains a Windows-only prerelease. P3 does not retroactively claim macOS support.
 
-The repository also contains a P4 local Apple Silicon Flutter composition
-root. It supersedes the macOS UI composition described by ADR-0009 for that
-local candidate only; the broader P3 Universal 2, signing/notarization, and
-physical evidence gate remains open. See
+The repository now uses a P4 local Apple Silicon Flutter composition root as
+the only macOS settings/front-end entry point. The legacy Rust/Slint macOS
+composition root was removed; the shared Slint crate remains a Windows-only
+presentation dependency. The broader P3 Universal 2, signing/notarization,
+and physical evidence gate remains open. See
 [P4 macOS Apple Silicon local runner](P4_MACOS_ARM64_LOCAL.md).
 
 ## User outcomes
@@ -31,20 +32,24 @@ P3 is complete only when a user can:
 
 ## Architecture baseline
 
-ADR-0009 owns the UI/process-model decision:
+ADR-0009 records the original UI/process-model decision. ADR-0010 and ADR-0012
+define the current macOS replacement:
 
 ```text
 cliptype-core          native-neutral policy and settings
 cliptype-platform      native-neutral ports and hotkey outcomes
 cliptype-app           coordinator and settings transactions
-cliptype-ui            shared Slint settings window/view model
+cliptype-ui            shared Slint settings window/view model (Windows)
 cliptype-windows       Win32 tray/hotkey/input adapters
 cliptype-macos         AppKit/CoreGraphics/AX adapters
 apps/cliptype          Windows composition root
-apps/cliptype-macos    macOS app-bundle composition root
+apps/cliptype-flutter  macOS Flutter settings/menu-bar composition root
 ```
 
-The UI is native-compiled and does not contain Electron or a WebView. Native shell, permission, global-hotkey, input, clipboard, target, startup/login-item, and packaging behavior remains platform-specific.
+The Windows UI is native-compiled and the macOS UI is Flutter desktop; neither
+contains Electron or a WebView. Native shell, permission, global-hotkey, input,
+clipboard, target, startup/login-item, and packaging behavior remains
+platform-specific.
 
 ## Custom shortcut contract
 
@@ -123,7 +128,8 @@ A successful OS registration probe does not prove that every application-local s
 - current version and channel;
 - release notes and issue tracker;
 - project licenses and dependency notices;
-- required Slint attribution.
+- required Slint attribution for the Windows UI; the macOS Flutter UI has its
+  own dependency and license surface.
 
 ## macOS product mechanisms
 

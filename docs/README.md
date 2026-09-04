@@ -10,6 +10,7 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - macOS is not part of `v0.1.0-beta.1`.
 - P3 targets a graphical settings window, user-recorded Trigger/Cancel shortcuts with OS conflict probing and rollback, and a signed/notarized macOS Universal 2 product for `v0.2.0-beta.1`.
 - P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to local Apple Silicon arm64 validation. It is not a public macOS beta.
+- The legacy Rust/Slint macOS composition root has been removed; `apps/cliptype-flutter` is now the sole macOS settings/front-end entry point. The shared Slint crate remains only for the Windows product until a separate Windows UI decision.
 
 ## Product and support
 
@@ -25,8 +26,8 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - [Injection Engine](INJECTION_ENGINE.md) — planning, target evidence, pacing, cancellation, and outcome semantics.
 - [Platform Backends](PLATFORMS.md) — native mechanisms and constraints.
 - [Security and Privacy](SECURITY_PRIVACY.md) — clipboard confidentiality, diagnostics, permission/privilege boundaries, and threat model.
-- [Technology](TECHNOLOGY.md) — implementation choices, shared settings UI, native shells, and toolchain.
-- [Architecture Decision Records](adr/README.md) — accepted cross-cutting decisions, including ADR-0010 for the local Flutter macOS arm64 runner.
+- [Technology](TECHNOLOGY.md) — implementation choices, platform settings UI, native shells, and toolchain.
+- [Architecture Decision Records](adr/README.md) — accepted cross-cutting decisions, including ADR-0010 and ADR-0012 for the local Flutter macOS arm64 runner and sole macOS front end.
 
 ## Engineering process and evidence
 

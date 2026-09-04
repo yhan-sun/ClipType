@@ -5,6 +5,7 @@
 - Scope: P4 local macOS Apple Silicon runner
 - Supersedes: ADR-0009 for the macOS composition root only
 - Related: #63, #64
+- Subsequent decision: ADR-0012 removes the legacy macOS Slint composition root.
 
 ## Context
 
@@ -85,8 +86,9 @@ Rust bridge → cliptype-app → cliptype-core/platform/macos
 ```
 
 The legacy Rust/Slint `apps/cliptype` composition root remains the Windows
-path. This ADR does not remove it or claim that the old macOS Slint release
-path is a valid P4 candidate.
+path. The former Rust/Slint macOS composition root has since been removed by
+ADR-0012; this ADR's Flutter/native-shell ownership remains the current P4
+macOS architecture.
 
 ## Alternatives considered
 
@@ -129,8 +131,8 @@ gates in the broader P3/public path.
   permission, target-application, Chinese input, conflict, and latency evidence.
 - The Flutter engine adds a larger resident footprint than a native-only
   settings window.
-- The existing Slint and Flutter composition roots coexist until a later
-  maintainer decision removes or consolidates one of them.
+- Slint remains a Windows presentation dependency, while Flutter is the sole
+  macOS settings/front-end composition root.
 
 ## Follow-up
 
