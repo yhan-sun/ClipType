@@ -472,15 +472,21 @@ impl TargetPort for MacTarget {
             _ => return TargetComparison::UnavailableOrAmbiguous,
         }
 
-        if expected.render_host_limited || observed.render_host_limited {
-            return if expected.render_host_limited
-                && observed.render_host_limited
-                && expected.window_hash.is_some()
-            {
+        if expected.render_host_limited {
+            // The initial render-host classification selects a process/window
+            // comparison policy for the whole session. Monaco may rebuild a
+            // focused AX node that temporarily lacks the classification, but a
+            // real process/window change was already rejected above.
+            return if expected.window_hash.is_some() {
                 TargetComparison::Same
             } else {
                 TargetComparison::UnavailableOrAmbiguous
             };
+        }
+        if observed.render_host_limited {
+            // A native-control session must not weaken its exact-focus promise
+            // merely because a later node looks like a render host.
+            return TargetComparison::UnavailableOrAmbiguous;
         }
 
         match (expected.focus_hash, observed.focus_hash) {
@@ -933,14 +939,24 @@ mod tests {
     fn render_host_uses_stable_window_identity_when_focus_node_is_rebuilt() {
         let expected = target(42, Some(5), Some(7), true);
         let rebuilt_focus = target(42, Some(5), Some(8), true);
-        let other_window = target(42, Some(6), Some(8), true);
+        let transiently_reclassified = target(42, Some(5), Some(9), false);
+        let other_window = target(42, Some(6), Some(8), false);
+        let other_process = target(43, Some(5), Some(8), false);
 
         assert_eq!(
             MacTarget.compare(&expected, &rebuilt_focus),
             TargetComparison::Same
         );
         assert_eq!(
+            MacTarget.compare(&expected, &transiently_reclassified),
+            TargetComparison::Same
+        );
+        assert_eq!(
             MacTarget.compare(&expected, &other_window),
+            TargetComparison::Changed
+        );
+        assert_eq!(
+            MacTarget.compare(&expected, &other_process),
             TargetComparison::Changed
         );
     }

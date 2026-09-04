@@ -161,9 +161,7 @@ impl EditorModel {
             .text
             .get(self.caret)
             .zip(self.generated.get(self.caret))
-            .is_some_and(|(value, generated)| {
-                *generated && matches!(value, ')' | ']' | '}')
-            });
+            .is_some_and(|(value, generated)| *generated && matches!(*value, ')' | ']' | '}'));
 
         let mut insertion = String::from("\n");
         if closer_waiting {
@@ -230,7 +228,7 @@ impl EditorModel {
             .map_or(0, |index| index + 1);
         self.text[start..self.caret]
             .iter()
-            .take_while(|value| matches!(value, ' ' | '\t'))
+            .take_while(|value| matches!(**value, ' ' | '\t'))
             .map(|value| if *value == '\t' { 4 } else { 1 })
             .sum()
     }

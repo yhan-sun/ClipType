@@ -60,4 +60,6 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0015`](0015-flutter-settings-auto-save.md) — Automatically persist Flutter settings with responsive save-state feedback.
 - [`ADR-0016`](0016-code-mode-triple-quote-boundaries.md) — Superseded triple-quote boundary decision for Code mode.
 - [`ADR-0017`](0017-code-mode-line-leading-closers.md) — Navigate editor-generated closing lines without reading target content.
-- [`ADR-0018`](0018-macos-render-host-target-evidence.md) — Use stable process/window evidence for macOS `AXWebArea` render hosts.
+- [`ADR-0018`](0018-macos-render-host-target-evidence.md) — Superseded initial stable process/window evidence for macOS render hosts.
+- [`ADR-0019`](0019-code-mode-bounded-pair-contexts.md) — Restrict Code-mode pairing to five source-context-safe pair families.
+- [`ADR-0020`](0020-macos-render-host-sticky-session.md) — Keep initial macOS render-host process/window classification sticky for a session.
