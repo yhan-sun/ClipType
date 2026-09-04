@@ -66,7 +66,14 @@ text, drops leading spaces and Tabs at the start of each normal-code line, and
 emits a bounded action sequence. Opening `()`, `{}`, `[]`, and quote
 delimiters are typed normally; a matching closer or quote is represented as a
 cursor-right action so the destination editor's already-generated pair is
-skipped. Python-style triple-quoted runs (`"""` and `'''`) are emitted as
+skipped. A matching closer that starts a source line is represented by a
+line-closing right-navigation action. The planner suppresses a redundant
+source line break when auto-indent has already moved the generated closer to a
+following line; an empty multiline pair retains the first Return needed to
+create that line. Consecutive matching closers on the same source line are
+consumed as one generated-line group. macOS dispatches Right then Command+Right, while Windows
+dispatches Right then End, so generated indentation width is irrelevant.
+Python-style triple-quoted runs (`"""` and `'''`) are emitted as
 explicit atoms at both boundaries and never use cursor-right because editors
 do not reliably generate their three-character closing pair. Brackets and
 quotes inside recognized strings and comments remain literal. If the
@@ -79,11 +86,11 @@ The plan requires keyboard and cursor-right capabilities and never uses
 clipboard paste or revision evidence.
 
 The live Code-mode worker drains the immutable actions through a strict FIFO
-queue. Each native action is followed by a short cancellable settle barrier,
-which gives asynchronous editor auto-pair and auto-indent handlers time to
-update before the next source action is dispatched. This barrier does not
-inspect target text or change the behavior of Keyboard, Clipboard, or Auto
-backends.
+queue. Each native action is followed by a short cancellable settle barrier;
+pair-navigation actions also receive a bounded navigation-only barrier before
+dispatch. These let asynchronous editor auto-pair and auto-indent handlers
+update before a navigation action depends on their generated state. Neither
+barrier inspects target text or changes Keyboard, Clipboard, or Auto behavior.
 
 This is intentionally a destination-editor contract: Code mode assumes
 ordinary auto-pair is enabled, while triple-quoted boundaries are explicit.
@@ -122,7 +129,14 @@ Responsibilities:
 - report disappearance, ambiguity, degradation, and integrity relation;
 - redact opaque handles/tokens from diagnostics.
 
-It never reads focused-field text or window titles. Shared render hosts may not expose exact logical-field identity.
+It never reads focused-field text or window titles. On macOS, native controls
+retain exact focused-element comparison. A focused element beneath an
+`AXWebArea` is explicitly `RenderHostLimited`: the adapter compares the stable
+frontmost process and focused top-level window while tolerating replacement of
+the renderer's transient focus node. If a DOM-backed node does not expose a
+traversable parent chain, web-only supported attribute names provide the
+content-free classification; their values are never read. Shared render hosts
+therefore may not expose exact logical-field identity within one window.
 
 ### KeyboardPort and ModifierPort
 
@@ -192,6 +206,13 @@ fingerprints. Flutter does not read the pasteboard or execute input. Rust
 continues to own validation, session reservation, backend selection, target
 and modifier safety, revision guarding, pacing, cancellation, and terminal
 outcomes. Swift owns only native shell mechanisms and command registration.
+
+The macOS target token contains only opaque process, focused-window, and
+focused-element identity plus an `AXWebArea` classification bit. A bounded
+Accessibility parent-role walk classifies web render hosts without requesting
+titles, values, selection, or document text. Render-host sessions require the
+same process and focused window throughout; native controls additionally
+require the exact focused element.
 
 The display language is a separate non-sensitive presentation preference. The
 Flutter window and the native status menu synchronize its English/Simplified

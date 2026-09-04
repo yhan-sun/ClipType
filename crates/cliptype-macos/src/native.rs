@@ -51,8 +51,11 @@ unsafe extern "C" {
     fn ct_macos_open_accessibility_settings() -> i32;
     fn ct_macos_capture_target(
         out_process_id: *mut i32,
+        out_window_hash: *mut u64,
+        out_window_available: *mut i32,
         out_focus_hash: *mut u64,
         out_focus_available: *mut i32,
+        out_render_host_limited: *mut i32,
     ) -> i32;
     fn ct_macos_modifier_flags() -> u64;
     fn ct_macos_secure_input_enabled() -> i32;
@@ -61,6 +64,7 @@ unsafe extern "C" {
     fn ct_macos_post_tab() -> i32;
     fn ct_macos_post_backspace() -> i32;
     fn ct_macos_post_cursor_right() -> i32;
+    fn ct_macos_post_cursor_right_to_line_end() -> i32;
     fn ct_macos_post_paste(expected_revision: i64) -> i32;
 
     fn ct_macos_hotkey_create(
@@ -323,6 +327,27 @@ impl KeyboardPort for MacKeyboard {
             })
         }
     }
+
+    fn dispatch_cursor_right_to_line_end(&self) -> Result<DispatchResult, KeyboardError> {
+        // SAFETY: fixed bounded sequence of Right and Command+Right key events.
+        if unsafe { ct_macos_post_cursor_right_to_line_end() } == 0 {
+            Ok(DispatchResult::NoneAccepted {
+                requested: NativeEventCount::new(4),
+                native: Some(NativeError::new(
+                    if Self::ready() {
+                        NativeErrorKind::BlockedCauseUnknown
+                    } else {
+                        NativeErrorKind::PermissionDenied
+                    },
+                    None,
+                )),
+            })
+        } else {
+            Ok(DispatchResult::Complete {
+                events: NativeEventCount::new(4),
+            })
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -374,7 +399,9 @@ impl PastePort for MacPaste {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MacTargetToken {
     process_id: u32,
+    window_hash: Option<u64>,
     focus_hash: Option<u64>,
+    render_host_limited: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -383,31 +410,43 @@ pub struct MacTarget;
 impl TargetPort for MacTarget {
     fn capture(&self) -> Result<TargetEvidence, TargetCaptureError> {
         let mut process_id = 0_i32;
+        let mut window_hash = 0_u64;
+        let mut window_available = 0_i32;
         let mut focus_hash = 0_u64;
         let mut focus_available = 0_i32;
+        let mut render_host_limited = 0_i32;
         // SAFETY: all output pointers are valid and no UI content is requested.
         let captured = unsafe {
             ct_macos_capture_target(
                 &raw mut process_id,
+                &raw mut window_hash,
+                &raw mut window_available,
                 &raw mut focus_hash,
                 &raw mut focus_available,
+                &raw mut render_host_limited,
             )
         };
         if captured == 0 || process_id <= 0 {
             return Err(TargetCaptureError::Unavailable);
         }
         let process_id = u32::try_from(process_id).map_err(|_| TargetCaptureError::Unavailable)?;
+        let window_hash = (window_available != 0).then_some(window_hash);
         let focus_hash = (focus_available != 0).then_some(focus_hash);
+        let render_host_limited = render_host_limited != 0 && window_hash.is_some();
         Ok(TargetEvidence::new(
             MacTargetToken {
                 process_id,
+                window_hash,
                 focus_hash,
+                render_host_limited,
             },
             TargetMetadata {
                 process_id: Some(process_id),
                 gui_thread_id: None,
             },
-            if focus_hash.is_some() {
+            if render_host_limited {
+                EvidenceStrength::RenderHostLimited
+            } else if focus_hash.is_some() {
                 EvidenceStrength::NativeFocusedControl
             } else {
                 EvidenceStrength::TopLevelTarget
@@ -425,6 +464,25 @@ impl TargetPort for MacTarget {
         if expected.process_id != observed.process_id {
             return TargetComparison::Changed;
         }
+
+        match (expected.window_hash, observed.window_hash) {
+            (Some(left), Some(right)) if left != right => return TargetComparison::Changed,
+            (Some(_), Some(_)) => {}
+            (None, None) => {}
+            _ => return TargetComparison::UnavailableOrAmbiguous,
+        }
+
+        if expected.render_host_limited || observed.render_host_limited {
+            return if expected.render_host_limited
+                && observed.render_host_limited
+                && expected.window_hash.is_some()
+            {
+                TargetComparison::Same
+            } else {
+                TargetComparison::UnavailableOrAmbiguous
+            };
+        }
+
         match (expected.focus_hash, observed.focus_hash) {
             (Some(left), Some(right)) if left == right => TargetComparison::Same,
             (Some(_), Some(_)) => TargetComparison::Changed,
@@ -834,9 +892,12 @@ fn native_hotkey(spec: HotkeySpec) -> Result<(u16, u8), HotkeyAvailability> {
 
 #[cfg(test)]
 mod tests {
-    use cliptype_core::{HotkeyPlatform, HotkeySpec};
+    use cliptype_core::{EvidenceStrength, HotkeyPlatform, HotkeySpec};
+    use cliptype_platform::{TargetComparison, TargetEvidence, TargetMetadata, TargetPort};
 
-    use super::{HotkeyAvailability, MacTargetToken, availability_from_status, native_hotkey};
+    use super::{
+        HotkeyAvailability, MacTarget, MacTargetToken, availability_from_status, native_hotkey,
+    };
 
     #[test]
     fn mac_keycodes_cover_reviewed_defaults() {
@@ -858,9 +919,70 @@ mod tests {
     fn target_token_contains_only_identity_evidence() {
         let token = MacTargetToken {
             process_id: 42,
+            window_hash: Some(5),
             focus_hash: Some(7),
+            render_host_limited: true,
         };
         assert_eq!(token.process_id, 42);
+        assert_eq!(token.window_hash, Some(5));
         assert_eq!(token.focus_hash, Some(7));
+        assert!(token.render_host_limited);
+    }
+
+    #[test]
+    fn render_host_uses_stable_window_identity_when_focus_node_is_rebuilt() {
+        let expected = target(42, Some(5), Some(7), true);
+        let rebuilt_focus = target(42, Some(5), Some(8), true);
+        let other_window = target(42, Some(6), Some(8), true);
+
+        assert_eq!(
+            MacTarget.compare(&expected, &rebuilt_focus),
+            TargetComparison::Same
+        );
+        assert_eq!(
+            MacTarget.compare(&expected, &other_window),
+            TargetComparison::Changed
+        );
+    }
+
+    #[test]
+    fn native_control_still_requires_exact_focus_identity() {
+        let expected = target(42, Some(5), Some(7), false);
+        let other_control = target(42, Some(5), Some(8), false);
+        let other_process = target(43, Some(5), Some(7), false);
+
+        assert_eq!(
+            MacTarget.compare(&expected, &other_control),
+            TargetComparison::Changed
+        );
+        assert_eq!(
+            MacTarget.compare(&expected, &other_process),
+            TargetComparison::Changed
+        );
+    }
+
+    fn target(
+        process_id: u32,
+        window_hash: Option<u64>,
+        focus_hash: Option<u64>,
+        render_host_limited: bool,
+    ) -> TargetEvidence {
+        TargetEvidence::new(
+            MacTargetToken {
+                process_id,
+                window_hash,
+                focus_hash,
+                render_host_limited,
+            },
+            TargetMetadata {
+                process_id: Some(process_id),
+                gui_thread_id: None,
+            },
+            if render_host_limited {
+                EvidenceStrength::RenderHostLimited
+            } else {
+                EvidenceStrength::NativeFocusedControl
+            },
+        )
     }
 }

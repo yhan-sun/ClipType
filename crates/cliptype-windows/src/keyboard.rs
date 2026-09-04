@@ -11,8 +11,8 @@ use windows_sys::Win32::{
     Foundation::GetLastError,
     UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT,
-        VK_RWIN, VK_SHIFT, VK_TAB,
+        KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CONTROL, VK_END, VK_LWIN, VK_MENU, VK_RETURN,
+        VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB,
     },
 };
 
@@ -51,6 +51,10 @@ impl KeyboardPort for WindowsKeyboard {
 
     fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
         dispatch_encoded(encode_virtual_key(VK_RIGHT))
+    }
+
+    fn dispatch_cursor_right_to_line_end(&self) -> Result<DispatchResult, KeyboardError> {
+        dispatch_encoded(encode_virtual_keys(&[VK_RIGHT, VK_END]))
     }
 }
 
@@ -128,12 +132,21 @@ fn encode_backspace() -> EncodedBatch {
 }
 
 fn encode_virtual_key(key: u16) -> EncodedBatch {
+    encode_virtual_keys(&[key])
+}
+
+fn encode_virtual_keys(keys: &[u16]) -> EncodedBatch {
+    let mut inputs = Vec::with_capacity(keys.len().saturating_mul(2));
+    let mut semantic_boundaries = Vec::with_capacity(keys.len());
+    for key in keys {
+        push_virtual_key(&mut inputs, *key);
+        semantic_boundaries
+            .push(u32::try_from(inputs.len()).expect("bounded virtual-key sequence fits in u32"));
+    }
+
     EncodedBatch {
-        inputs: vec![
-            keyboard_input(key, 0, 0),
-            keyboard_input(key, 0, KEYEVENTF_KEYUP),
-        ],
-        semantic_boundaries: vec![2],
+        inputs,
+        semantic_boundaries,
     }
 }
 

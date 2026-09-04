@@ -70,7 +70,15 @@ The intended destination is captured before plaintext acquisition. Content-free 
 
 ### Revalidation
 
-Before native dispatch, and between keyboard batches, ClipType re-captures evidence and compares it with the original. It stops when the target changed, disappeared, became ambiguous, or lost detail required by the original guarantee.
+Before native dispatch, and between keyboard batches, ClipType re-captures
+evidence and compares it with the original. It stops when the target changed,
+disappeared, became ambiguous, or lost detail required by the original
+guarantee. On macOS, native controls require exact focused-element identity;
+an `AXWebArea` renderer uses same-process and same-focused-window evidence so a
+content-free transient AX node rebuild is not mistaken for a target change.
+Render-host fallback detection examines only the list of supported
+Accessibility attribute names; it never reads DOM identifiers, class lists,
+field values, or document content.
 
 ClipType never refocuses the old target and never redirects remaining input to a new target.
 

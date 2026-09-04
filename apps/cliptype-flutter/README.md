@@ -69,14 +69,17 @@ unavailable.
 Code mode is the explicit choice for source code and structured text. It uses
 keyboard actions, skips leading indentation so the editor can supply it, and
 moves right over matching closing delimiters or quotes that the editor has
-already auto-generated. Python-style triple-quoted boundaries (`"""` and
+already auto-generated. For a closer at the start of a source line, it avoids
+inserting a duplicate Return and uses right-arrow line navigation to pass the
+editor-generated closing line regardless of indentation width. Python-style
+triple-quoted boundaries (`"""` and
 `'''`) are typed explicitly because editors do not reliably auto-complete them.
 Markdown triple-backtick fences are typed literally, and pair handling remains
 active inside them. Brackets and quotes inside strings/comments remain literal.
 This mode assumes the destination editor's ordinary auto-pair behavior is on.
-Actions are sent in source order with a short bounded settle interval so
-asynchronous auto-pair and auto-indent updates can finish before the next
-action. If the editor generates ordinary brackets inside a normal quoted
+Actions are sent in source order with bounded general and navigation-only
+settle intervals so asynchronous auto-pair and auto-indent updates can finish
+before a dependent action. If the editor generates ordinary brackets inside a normal quoted
 string, Code mode consumes those inner generated closers before the string
 boundary as well.
 

@@ -104,7 +104,17 @@ Cross-application synthetic input commonly requires user-granted system permissi
 
 ### Focus/target
 
-Use workspace/accessibility/window APIs only for target identity and permission-safe focus evidence. Do not inspect focused text or window titles. The fixed bridge returns only content-free session categories and counters.
+Use workspace/accessibility/window APIs only for target identity and
+permission-safe focus evidence. Do not inspect focused text or window titles.
+Native controls use exact focused-element identity. For an `AXWebArea`
+render host, use stable process plus focused-window identity because editors
+such as Monaco may rebuild their focused Accessibility node during normal
+typing. If a Chromium editor does not expose a traversable `AXWebArea` parent
+chain, support for the web-only `AXDOMIdentifier` or `AXDOMClassList` attribute
+name supplies the same classification without reading either value. A
+process/window change or evidence loss still stops safely; logical field
+changes within one web render surface may be indistinguishable. The fixed
+bridge returns only content-free session categories and counters.
 
 ### Distribution
 

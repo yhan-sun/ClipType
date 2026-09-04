@@ -109,6 +109,7 @@ impl TargetPort for StableTarget {
 struct CountingKeyboard {
     calls: Arc<AtomicUsize>,
     cursor_right_calls: Arc<AtomicUsize>,
+    cursor_right_to_line_end_calls: Arc<AtomicUsize>,
     actions: Arc<Mutex<Vec<KeyboardAction>>>,
 }
 
@@ -116,6 +117,7 @@ struct CountingKeyboard {
 enum KeyboardAction {
     Atom(TextAtom),
     CursorRight,
+    CursorRightToLineEnd,
 }
 
 impl CountingKeyboard {
@@ -125,6 +127,10 @@ impl CountingKeyboard {
 
     fn cursor_right_calls(&self) -> usize {
         self.cursor_right_calls.load(Ordering::Relaxed)
+    }
+
+    fn cursor_right_to_line_end_calls(&self) -> usize {
+        self.cursor_right_to_line_end_calls.load(Ordering::Relaxed)
     }
 
     fn actions(&self) -> Vec<KeyboardAction> {
@@ -165,6 +171,15 @@ impl KeyboardPort for CountingKeyboard {
         lock(&self.actions).push(KeyboardAction::CursorRight);
         Ok(DispatchResult::Complete {
             events: NativeEventCount::new(2),
+        })
+    }
+
+    fn dispatch_cursor_right_to_line_end(&self) -> Result<DispatchResult, KeyboardError> {
+        self.cursor_right_to_line_end_calls
+            .fetch_add(1, Ordering::Relaxed);
+        lock(&self.actions).push(KeyboardAction::CursorRightToLineEnd);
+        Ok(DispatchResult::Complete {
+            events: NativeEventCount::new(4),
         })
     }
 }
@@ -404,6 +419,38 @@ fn code_mode_keeps_cursor_right_in_source_order() {
 }
 
 #[test]
+fn code_mode_keeps_line_closer_navigation_in_source_order() {
+    let clipboard = RevisionedClipboard::stable("fn main() {\nvalue();\n}\nNEXT", 11, 1);
+    let keyboard = CountingKeyboard::default();
+    let paste = ScriptedPaste::new([], unavailable_paste_capabilities());
+    let coordinator = coordinator(
+        clipboard,
+        StableTarget::default(),
+        keyboard.clone(),
+        GateModifiers::clear(),
+        paste,
+        config(InjectionMode::Code, 256),
+    );
+
+    start_and_wait(&coordinator);
+
+    assert_eq!(keyboard.cursor_right_to_line_end_calls(), 1);
+    let actions = keyboard.actions();
+    let navigation = actions
+        .iter()
+        .position(|action| *action == KeyboardAction::CursorRightToLineEnd)
+        .expect("line closer navigation");
+    assert_eq!(
+        actions.get(navigation.saturating_sub(1)),
+        Some(&KeyboardAction::Atom(TextAtom::Scalar(';')))
+    );
+    assert_eq!(
+        actions.get(navigation.saturating_add(1)),
+        Some(&KeyboardAction::Atom(TextAtom::LineBreak))
+    );
+}
+
+#[test]
 fn code_mode_types_triple_quotes_without_cursor_right() {
     let source = "const doc = \"\"\"hello\"\"\";";
     let clipboard = RevisionedClipboard::stable(source, 8, 1);
@@ -446,8 +493,9 @@ fn code_mode_keeps_markdown_fences_and_skips_pairs_inside_them() {
 
     start_and_wait(&coordinator);
 
-    assert_eq!(keyboard.cursor_right_calls(), 2);
-    assert_eq!(keyboard.calls(), source.chars().count() - 6);
+    assert_eq!(keyboard.cursor_right_calls(), 1);
+    assert_eq!(keyboard.cursor_right_to_line_end_calls(), 1);
+    assert_eq!(keyboard.calls(), source.chars().count() - 7);
     assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
     assert_eq!(
         coordinator.status().completion,

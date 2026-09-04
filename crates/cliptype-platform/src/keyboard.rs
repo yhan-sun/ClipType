@@ -135,6 +135,13 @@ pub trait KeyboardPort: Send + Sync {
     fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
         Err(KeyboardError::UnsupportedSemanticElement)
     }
+
+    /// Crosses an existing editor-generated line boundary and moves to that
+    /// line's end using right-arrow navigation. Code mode uses this for a
+    /// matching closer that auto-indent placed on its own line.
+    fn dispatch_cursor_right_to_line_end(&self) -> Result<DispatchResult, KeyboardError> {
+        Err(KeyboardError::UnsupportedSemanticElement)
+    }
 }
 
 #[cfg(test)]

@@ -49,7 +49,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
-| `code` | Sends bounded keyboard actions, skips leading indentation, and uses cursor-right for matching auto-generated ordinary delimiters/quotes. Python-style triple-quoted boundaries (`"""`, `'''`) and Markdown triple-backtick fences are typed explicitly. It assumes editor auto-pair and auto-indent are enabled for ordinary pairs. |
+| `code` | Sends bounded keyboard actions, skips leading indentation, and uses right-arrow navigation for matching auto-generated ordinary delimiters/quotes. A line-leading closer crosses the editor-generated line and its indentation instead of inserting a duplicate Return. Python-style triple-quoted boundaries (`"""`, `'''`) and Markdown triple-backtick fences are typed explicitly. It assumes editor auto-pair and auto-indent are enabled for ordinary pairs. |
 | `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
@@ -60,7 +60,13 @@ A normal-integrity ClipType process does not inject into a higher-integrity appl
 
 ### Focus evidence
 
-ClipType captures and revalidates non-content destination evidence. Native controls can usually be distinguished. Applications that host multiple logical fields inside one shared render surface may expose only a top-level/render-host identity. In that case ClipType does not claim an exact logical-field or caret guarantee.
+ClipType captures and revalidates non-content destination evidence. Native
+controls can usually be distinguished. On macOS, an `AXWebArea` render host is
+tracked by frontmost process plus focused top-level window so transient Monaco
+focus-node replacement does not look like a target switch. Switching process
+or window still stops. Multiple logical fields inside one shared render
+surface may remain indistinguishable, so ClipType does not claim an exact
+logical-field or caret guarantee there.
 
 ### Terminals and operational input
 
@@ -73,7 +79,8 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 ### Rich clipboard formats
 
 Clipboard mode leaves all formats unchanged and invokes ordinary paste. Code
-mode uses Unicode keyboard events and cursor-right actions, so it is intended
+mode uses Unicode keyboard events and right-arrow navigation, including
+line-end navigation for generated closing lines, so it is intended
 for text editors with ordinary auto-pair and auto-indent enabled. Python-style
 triple-quoted boundaries are sent explicitly because they are not reliably
 auto-completed; Markdown triple-backtick fences are literal boundaries and
