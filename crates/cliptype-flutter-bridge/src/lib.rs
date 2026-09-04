@@ -7,24 +7,33 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg(target_os = "macos")]
+use std::slice;
 use std::{
     ffi::{c_char, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
-    ptr, slice,
+    ptr,
 };
 
 const CT_OK: i32 = 0;
 const CT_INVALID: i32 = 1;
 const CT_NATIVE_FAILURE: i32 = 2;
+#[cfg(target_os = "macos")]
 const CT_BUSY: i32 = 3;
+#[cfg(target_os = "macos")]
 const CT_SHUTTING_DOWN: i32 = 4;
+#[cfg(target_os = "macos")]
 const CT_REJECTED: i32 = 5;
 
+#[cfg(target_os = "macos")]
 const CT_HOTKEY_AVAILABLE: i32 = 0;
+#[cfg(target_os = "macos")]
 const CT_HOTKEY_RESERVED: i32 = 2;
 const CT_HOTKEY_UNSUPPORTED: i32 = 3;
+#[cfg(target_os = "macos")]
 const CT_HOTKEY_UNKNOWN: i32 = 4;
 
+#[cfg(target_os = "macos")]
 const MAX_HOTKEY_BYTES: usize = 63;
 
 /// Numeric snapshot exchanged with Swift. All fields are bounded and
@@ -141,6 +150,7 @@ fn catch_code<T>(fallback: i32, callback: impl FnOnce() -> Result<T, i32>) -> i3
     }
 }
 
+#[cfg(target_os = "macos")]
 fn hotkey_code(error: cliptype_core::HotkeyValidationError) -> i32 {
     match error {
         cliptype_core::HotkeyValidationError::Reserved => CT_HOTKEY_RESERVED,
@@ -150,6 +160,7 @@ fn hotkey_code(error: cliptype_core::HotkeyValidationError) -> i32 {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn bounded_utf8<'a>(pointer: *const c_char) -> Result<&'a str, i32> {
     if pointer.is_null() {
         return Err(CT_INVALID);
@@ -245,6 +256,7 @@ struct SettingsArgs {
     cancel: *const c_char,
 }
 
+#[cfg(target_os = "macos")]
 fn phase_code(phase: cliptype_core::SessionPhase) -> i32 {
     match phase {
         cliptype_core::SessionPhase::Idle => 0,
@@ -254,6 +266,7 @@ fn phase_code(phase: cliptype_core::SessionPhase) -> i32 {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn backend_code(backend: Option<cliptype_core::InjectionBackend>) -> i32 {
     match backend {
         Some(cliptype_core::InjectionBackend::Keyboard) => 0,
@@ -263,6 +276,7 @@ fn backend_code(backend: Option<cliptype_core::InjectionBackend>) -> i32 {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn completion_code(completion: Option<cliptype_app::SessionCompletion>) -> i32 {
     match completion {
         None => 0,
@@ -427,7 +441,7 @@ pub extern "C" fn ct_bridge_get_hotkey(
         #[cfg(not(target_os = "macos"))]
         {
             let _ = (handle, trigger, output, capacity);
-            Err(CT_NATIVE_FAILURE)
+            Err::<(), _>(CT_NATIVE_FAILURE)
         }
     })
 }
