@@ -7,7 +7,7 @@
 - UI: Flutter macOS desktop with English / Simplified Chinese display mode
 - Native shell: Swift/AppKit
 - Policy/runtime: Rust core, application coordinator, and macOS adapters
-- Release status: unsigned local candidate; not a public beta
+- Release status: arm64 testing preview attached to `v0.2.0-beta.2`; not a general public macOS beta
 
 ## Scope
 

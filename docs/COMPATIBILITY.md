@@ -18,15 +18,15 @@ ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibil
 
 “Supported beta” means the shipped x86_64 binary and documented native mechanisms are supported within the constraints below. It does not assert that every application exposes sufficient focus evidence or consumes synthetic input identically.
 
-## macOS Apple Silicon local candidate
+## macOS Apple Silicon testing preview
 
 The P4 local candidate is restricted to an interactive Apple Silicon Mac:
 
 | Environment | Support level | Evidence and conditions |
 |---|---|---|
-| macOS arm64 with an unlocked interactive desktop | **Local candidate / evidence required** | Flutter macOS settings shell, Swift/AppKit status item, Carbon hot-key registration, Rust bridge, and arm64 release packaging are locally exercised. Accessibility permission and target-application behavior remain separate physical evidence gates. |
+| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.2` includes a clearly labelled arm64 Flutter preview. The settings shell, Swift/AppKit status item, Carbon hot-key registration, Rust bridge, and arm64 packaging are locally exercised. Accessibility permission and target-application behavior remain separate physical evidence gates. |
 | macOS x86_64 or Rosetta | **Not supported by P4** | No x86_64 build, Universal 2 artifact, or Rosetta claim is made. |
-| Signed/notarized public macOS distribution | **Not provided by P4** | The local candidate is unsigned and has no Developer ID/notarization evidence. |
+| Signed/notarized public macOS distribution | **Not provided by P4** | The attached preview is ad-hoc signed and has no Developer ID/notarization evidence. |
 
 P4 does not claim Chinese/Unicode delivery, named-application compatibility,
 permission grant/revocation, conflict rollback, cancellation latency, or

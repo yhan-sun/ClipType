@@ -9,7 +9,7 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - `v0.1.0-beta.1` is a Windows x86_64 GitHub prerelease.
 - macOS is not part of `v0.1.0-beta.1`.
 - P3 targets a graphical settings window, user-recorded Trigger/Cancel shortcuts with OS conflict probing and rollback, and a signed/notarized macOS Universal 2 product for `v0.2.0-beta.1`.
-- P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to local Apple Silicon arm64 validation. It is not a public macOS beta.
+- P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to Apple Silicon arm64 validation. `v0.2.0-beta.2` includes it as a clearly labelled testing preview, not as a general public macOS beta.
 - The legacy Rust/Slint macOS composition root has been removed; `apps/cliptype-flutter` is now the sole macOS settings/front-end entry point. The shared Slint crate remains only for the Windows product until a separate Windows UI decision.
 
 ## Product and support
@@ -41,7 +41,11 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - [P4 Local macOS Phase](phases/P4_MACOS_ARM64_LOCAL.md) — the arm64-only Flutter/AppKit/Rust candidate and its local evidence boundary.
 - [P1 Automated Evidence](testing/P1_AUTOMATED_EVIDENCE.md) — historical P1 candidate evidence.
 
-Current release documentation describes observed Windows behavior only. P3 documents the broader cross-platform release plan, while P4 records a local arm64 candidate and exact local evidence. Neither document implies that a public macOS beta, Universal 2 artifact, or arbitrary named-application compatibility is shipped.
+Current release documentation describes the observed Windows beta and the
+clearly labelled macOS arm64 testing preview. P3 documents the broader
+cross-platform release plan, while P4 records the arm64 candidate and exact
+local evidence. No Universal 2 artifact, signed/notarized macOS distribution,
+or arbitrary named-application compatibility is implied.
 
 ## Authority
 

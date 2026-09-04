@@ -130,6 +130,13 @@ application, collect clipboard fixtures, sign with Developer ID, notarize, or
 publish an artifact. Those cases remain local/physical evidence gates and are
 reported separately in `local-evidence/`.
 
+For `v0.2.0-beta.2`, a separately built arm64 testing preview was attached to
+the GitHub Release after local validation of the Flutter bundle, ad-hoc
+signature integrity, ZIP extraction, DMG mounting, architecture slices, and
+checksums. This supplemental asset does not change the P4 workflow's
+non-publishing behavior or satisfy the Universal 2, Developer ID,
+notarization, Gatekeeper, or physical Accessibility gates.
+
 The Flutter tests also cover automatic settings persistence, coalescing rapid
 updates into the latest snapshot, invalid-setting rejection before the native
 call, and the retryable save-state contract.

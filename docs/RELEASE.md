@@ -2,15 +2,16 @@
 
 ## Public release channel
 
-The first public channel is the Windows x86_64 beta declared by `release/VERSION`. A new public release is produced only when that file changes on `main` or a maintainer explicitly dispatches the release workflow.
+The first public channel is the Windows x86_64 beta declared by `release/VERSION`. A new public release is produced only when that file changes on `main` or a maintainer explicitly dispatches the release workflow. A release may also carry a clearly labelled macOS Apple Silicon testing preview without making a general macOS compatibility claim.
 
 The release workflow is `.github/workflows/windows-release.yml`. It rebuilds from the exact `main` commit, re-runs workspace checks/tests/Clippy, assembles the package, creates a dependency inventory and build metadata, signs the assets, generates GitHub artifact attestations, and creates an immutable GitHub prerelease.
 
-The P4 macOS Flutter runner is a local arm64 candidate only. Its PR/manual
-quality gate is `.github/workflows/p4-macos-arm64.yml`; it never publishes a
-macOS artifact and does not replace the separate Universal 2,
-Developer ID, notarization, and stapling requirements for a future public
-macOS release.
+The P4 macOS Flutter runner remains an arm64 candidate gate. Its PR/manual
+quality gate is `.github/workflows/p4-macos-arm64.yml`; that workflow does not
+publish an artifact and does not replace the separate Universal 2,
+Developer ID, notarization, and stapling requirements for a general public
+macOS release. `v0.2.0-beta.2` additionally carries a manually validated,
+clearly labelled arm64 testing preview from the exact release source.
 
 ## Required assets
 
@@ -26,6 +27,22 @@ Every Windows beta release contains:
 - repository-hosted GitHub artifact attestations for the primary assets.
 
 Licenses, configuration reference, release notes, install/uninstall scripts, dependency inventory, and build metadata are also embedded in the ZIP package.
+
+## Supplemental macOS Apple Silicon testing preview
+
+When present, the macOS preview assets are:
+
+- `ClipType-<version>-macos-arm64-UNSIGNED.zip` — arm64 Flutter application archive;
+- `ClipType-<version>-macos-arm64-UNSIGNED.dmg` — arm64 drag-to-Applications image;
+- `BUILD-INFO-macos.txt` — source, architecture, and signing boundary;
+- `SHA256SUMS-macos.txt` — checksums for the preview assets and metadata;
+- `README-macOS-TESTING-PREVIEW.txt` — installation and permission limits.
+
+The preview is ad-hoc signed and may be blocked or warned on by Gatekeeper. It
+requires explicit Accessibility consent for cross-application input and makes
+no Intel, Rosetta, Universal 2, Developer ID, notarization, or broad named-
+application compatibility claim. Existing release assets are not replaced;
+the preview is an additive platform asset.
 
 ## Signing model
 

@@ -108,7 +108,10 @@ Use workspace/accessibility/window APIs only for target identity and permission-
 
 ### Distribution
 
-macOS release requires code signing/notarization planning before claiming general availability. The P4 local arm64 `.app` is for local inspection only; it is not a public release artifact.
+macOS release requires code signing/notarization planning before claiming
+general availability. The P4 arm64 `.app` is also available in
+`v0.2.0-beta.2` as a clearly labelled ad-hoc testing preview; it is not a
+Universal 2, Developer ID, notarized, or general public macOS release.
 
 ### Shell and command ownership
 
