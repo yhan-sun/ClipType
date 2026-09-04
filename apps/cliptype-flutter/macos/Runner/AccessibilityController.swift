@@ -27,13 +27,17 @@ final class AccessibilityController {
     }
 
     func openSystemSettings() -> String {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ) else { return "native_failure" }
-        return NSWorkspace.shared.open(url) ? "settings_opened" : "native_failure"
+        let urls = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        ].compactMap(URL.init(string:))
+        for url in urls where NSWorkspace.shared.open(url) {
+            return "settings_opened"
+        }
+        return "native_failure"
     }
 
-    func observeAfterExplicitRequest(onChange: @escaping (String) -> Void) {
+    func observePermissionChanges(onChange: @escaping (String) -> Void) {
         observationTimer?.invalidate()
         observationDeadline = Date().addingTimeInterval(12)
         observationTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) {

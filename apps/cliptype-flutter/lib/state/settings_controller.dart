@@ -140,7 +140,17 @@ class SettingsController extends ChangeNotifier {
   Future<void> trigger() async {
     try {
       final result = await bridge.trigger();
-      _messageCode = 'result:${result['result'] as String?}';
+      final resultCode = result['result'] as String?;
+      _messageCode = 'result:$resultCode';
+      if (resultCode == 'permission_required') {
+        // A trigger is an explicit user action. Make the safe failure
+        // actionable without attempting to change macOS consent.
+        try {
+          await bridge.openAccessibilitySettings();
+        } catch (_) {
+          // Keep the fixed permission message visible if Settings cannot open.
+        }
+      }
       _syncActiveObservation(force: true);
     } catch (_) {
       _errorCode = 'trigger_failed';
@@ -173,6 +183,7 @@ class SettingsController extends ChangeNotifier {
     try {
       final result = await bridge.openAccessibilitySettings();
       _messageCode = 'result:${result['result'] as String?}';
+      await refresh();
     } catch (_) {
       _errorCode = 'system_settings_failed';
     }

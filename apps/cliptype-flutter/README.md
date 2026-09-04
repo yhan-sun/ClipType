@@ -63,7 +63,10 @@ keylogger.
 ## Permissions and lifecycle
 
 Accessibility is displayed as not granted until macOS reports trust. A request
-is initiated only by the user's explicit Request Permission action. Closing
+is initiated only by an explicit user action. If Trigger is pressed without
+trust, the operation fails closed and opens the macOS Privacy & Security /
+Accessibility page; the app never changes the consent itself. The native shell
+observes the result for a short bounded window after opening the page. Closing
 Settings hides the window while the menu-bar process and registered commands
 remain alive. Quit performs bounded native shutdown.
 

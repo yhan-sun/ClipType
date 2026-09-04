@@ -64,10 +64,12 @@ commit the pair, release the old pair, then persist the Rust settings. Failure
 removes the new registrations and restores the previous pair.
 
 Accessibility is queried honestly and requested only after an explicit user
-action. The application does not install an event tap, a global key logger, or
-a broad keyboard monitor. Observation timers are bounded to an active session
-or to the short permission-request observation window; there is no permanent
-idle 40 ms poller.
+action. If an explicit Trigger action finds trust missing, the operation fails
+closed and opens the system Accessibility page; the application never changes
+macOS consent itself. The application does not install an event tap, a global
+key logger, or a broad keyboard monitor. Observation timers are bounded to an
+active session or to the short permission-onboarding observation window; there
+is no permanent idle 40 ms poller.
 
 The local candidate is non-sandboxed because the documented user-controlled
 macOS Application Support configuration, menu-bar lifecycle, pasteboard access,

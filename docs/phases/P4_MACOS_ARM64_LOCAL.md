@@ -42,6 +42,9 @@ Rust
 The bridge does not carry clipboard or injected plaintext. All UI messages are
 fixed categories such as `ok`, `invalid`, `busy`, `permission_required`,
 `conflict`, `target_changed`, `clipboard_changed`, and `native_failure`.
+When an explicit Trigger action finds Accessibility trust missing, the Flutter
+runner opens the macOS Accessibility settings page and continues a bounded
+permission-state observation; macOS consent remains user-controlled.
 
 ## Local verification gate
 

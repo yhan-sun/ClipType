@@ -175,7 +175,8 @@ key logger, or broad keyboard monitor.
 
 Observation is event-driven while idle. A bounded timer may refresh state only
 while a session is active, and a separate short-lived observation may follow an
-explicit Accessibility request. There is no permanent 40 ms application poll.
+explicit Accessibility onboarding action, including opening System Settings.
+There is no permanent 40 ms application poll.
 
 P4 is an Apple Silicon-only local candidate (`aarch64-apple-darwin`). It does
 not widen the public P3 Universal 2, signing, notarization, or compatibility

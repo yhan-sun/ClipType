@@ -304,8 +304,20 @@ class ClipTypeLocalizations {
       '安全检查拒绝了该操作。',
     ),
     'permission_required' => _text(
-      'Grant Accessibility permission before triggering ClipType.',
-      '请先授予辅助功能权限，再触发 ClipType。',
+      'Accessibility permission is missing. Turn on ClipType in System Settings > Privacy & Security > Accessibility, then try again.',
+      '尚未获得辅助功能权限。请在“系统设置 > 隐私与安全性 > 辅助功能”中开启 ClipType，然后重试。',
+    ),
+    'prompt_requested' => _text(
+      'System Settings is ready. Turn on ClipType under Privacy & Security > Accessibility, then try again.',
+      '系统设置已打开。请在“隐私与安全性 > 辅助功能”中开启 ClipType，然后重试。',
+    ),
+    'settings_opened' => _text(
+      'System Settings opened. Turn on ClipType under Privacy & Security > Accessibility, then try again.',
+      '系统设置已打开。请在“隐私与安全性 > 辅助功能”中开启 ClipType，然后重试。',
+    ),
+    'already_granted' => _text(
+      'Accessibility permission is already granted.',
+      '辅助功能权限已授权。',
     ),
     'conflict' => _text(
       'The shortcut is already registered globally by another app.',

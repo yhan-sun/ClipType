@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'l10n/app_localizations.dart';
 import 'screens/about_page.dart';
@@ -52,7 +53,12 @@ class _ClipTypeAppState extends State<ClipTypeApp> {
       title: 'ClipType',
       debugShowCheckedModeBanner: false,
       locale: _locale,
-      localizationsDelegates: const [ClipTypeLocalizations.delegate],
+      localizationsDelegates: const [
+        ClipTypeLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       supportedLocales: ClipTypeLocalizations.supportedLocales,
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),

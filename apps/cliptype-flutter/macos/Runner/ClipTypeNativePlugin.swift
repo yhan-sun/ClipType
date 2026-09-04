@@ -113,7 +113,7 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         case "requestAccessibility":
             result(requestAccessibility())
         case "openAccessibilitySettings":
-            result(["result": accessibility.openSystemSettings()])
+            result(openAccessibilitySettings())
         case "setStartAtLogin":
             let args = call.arguments as? [String: Any] ?? [:]
             result(setStartAtLogin(enabled: boolArg(args["enabled"])))
@@ -304,12 +304,24 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         send(type: "permissionChanged")
         updateStatusItem()
         if result == "prompt_requested" {
-            accessibility.observeAfterExplicitRequest { [weak self] _ in
-                self?.send(type: "permissionChanged")
-                self?.updateStatusItem()
-            }
+            observeAccessibilityChanges()
         }
         return ["result": result]
+    }
+
+    private func openAccessibilitySettings() -> [String: Any] {
+        let result = accessibility.openSystemSettings()
+        if result == "settings_opened" {
+            observeAccessibilityChanges()
+        }
+        return ["result": result]
+    }
+
+    private func observeAccessibilityChanges() {
+        accessibility.observePermissionChanges { [weak self] _ in
+            self?.send(type: "permissionChanged")
+            self?.updateStatusItem()
+        }
     }
 
     private func triggerFromNative() {
