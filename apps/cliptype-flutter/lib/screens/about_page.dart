@@ -9,11 +9,10 @@ class AboutPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(32, 30, 32, 32),
+    return PageContent(
       children: [
         PageHeader(title: l10n.aboutTitle, description: l10n.aboutDescription),
-        SizedBox(height: 26),
+        const SizedBox(height: 26),
         SettingCard(
           title: l10n.buildInformation,
           child: Column(
@@ -29,23 +28,23 @@ class AboutPage extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
         SettingCard(
           title: l10n.project,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(l10n.sourceRepository),
-              SizedBox(height: 6),
+              const SizedBox(height: 6),
               SelectableText('https://github.com/yhan-sun/ClipType'),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(l10n.license),
-              SizedBox(height: 6),
+              const SizedBox(height: 6),
               Text('MIT OR Apache-2.0'),
             ],
           ),
         ),
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
         SettingCard(
           title: l10n.privacyPromise,
           child: Text(l10n.privacyPromiseText),

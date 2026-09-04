@@ -19,6 +19,7 @@ class _TypingPageState extends State<TypingPage> {
   late AppSettings _draft;
   late final TextEditingController _cps;
   late final TextEditingController _threshold;
+  bool _hasLocalDraft = false;
 
   @override
   void initState() {
@@ -33,7 +34,17 @@ class _TypingPageState extends State<TypingPage> {
   @override
   void didUpdateWidget(covariant TypingPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller.settings != widget.controller.settings) {
+    if (oldWidget.controller != widget.controller) {
+      _draft = widget.controller.settings;
+      _cps.text = '${_draft.charactersPerSecond}';
+      _threshold.text = '${_draft.autoClipboardThreshold}';
+      _hasLocalDraft = false;
+      return;
+    }
+    if (_hasLocalDraft && _draft == widget.controller.settings) {
+      _hasLocalDraft = false;
+    }
+    if (!_hasLocalDraft && _draft != widget.controller.settings) {
       _draft = widget.controller.settings;
       _cps.text = '${_draft.charactersPerSecond}';
       _threshold.text = '${_draft.autoClipboardThreshold}';
@@ -51,18 +62,21 @@ class _TypingPageState extends State<TypingPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final validation = _draft.validationCode();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(32, 30, 32, 32),
+    return PageContent(
       children: [
-        PageHeader(title: l10n.typing, description: l10n.typingDescription),
+        PageHeader(
+          title: l10n.typing,
+          description: l10n.typingDescription,
+          trailing: AutoSaveIndicator(controller: widget.controller),
+        ),
         const SizedBox(height: 26),
         SettingCard(
           title: l10n.deliveryMode,
           child: DropdownButtonFormField<InjectionMode>(
             key: ValueKey(_draft.mode),
             initialValue: _draft.mode,
-            decoration: const InputDecoration(
-              labelText: 'Mode',
+            decoration: InputDecoration(
+              labelText: l10n.mode,
               border: OutlineInputBorder(),
             ),
             items: InjectionMode.values
@@ -75,7 +89,7 @@ class _TypingPageState extends State<TypingPage> {
                 .toList(),
             onChanged: (value) {
               if (value != null) {
-                setState(() => _draft = _draft.copyWith(mode: value));
+                _updateDraft(_draft.copyWith(mode: value), immediate: true);
               }
             },
           ),
@@ -94,8 +108,11 @@ class _TypingPageState extends State<TypingPage> {
                 controller: _cps,
                 label: l10n.charactersPerSecond,
                 helper: l10n.charactersPerSecondHelper,
-                onChanged: (value) => setState(
-                  () => _draft = _draft.copyWith(
+                errorText: validation == 'characters_per_second'
+                    ? l10n.validationMessage(validation)
+                    : null,
+                onChanged: (value) => _updateDraft(
+                  _draft.copyWith(
                     charactersPerSecond: int.tryParse(value) ?? 0,
                   ),
                 ),
@@ -105,20 +122,19 @@ class _TypingPageState extends State<TypingPage> {
                 label: l10n.timingJitter,
                 value: _draft.jitterPercent,
                 max: 95,
-                onChanged: (value) => setState(
-                  () => _draft = _draft.copyWith(jitterPercent: value.round()),
-                ),
+                onChanged: (value) =>
+                    _updateDraft(_draft.copyWith(jitterPercent: value.round())),
               ),
               const SizedBox(height: 12),
               _PercentSlider(
                 label: l10n.correctedTypoProbability,
                 value: _draft.typoProbabilityPercent,
                 max: 25,
-                onChanged: (value) => setState(
-                  () => _draft = _draft.copyWith(
-                    typoProbabilityPercent: value.round(),
-                  ),
-                ),
+                onChanged: _draft.mode == InjectionMode.code
+                    ? null
+                    : (value) => _updateDraft(
+                        _draft.copyWith(typoProbabilityPercent: value.round()),
+                      ),
               ),
               if (_draft.typoProbabilityPercent > 0) ...[
                 const SizedBox(height: 12),
@@ -148,33 +164,46 @@ class _TypingPageState extends State<TypingPage> {
             controller: _threshold,
             label: l10n.autoClipboardThreshold,
             helper: l10n.semanticElementsMinimum,
-            onChanged: (value) => setState(
-              () => _draft = _draft.copyWith(
-                autoClipboardThreshold: int.tryParse(value) ?? 0,
-              ),
+            errorText: validation == 'auto_clipboard_threshold'
+                ? l10n.validationMessage(validation)
+                : null,
+            onChanged: (value) => _updateDraft(
+              _draft.copyWith(autoClipboardThreshold: int.tryParse(value) ?? 0),
             ),
           ),
         ),
         const SizedBox(height: 16),
-        SettingCard(
-          child: SaveBar(
-            saving: widget.controller.saving,
-            error: validation == null
-                ? widget.controller.error
-                : l10n.validationMessage(validation),
-            onReset: () => setState(() {
-              _draft = AppSettings.defaults();
-              _cps.text = '${_draft.charactersPerSecond}';
-              _threshold.text = '${_draft.autoClipboardThreshold}';
-            }),
-            onApply: () async {
-              final applied = await widget.controller.save(_draft);
-              if (applied && mounted) setState(() {});
-            },
-          ),
+        AutoSaveFooter(
+          controller: widget.controller,
+          onReset: _restoreDefaults,
         ),
       ],
     );
+  }
+
+  void _updateDraft(AppSettings next, {bool immediate = false}) {
+    setState(() {
+      _draft = next;
+      _hasLocalDraft = true;
+    });
+    widget.controller.updateSettings(
+      next,
+      debounce: immediate ? Duration.zero : SettingsController.autoSaveDebounce,
+    );
+  }
+
+  void _restoreDefaults() {
+    final defaults = AppSettings.defaults();
+    final next = _draft.copyWith(
+      mode: defaults.mode,
+      charactersPerSecond: defaults.charactersPerSecond,
+      jitterPercent: defaults.jitterPercent,
+      typoProbabilityPercent: defaults.typoProbabilityPercent,
+      autoClipboardThreshold: defaults.autoClipboardThreshold,
+    );
+    _updateDraft(next, immediate: true);
+    _cps.text = '${next.charactersPerSecond}';
+    _threshold.text = '${next.autoClipboardThreshold}';
   }
 }
 
@@ -184,11 +213,13 @@ class _NumberField extends StatelessWidget {
     required this.label,
     required this.helper,
     required this.onChanged,
+    this.errorText,
   });
 
   final TextEditingController controller;
   final String label;
   final String helper;
+  final String? errorText;
   final ValueChanged<String> onChanged;
 
   @override
@@ -201,6 +232,7 @@ class _NumberField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         helperText: helper,
+        errorText: errorText,
         border: const OutlineInputBorder(),
       ),
     );
@@ -212,13 +244,13 @@ class _PercentSlider extends StatelessWidget {
     required this.label,
     required this.value,
     required this.max,
-    required this.onChanged,
+    this.onChanged,
   });
 
   final String label;
   final int value;
   final int max;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -226,8 +258,20 @@ class _PercentSlider extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(child: Text(label)),
-            Text('$value%'),
+            Expanded(
+              child: Text(
+                label,
+                style: onChanged == null
+                    ? TextStyle(color: Theme.of(context).disabledColor)
+                    : null,
+              ),
+            ),
+            Text(
+              '$value%',
+              style: onChanged == null
+                  ? TextStyle(color: Theme.of(context).disabledColor)
+                  : null,
+            ),
           ],
         ),
         Slider(

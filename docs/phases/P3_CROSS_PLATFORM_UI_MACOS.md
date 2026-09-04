@@ -104,7 +104,7 @@ A successful OS registration probe does not prove that every application-local s
 - Cancel recorder;
 - static and OS probe status;
 - Reset;
-- Apply;
+- automatic persistence status;
 - visible rollback/error state.
 
 ### Typing

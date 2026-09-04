@@ -48,7 +48,17 @@ class ClipTypeLocalizations {
   String get trigger => _text('Trigger', '触发');
   String get cancel => _text('Cancel', '取消');
   String get ready => _text('Ready', '就绪');
-  String get settingsApplied => _text('Settings applied.', '设置已应用。');
+  String get changesSaved => _text('Saved', '已保存');
+  String get changesPending => _text('Pending', '待保存');
+  String get savingChanges => _text('Saving…', '保存中…');
+  String get saveFailed => _text('Save failed', '保存失败');
+  String get reviewChanges => _text('Review changes', '请检查修改');
+  String get retrySave => _text('Retry save', '重试保存');
+  String get autoSaveHint => _text(
+    'Changes save automatically. You can keep working.',
+    '修改会自动保存，可以继续操作。',
+  );
+  String get restoreDefaults => _text('Restore page defaults', '恢复本页默认');
   String get sessionStarted => _text('Typing session started.', '输入会话已开始。');
   String get loading => _text('Loading ClipType…', '正在加载 ClipType…');
   String get interfaceLanguage => _text('Interface language', '界面语言');
@@ -136,6 +146,7 @@ class ClipTypeLocalizations {
     'Rust 会为每个会话冻结一个后端和一份不可变设置快照。明确选择 Keyboard、Clipboard 或 Code 时不会静默切换。',
   );
   String get deliveryMode => _text('Delivery mode', '传输模式');
+  String get mode => _text('Mode', '模式');
   String get humanPacedControls =>
       _text('Human-paced keyboard controls', '模拟键入控制');
   String get keyboardControlsSubtitle => _text(
@@ -212,7 +223,6 @@ class ClipTypeLocalizations {
   String get record => _text('Record', '录制');
   String get clear => _text('Clear', '清空');
   String get reset => _text('Reset', '重置');
-  String get apply => _text('Apply', '应用');
   String get recordPrompt => _text('Press a modifier + key…', '请按下修饰键加按键组合…');
   String get escapeToCancel => _text('Esc to cancel', 'Esc 取消');
   String get notSet => _text('Not set', '未设置');
@@ -273,8 +283,8 @@ class ClipTypeLocalizations {
 
   String validationMessage(String? code) => switch (code) {
     'missing_hotkeys' || 'shortcuts_required' => _text(
-      'Record both a Trigger and Cancel shortcut before applying.',
-      '应用前请录制触发和取消两个快捷键。',
+      'Record both a Trigger and Cancel shortcut before saving.',
+      '保存前请录制触发和取消两个快捷键。',
     ),
     'different_hotkeys' => _text(
       'Trigger and Cancel shortcuts must be different.',
@@ -390,7 +400,7 @@ class ClipTypeLocalizations {
       'The saved ClipType settings are invalid.',
       '已保存的 ClipType 设置无效。',
     ),
-    'settings_failed' => _text('Settings could not be applied.', '设置无法应用。'),
+    'settings_failed' => _text('Settings could not be saved.', '设置无法保存。'),
     'trigger_failed' => _text(
       'The trigger command could not be delivered.',
       '无法传递触发命令。',

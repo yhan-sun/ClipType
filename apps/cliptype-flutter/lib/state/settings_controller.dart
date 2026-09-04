@@ -8,15 +8,20 @@ import '../model/app_settings.dart';
 import '../model/app_status.dart';
 import '../services/native_bridge.dart';
 
+enum AutoSaveStatus { saved, pending, saving, error }
+
 class SettingsController extends ChangeNotifier {
   SettingsController({NativeBridge? bridge})
     : bridge = bridge ?? NativeBridge();
+
+  static const autoSaveDebounce = Duration(milliseconds: 320);
 
   final NativeBridge bridge;
   AppSettings settings = AppSettings.defaults();
   AppStatus status = AppStatus.initial();
   bool loading = true;
   bool saving = false;
+  AutoSaveStatus autoSaveStatus = AutoSaveStatus.saved;
   ClipTypeLanguage language = ClipTypeLanguage.english;
   String triggerAvailability = 'not_checked';
   String cancelAvailability = 'not_checked';
@@ -24,19 +29,27 @@ class SettingsController extends ChangeNotifier {
 
   StreamSubscription<Map<Object?, Object?>>? _events;
   Timer? _activeObservation;
+  Timer? _saveDebounce;
+  Future<void>? _saveWorker;
+  AppSettings? _pendingSettings;
+  AppSettings? _failedSettings;
+  int _saveRevision = 0;
+  int _lastSuccessfulRevision = 0;
   bool _initialized = false;
+  bool _disposed = false;
   String? _messageCode;
   String? _errorCode;
   String? _validationCode;
 
   ClipTypeLocalizations get l10n => ClipTypeLocalizations(language.locale);
   String? get message => _message(_messageCode);
-  String? get error {
-    final validationCode = _validationCode;
-    if (validationCode != null) return l10n.validationMessage(validationCode);
-    final errorCode = _errorCode;
-    return errorCode == null ? null : _errorMessage(errorCode);
-  }
+  String? get error => _errorCode == null ? null : _errorMessage(_errorCode!);
+  String? get validationError =>
+      _validationCode == null ? null : l10n.validationMessage(_validationCode);
+
+  bool get hasLocalSaveWork =>
+      _pendingSettings != null || _saveDebounce != null || _saveWorker != null;
+  bool get canRetrySave => _failedSettings != null && _validationCode == null;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -54,7 +67,7 @@ class SettingsController extends ChangeNotifier {
   void setLanguage(ClipTypeLanguage next) {
     if (language == next) return;
     language = next;
-    notifyListeners();
+    _notifyListeners();
     unawaited(_sendLanguage(next));
   }
 
@@ -71,10 +84,12 @@ class SettingsController extends ChangeNotifier {
       final state = await bridge.getState();
       final nextSettings = AppSettings.fromMap(state);
       final nextStatus = AppStatus.fromMap(state);
-      settings = nextSettings;
+      if (!hasLocalSaveWork) settings = nextSettings;
       status = nextStatus;
       final bridgeError = state['bridgeError'] as String?;
-      _errorCode = bridgeError;
+      if (bridgeError != null || !_isSettingsSaveError(_errorCode)) {
+        _errorCode = bridgeError;
+      }
       _syncActiveObservation();
     } on PlatformException catch (exception) {
       _errorCode = exception.code;
@@ -82,39 +97,140 @@ class SettingsController extends ChangeNotifier {
       _errorCode = 'bridge_unavailable';
     } finally {
       loading = false;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
-  Future<bool> save(AppSettings proposed) async {
-    final validationCode = proposed.validationCode();
-    if (validationCode != null) {
-      _messageCode = null;
-      _errorCode = null;
-      _validationCode = validationCode;
-      notifyListeners();
-      return false;
-    }
-    saving = true;
+  /// Queues a validated settings snapshot for automatic persistence.
+  ///
+  /// UI controls call this as soon as their value changes. Continuous inputs
+  /// such as text fields and sliders are coalesced for a short interval; a
+  /// discrete control can pass `Duration.zero` for an immediate save. The
+  /// latest complete snapshot wins, and saves are serialized so rapid changes
+  /// cannot write an older value after a newer one.
+  void updateSettings(
+    AppSettings proposed, {
+    Duration debounce = autoSaveDebounce,
+  }) {
+    _saveRevision += 1;
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
+    _pendingSettings = null;
+    _failedSettings = null;
+    _messageCode = null;
     _errorCode = null;
-    _validationCode = null;
-    notifyListeners();
+    _validationCode = proposed.validationCode();
+
+    if (_validationCode != null) {
+      autoSaveStatus = AutoSaveStatus.error;
+      _notifyListeners();
+      return;
+    }
+
+    _pendingSettings = proposed;
+    autoSaveStatus = AutoSaveStatus.pending;
+    _saveDebounce = Timer(debounce, () {
+      _saveDebounce = null;
+      unawaited(_drainAutosave());
+    });
+    _notifyListeners();
+  }
+
+  /// Persists one snapshot immediately. This remains available to callers
+  /// that need an awaitable operation; normal UI controls use
+  /// [updateSettings] and save automatically.
+  Future<bool> save(AppSettings proposed) async {
+    updateSettings(proposed, debounce: Duration.zero);
+    if (_validationCode != null) return false;
+    final revision = _saveRevision;
+    await flushPendingSaves();
+    return _lastSuccessfulRevision == revision;
+  }
+
+  /// Forces any queued valid snapshot to the native settings store.
+  Future<void> flushPendingSaves() async {
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
+    await _drainAutosave();
+  }
+
+  /// Retries the most recent native save failure without requiring the user to
+  /// change a setting again.
+  void retryFailedSave() {
+    final failed = _failedSettings;
+    if (failed == null || _validationCode != null) return;
+    updateSettings(failed, debounce: Duration.zero);
+  }
+
+  Future<void> _drainAutosave() async {
+    final existing = _saveWorker;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+
+    final worker = _runAutosave();
+    _saveWorker = worker;
+    try {
+      await worker;
+    } finally {
+      if (identical(_saveWorker, worker)) _saveWorker = null;
+    }
+  }
+
+  Future<void> _runAutosave() async {
+    while (_pendingSettings != null) {
+      final proposed = _pendingSettings!;
+      final revision = _saveRevision;
+      _pendingSettings = null;
+      saving = true;
+      autoSaveStatus = AutoSaveStatus.saving;
+      _notifyListeners();
+
+      final result = await _persist(proposed);
+      if (result) {
+        settings = proposed;
+        _failedSettings = null;
+        _lastSuccessfulRevision = revision;
+        if (revision == _saveRevision && _pendingSettings == null) {
+          autoSaveStatus = AutoSaveStatus.saved;
+        } else if (_pendingSettings != null) {
+          autoSaveStatus = AutoSaveStatus.pending;
+        } else {
+          // A newer invalid edit superseded this successful write.
+          autoSaveStatus = AutoSaveStatus.error;
+        }
+      } else if (_pendingSettings != null) {
+        _failedSettings = proposed;
+        autoSaveStatus = AutoSaveStatus.pending;
+      } else {
+        _failedSettings = proposed;
+        autoSaveStatus = AutoSaveStatus.error;
+      }
+      _notifyListeners();
+    }
+    saving = false;
+    if (_pendingSettings == null && autoSaveStatus == AutoSaveStatus.saving) {
+      autoSaveStatus = AutoSaveStatus.saved;
+    }
+    _notifyListeners();
+  }
+
+  Future<bool> _persist(AppSettings proposed) async {
     try {
       final result = await bridge.saveSettings(proposed);
-      if (_isFailure(result)) {
-        _errorCode = 'result:${result['result'] as String?}';
+      final resultCode = result['result'];
+      if (resultCode != 'ok') {
+        _errorCode = resultCode is String
+            ? 'result:$resultCode'
+            : 'settings_failed';
         return false;
       }
-      settings = proposed;
-      _messageCode = 'settings_applied';
-      await refresh();
+      _errorCode = null;
       return true;
     } catch (_) {
       _errorCode = 'settings_failed';
       return false;
-    } finally {
-      saving = false;
-      notifyListeners();
     }
   }
 
@@ -134,7 +250,7 @@ class SettingsController extends ChangeNotifier {
       overallAvailability = 'unknown';
       _errorCode = 'availability_failed';
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> trigger() async {
@@ -155,7 +271,7 @@ class SettingsController extends ChangeNotifier {
     } catch (_) {
       _errorCode = 'trigger_failed';
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> cancel() async {
@@ -165,7 +281,7 @@ class SettingsController extends ChangeNotifier {
     } catch (_) {
       _errorCode = 'cancel_failed';
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> requestAccessibility() async {
@@ -175,7 +291,7 @@ class SettingsController extends ChangeNotifier {
       await refresh();
     } catch (_) {
       _errorCode = 'permission_request_failed';
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -187,7 +303,7 @@ class SettingsController extends ChangeNotifier {
     } catch (_) {
       _errorCode = 'system_settings_failed';
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> disposeAsync() async {
@@ -237,14 +353,12 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
-  bool _isFailure(Object? result) {
-    return result is! String ||
-        !{'ok', 'started', 'cancel_requested'}.contains(result);
+  bool _isSettingsSaveError(String? code) {
+    return code == 'settings_failed' || code?.startsWith('result:') == true;
   }
 
   String? _message(String? code) {
     if (code == null) return null;
-    if (code == 'settings_applied') return l10n.settingsApplied;
     if (code == 'session_started') return l10n.sessionStarted;
     if (code.startsWith('result:')) {
       return l10n.resultMessage(code.substring('result:'.length));
@@ -270,8 +384,15 @@ class SettingsController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
     _activeObservation?.cancel();
     _events?.cancel();
     super.dispose();
+  }
+
+  void _notifyListeners() {
+    if (!_disposed) notifyListeners();
   }
 }

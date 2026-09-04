@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../state/settings_controller.dart';
 
 class SettingCard extends StatelessWidget {
   const SettingCard({
@@ -19,8 +20,9 @@ class SettingCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -45,16 +47,57 @@ class SettingCard extends StatelessWidget {
   }
 }
 
+class PageContent extends StatelessWidget {
+  const PageContent({required this.children, super.key});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontal = constraints.maxWidth < 948
+            ? 24.0
+            : (constraints.maxWidth - 900) / 2;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(horizontal, 28, horizontal, 32),
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: children,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class PageHeader extends StatelessWidget {
-  const PageHeader({required this.title, required this.description, super.key});
+  const PageHeader({
+    required this.title,
+    required this.description,
+    this.trailing,
+    super.key,
+  });
 
   final String title;
   final String description;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
+    final copy = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: theme.textTheme.headlineMedium),
@@ -70,6 +113,26 @@ class PageHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+    if (trailing == null) return copy;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 620) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [copy, const SizedBox(height: 14), trailing!],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: copy),
+            const SizedBox(width: 18),
+            trailing!,
+          ],
+        );
+      },
     );
   }
 }
@@ -102,58 +165,155 @@ class StatusPill extends StatelessWidget {
   }
 }
 
-class SaveBar extends StatelessWidget {
-  const SaveBar({
-    required this.onApply,
-    required this.onReset,
-    required this.saving,
-    this.error,
-    super.key,
-  });
+class AutoSaveIndicator extends StatelessWidget {
+  const AutoSaveIndicator({required this.controller, super.key});
 
-  final VoidCallback onApply;
-  final VoidCallback onReset;
-  final bool saving;
-  final String? error;
+  final SettingsController controller;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (error != null) ...[
+    final (icon, label, color) = switch (controller.autoSaveStatus) {
+      AutoSaveStatus.saved => (
+        Icons.check_circle_outline,
+        l10n.changesSaved,
+        theme.colorScheme.primary,
+      ),
+      AutoSaveStatus.pending => (
+        Icons.schedule_outlined,
+        l10n.changesPending,
+        theme.colorScheme.secondary,
+      ),
+      AutoSaveStatus.saving => (
+        Icons.sync,
+        l10n.savingChanges,
+        theme.colorScheme.primary,
+      ),
+      AutoSaveStatus.error => (
+        controller.validationError == null
+            ? Icons.error_outline
+            : Icons.warning_amber_outlined,
+        controller.validationError == null
+            ? l10n.saveFailed
+            : l10n.reviewChanges,
+        theme.colorScheme.error,
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (controller.autoSaveStatus == AutoSaveStatus.saving)
+            SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            )
+          else
+            Icon(icon, size: 17, color: color),
+          const SizedBox(width: 7),
           Text(
-            error!,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.error,
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 12),
         ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton(
-              onPressed: saving ? null : onReset,
-              child: Text(l10n.reset),
-            ),
-            const SizedBox(width: 10),
-            FilledButton.icon(
-              onPressed: saving ? null : onApply,
-              icon: saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(l10n.apply),
-            ),
-          ],
+      ),
+    );
+  }
+}
+
+class AutoSaveFooter extends StatelessWidget {
+  const AutoSaveFooter({
+    required this.controller,
+    required this.onReset,
+    super.key,
+  });
+
+  final SettingsController controller;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = context.l10n;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.55,
         ),
-      ],
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final details = Row(
+            children: [
+              Icon(
+                Icons.save_outlined,
+                size: 19,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 9),
+              Flexible(child: Text(l10n.autoSaveHint)),
+            ],
+          );
+          final retry = controller.canRetrySave
+              ? TextButton.icon(
+                  onPressed: controller.saving
+                      ? null
+                      : controller.retryFailedSave,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: Text(l10n.retrySave),
+                )
+              : null;
+          final reset = TextButton.icon(
+            onPressed: controller.saving ? null : onReset,
+            icon: const Icon(Icons.restart_alt, size: 18),
+            label: Text(l10n.restoreDefaults),
+          );
+          if (constraints.maxWidth < 560) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                const SizedBox(height: 8),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    AutoSaveIndicator(controller: controller),
+                    retry ?? const SizedBox.shrink(),
+                    reset,
+                  ],
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: details),
+              AutoSaveIndicator(controller: controller),
+              const SizedBox(width: 8),
+              retry ?? const SizedBox.shrink(),
+              const SizedBox(width: 4),
+              reset,
+            ],
+          );
+        },
+      ),
     );
   }
 }

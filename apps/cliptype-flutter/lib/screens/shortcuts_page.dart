@@ -18,7 +18,7 @@ class ShortcutsPage extends StatefulWidget {
 class _ShortcutsPageState extends State<ShortcutsPage> {
   late String _trigger;
   late String _cancel;
-  bool _dirty = false;
+  bool _hasLocalDraft = false;
 
   SettingsController get controller => widget.controller;
 
@@ -32,7 +32,20 @@ class _ShortcutsPageState extends State<ShortcutsPage> {
   @override
   void didUpdateWidget(covariant ShortcutsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_dirty && oldWidget.controller.settings != controller.settings) {
+    if (oldWidget.controller != controller) {
+      _trigger = controller.settings.triggerHotkey;
+      _cancel = controller.settings.cancelHotkey;
+      _hasLocalDraft = false;
+      return;
+    }
+    if (_hasLocalDraft &&
+        _trigger == controller.settings.triggerHotkey &&
+        _cancel == controller.settings.cancelHotkey) {
+      _hasLocalDraft = false;
+    }
+    if (!_hasLocalDraft &&
+        (_trigger != controller.settings.triggerHotkey ||
+            _cancel != controller.settings.cancelHotkey)) {
       _trigger = controller.settings.triggerHotkey;
       _cancel = controller.settings.cancelHotkey;
     }
@@ -41,17 +54,13 @@ class _ShortcutsPageState extends State<ShortcutsPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final draft = controller.settings.copyWith(
-      triggerHotkey: _trigger,
-      cancelHotkey: _cancel,
-    );
     final validation = _staticValidation();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(32, 30, 32, 32),
+    return PageContent(
       children: [
         PageHeader(
           title: l10n.shortcuts,
           description: l10n.shortcutsDescription,
+          trailing: AutoSaveIndicator(controller: controller),
         ),
         const SizedBox(height: 26),
         SettingCard(
@@ -62,27 +71,15 @@ class _ShortcutsPageState extends State<ShortcutsPage> {
               HotkeyRecorder(
                 title: l10n.triggerShortcut,
                 value: _trigger,
-                onChanged: (value) => setState(() {
-                  _trigger = value;
-                  _dirty = true;
-                }),
-                onCleared: () => setState(() {
-                  _trigger = '';
-                  _dirty = true;
-                }),
+                onChanged: (value) => _setShortcut(trigger: value),
+                onCleared: () => _setShortcut(trigger: ''),
               ),
               const SizedBox(height: 12),
               HotkeyRecorder(
                 title: l10n.cancelShortcut,
                 value: _cancel,
-                onChanged: (value) => setState(() {
-                  _cancel = value;
-                  _dirty = true;
-                }),
-                onCleared: () => setState(() {
-                  _cancel = '';
-                  _dirty = true;
-                }),
+                onChanged: (value) => _setShortcut(cancel: value),
+                onCleared: () => _setShortcut(cancel: ''),
               ),
               if (validation != null) ...[
                 const SizedBox(height: 14),
@@ -137,23 +134,34 @@ class _ShortcutsPageState extends State<ShortcutsPage> {
           ),
         ),
         const SizedBox(height: 16),
-        SettingCard(
-          child: SaveBar(
-            saving: controller.saving,
-            error: controller.error,
-            onReset: () => setState(() {
-              final defaults = AppSettings.defaults();
-              _trigger = defaults.triggerHotkey;
-              _cancel = defaults.cancelHotkey;
-              _dirty = true;
-            }),
-            onApply: () async {
-              final applied = await controller.save(draft);
-              if (applied && mounted) setState(() => _dirty = false);
-            },
-          ),
-        ),
+        AutoSaveFooter(controller: controller, onReset: _restoreDefaults),
       ],
+    );
+  }
+
+  void _setShortcut({String? trigger, String? cancel}) {
+    setState(() {
+      if (trigger != null) _trigger = trigger;
+      if (cancel != null) _cancel = cancel;
+      _hasLocalDraft = true;
+    });
+    controller.updateSettings(_draft(), debounce: Duration.zero);
+  }
+
+  void _restoreDefaults() {
+    final defaults = AppSettings.defaults();
+    setState(() {
+      _trigger = defaults.triggerHotkey;
+      _cancel = defaults.cancelHotkey;
+      _hasLocalDraft = true;
+    });
+    controller.updateSettings(_draft(), debounce: Duration.zero);
+  }
+
+  AppSettings _draft() {
+    return controller.settings.copyWith(
+      triggerHotkey: _trigger,
+      cancelHotkey: _cancel,
     );
   }
 

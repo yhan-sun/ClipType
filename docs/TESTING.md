@@ -130,6 +130,10 @@ application, collect clipboard fixtures, sign with Developer ID, notarize, or
 publish an artifact. Those cases remain local/physical evidence gates and are
 reported separately in `local-evidence/`.
 
+The Flutter tests also cover automatic settings persistence, coalescing rapid
+updates into the latest snapshot, invalid-setting rejection before the native
+call, and the retryable save-state contract.
+
 ## Release pipeline validation
 
 On pull requests, `.github/workflows/windows-release.yml` performs a dry run that:

@@ -66,6 +66,9 @@ The Windows beta provides:
 - portable and per-user installation options;
 - content-free status and remediation categories.
 
+The macOS local candidate's Flutter settings save valid changes automatically
+and expose save state without requiring an Apply action.
+
 ## Safety rules
 
 - The destination is captured before clipboard acquisition and revalidated before every dispatch boundary.

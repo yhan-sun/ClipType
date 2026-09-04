@@ -143,7 +143,7 @@ class AppSettings {
   String? validationError() => switch (validationCode()) {
     null => null,
     'missing_hotkeys' =>
-      'Record both a Trigger and Cancel shortcut before applying.',
+      'Record both a Trigger and Cancel shortcut before saving.',
     'different_hotkeys' => 'Trigger and Cancel shortcuts must be different.',
     'characters_per_second' =>
       'Characters per second must be between 1 and 250.',

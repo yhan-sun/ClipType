@@ -81,7 +81,7 @@ Issues #33 and #41 remain the post-fix Windows interactive-evidence track. Their
 The settings window contains:
 
 - General — enabled, notifications, start at login;
-- Shortcuts — local Trigger/Cancel recorders, validation, OS probe status, Reset, Apply, and rollback result;
+- Shortcuts — local Trigger/Cancel recorders, validation, OS probe status, Reset, automatic persistence, and rollback result;
 - Typing — Keyboard/Clipboard/Code/Auto mode, exact characters per second, jitter, corrected typo probability, Auto threshold, and safety guidance;
 - Permissions — macOS Accessibility state and explicit remediation;
 - About & Updates — version/channel, release notes, project licenses, dependency notices, and UI-toolkit attribution.

@@ -182,6 +182,14 @@ Flutter window and the native status menu synchronize its English/Simplified
 Chinese value through the fixed method channel; it is not part of the Rust
 product settings or injection policy.
 
+Flutter product-setting controls submit complete validated snapshots to the
+settings controller as they change. Discrete changes save immediately; text
+fields and sliders use a short debounce, and the controller serializes and
+coalesces writes so only the latest snapshot can follow an in-flight save.
+Invalid snapshots remain local and are shown inline; native failures remain
+retryable. There is no UI-level Apply transaction, and reset actions save the
+current page's defaults immediately.
+
 Trigger/Cancel are registered with the system hot-key API as a transactional
 pair. A candidate is validated and probed before the old pair is released;
 failure removes temporary registrations and leaves the prior pair active.

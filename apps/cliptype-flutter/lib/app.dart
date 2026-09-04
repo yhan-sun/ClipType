@@ -86,6 +86,17 @@ class _ClipTypeAppState extends State<ClipTypeApp> {
       useMaterial3: true,
       visualDensity: VisualDensity.standard,
       scaffoldBackgroundColor: scheme.surface,
+      appBarTheme: AppBarTheme(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: scheme.onSurface,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
       cardTheme: CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
@@ -100,6 +111,9 @@ class _ClipTypeAppState extends State<ClipTypeApp> {
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: scheme.surfaceContainerLow,
         indicatorColor: scheme.secondaryContainer,
+        useIndicator: true,
+        groupAlignment: -0.82,
+        minExtendedWidth: 190,
         selectedIconTheme: IconThemeData(color: scheme.onSecondaryContainer),
         selectedLabelTextStyle: TextStyle(
           color: scheme.onSurface,
@@ -132,6 +146,7 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final feedback = controller.error ?? controller.message;
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 22,
@@ -151,7 +166,7 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
           ],
         ),
         actions: [
-          TextButton.icon(
+          FilledButton.tonalIcon(
             onPressed: controller.trigger,
             icon: const Icon(Icons.play_arrow_rounded),
             label: Text(l10n.trigger),
@@ -223,8 +238,7 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
           );
         },
       ),
-      bottomNavigationBar:
-          controller.message == null && controller.error == null
+      bottomNavigationBar: feedback == null
           ? null
           : Material(
               color: controller.error == null
@@ -237,13 +251,33 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
                     horizontal: 22,
                     vertical: 10,
                   ),
-                  child: Text(
-                    controller.error ?? controller.message ?? '',
-                    style: TextStyle(
-                      color: controller.error == null
-                          ? Theme.of(context).colorScheme.onSecondaryContainer
-                          : Theme.of(context).colorScheme.onErrorContainer,
-                    ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        controller.error == null
+                            ? Icons.info_outline
+                            : Icons.error_outline,
+                        size: 18,
+                        color: controller.error == null
+                            ? Theme.of(context).colorScheme.onSecondaryContainer
+                            : Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          feedback,
+                          style: TextStyle(
+                            color: controller.error == null
+                                ? Theme.of(context)
+                                      .colorScheme
+                                      .onSecondaryContainer
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

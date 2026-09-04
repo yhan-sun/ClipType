@@ -14,8 +14,7 @@ class PermissionsPage extends StatelessWidget {
     final l10n = context.l10n;
     final status = controller.status;
     final granted = status.permission == 'granted';
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(32, 30, 32, 32),
+    return PageContent(
       children: [
         PageHeader(
           title: l10n.permissions,
@@ -36,9 +35,9 @@ class PermissionsPage extends StatelessWidget {
                         : Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    l10n.permissionLabel(status.permission),
-                    style: Theme.of(context).textTheme.titleMedium,
+                  StatusPill(
+                    label: l10n.permissionLabel(status.permission),
+                    good: granted,
                   ),
                 ],
               ),

@@ -45,6 +45,12 @@ The settings window supports English and Simplified Chinese. The selected
 display language is a non-sensitive presentation preference and is mirrored to
 the native status menu; it is separate from Rust's product settings.
 
+Product settings use automatic persistence. Discrete controls such as switches,
+mode selection, and shortcut recording save as soon as a valid value is chosen;
+text fields and sliders coalesce rapid edits for a short bounded interval. The
+settings window has no Apply step: it shows Pending, Saving, Saved, or a
+recoverable failure state, and each page can restore its own defaults.
+
 Swift/AppKit owns the single status item/menu, window lifecycle, Carbon global
 hot-key registration, Accessibility request/status, System Settings link,
 `SMAppService`, and the Rust bridge. Rust owns settings validation and
