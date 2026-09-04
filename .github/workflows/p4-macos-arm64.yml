@@ -10,6 +10,11 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - ".github/workflows/p4-macos-arm64.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "release/VERSION"
   workflow_dispatch:
 
 permissions:
@@ -27,6 +32,9 @@ jobs:
     name: Flutter macOS arm64 build, install, and preview checks
     runs-on: macos-14
     timeout-minutes: 55
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.package.outputs.artifact_name }}
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,7 +56,6 @@ jobs:
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
           test -f "docs/releases/$version.md"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "version_without_v=${version#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install pinned Flutter toolchain
         shell: bash
@@ -147,19 +154,24 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          VERSION_WITHOUT_V: ${{ steps.version.outputs.version_without_v }}
           BUILT_APP: ${{ steps.bundle.outputs.app }}
         run: |
           set -euo pipefail
           dist="$GITHUB_WORKSPACE/dist/macos-arm64"
           mkdir -p "$dist"
-          zip_name="ClipType-${VERSION_WITHOUT_V}-macos-arm64-testing-preview.zip"
-          dmg_name="ClipType-${VERSION_WITHOUT_V}-macos-arm64-testing-preview.dmg"
+          zip_name="ClipType-${VERSION}-macos-arm64-UNSIGNED.zip"
+          dmg_name="ClipType-${VERSION}-macos-arm64-UNSIGNED.dmg"
 
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$dist/$zip_name"
+
+          dmg_stage="$RUNNER_TEMP/cliptype-dmg-stage"
+          rm -rf "$dmg_stage"
+          mkdir -p "$dmg_stage"
+          /usr/bin/ditto "$BUILT_APP" "$dmg_stage/ClipType.app"
+          ln -s /Applications "$dmg_stage/Applications"
           hdiutil create \
             -volname "ClipType ${VERSION} arm64 preview" \
-            -srcfolder "$BUILT_APP" \
+            -srcfolder "$dmg_stage" \
             -ov -format UDZO "$dist/$dmg_name"
 
           cat > "$dist/BUILD-INFO-macos.txt" <<INFO
@@ -179,45 +191,137 @@ jobs:
           compatibility_claim=macOS_arm64_testing_preview_only
           INFO
 
-          cat > "$dist/README-macos-arm64-testing-preview.txt" <<'README'
+          cat > "$dist/README-macOS-TESTING-PREVIEW.txt" <<'README'
           ClipType macOS arm64 testing preview
 
-          This artifact is Apple-Silicon-only, ad-hoc signed, not Developer ID
-          signed, not notarized, not stapled, and not a Universal 2 or general
-          macOS release. Hosted CI builds, installs, verifies, and launch-smokes
-          the bundle. It cannot grant persistent Accessibility permission or
-          perform a human VS Code/Monaco input session; those checks remain
-          NOT RUN until an exact-release physical report is recorded.
+          This artifact is Apple-Silicon-only and ad-hoc signed. It is not
+          Developer ID signed, notarized, stapled, Universal 2, Intel/Rosetta,
+          or a general macOS release. Hosted CI builds, installs, verifies, and
+          launch-smokes the bundle. It cannot grant persistent Accessibility
+          permission or perform a human VS Code/Monaco input session; those
+          checks remain NOT RUN until an exact-release physical report exists.
           README
 
           (
             cd "$dist"
             shasum -a 256 "$zip_name" "$dmg_name" \
-              BUILD-INFO-macos.txt README-macos-arm64-testing-preview.txt \
-              > SHA256SUMS-macos-arm64.txt
+              BUILD-INFO-macos.txt README-macOS-TESTING-PREVIEW.txt \
+              > SHA256SUMS-macos.txt
+            shasum -a 256 -c SHA256SUMS-macos.txt
           )
-          shasum -a 256 -c "$dist/SHA256SUMS-macos-arm64.txt"
 
           extract="$RUNNER_TEMP/cliptype-zip-extract"
+          rm -rf "$extract"
           mkdir -p "$extract"
           /usr/bin/ditto -x -k "$dist/$zip_name" "$extract"
           test -d "$extract/ClipType.app"
           codesign --verify --deep --strict --verbose=2 "$extract/ClipType.app"
+          test "$(lipo -archs "$extract/ClipType.app/Contents/MacOS/ClipType")" = "arm64"
 
           mount="$RUNNER_TEMP/cliptype-dmg-mount"
+          rm -rf "$mount"
           mkdir -p "$mount"
           hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dist/$dmg_name"
+          trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
           test -d "$mount/ClipType.app"
+          test -L "$mount/Applications"
           codesign --verify --deep --strict --verbose=2 "$mount/ClipType.app"
+          test "$(lipo -archs "$mount/ClipType.app/Contents/MacOS/ClipType")" = "arm64"
           hdiutil detach "$mount"
+          trap - EXIT
 
           echo "artifact_name=macos-arm64-${VERSION}" >> "$GITHUB_OUTPUT"
           echo "dist=$dist" >> "$GITHUB_OUTPUT"
 
-      - name: Upload candidate artifacts without publishing a release
+      - name: Upload candidate artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.package.outputs.artifact_name }}
           path: ${{ steps.package.outputs.dist }}
           if-no-files-found: error
           retention-days: 14
+
+  publish-testing-preview:
+    name: Attach exact macOS arm64 preview to prerelease
+    needs: build-install-package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build-install-package.outputs.version }}
+      ARTIFACT_NAME: ${{ needs.build-install-package.outputs.artifact_name }}
+    steps:
+      - name: Download exact validated macOS assets
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: release-assets
+
+      - name: Wait boundedly for the Windows release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=false
+          for _ in $(seq 1 120); do
+            if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=true
+              break
+            fi
+            sleep 10
+          done
+          test "$found" = true
+
+      - name: Verify exact tag, prerelease, and additive asset names
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          prerelease="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha)"
+          test "$target" = "$GITHUB_SHA"
+          test "$tag_sha" = "$GITHUB_SHA"
+          test "$prerelease" = true
+
+          existing="$RUNNER_TEMP/existing-assets.txt"
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' > "$existing"
+          while IFS= read -r asset; do
+            name="$(basename "$asset")"
+            if grep -Fxq "$name" "$existing"; then
+              echo "refusing to overwrite existing release asset: $name" >&2
+              exit 1
+            fi
+          done < <(find release-assets -maxdepth 1 -type f -print)
+
+          (
+            cd release-assets
+            shasum -a 256 -c SHA256SUMS-macos.txt
+          )
+
+      - name: Upload supplemental preview assets without clobbering
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$VERSION" release-assets/* \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Re-download and verify published macOS assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir published-assets
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --dir published-assets
+          while IFS= read -r local_asset; do
+            name="$(basename "$local_asset")"
+            cmp "$local_asset" "published-assets/$name"
+          done < <(find release-assets -maxdepth 1 -type f -print)
+          (
+            cd published-assets
+            shasum -a 256 -c SHA256SUMS-macos.txt
+          )
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,targetCommitish,isPrerelease,url,assets
