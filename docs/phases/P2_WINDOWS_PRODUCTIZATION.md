@@ -92,7 +92,7 @@ Completed: strict settings store, atomic recovery writes, native tray/menu/statu
 
 ### Wave 4 — evidence and packaging
 
-Completed: controlled keyboard/clipboard/auto E2E, benchmark workflow, package install/startup/uninstall smoke, privacy scanning, and release-subsystem build.
+Completed: controlled keyboard/clipboard/auto E2E, Code-mode coordinator coverage, benchmark workflow, package install/startup/uninstall smoke, privacy scanning, and release-subsystem build.
 
 ### Wave 5 — compatibility and public release
 

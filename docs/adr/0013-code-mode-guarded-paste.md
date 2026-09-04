@@ -1,6 +1,6 @@
 # ADR-0013: Code mode uses guarded whole-block paste
 
-- Status: Accepted
+- Status: Superseded by ADR-0014
 - Date: 2026-09-04
 - Scope: shared injection policy and settings surface
 - Supersedes: ADR-0003 for the mode vocabulary

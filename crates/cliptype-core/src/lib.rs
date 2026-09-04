@@ -40,8 +40,9 @@ pub use plan::{
     CapabilityRequirement, KeyboardPlan, PlanCapabilities, PlanError, build_keyboard_plan,
 };
 pub use product::{
-    AutoClipboardThreshold, ClipboardPlan, InjectionBackend, InjectionMode, InjectionPlan,
-    ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, build_injection_plan,
+    AutoClipboardThreshold, ClipboardPlan, CodeAction, CodePlan, InjectionBackend, InjectionMode,
+    InjectionPlan, ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError,
+    build_injection_plan,
 };
 pub use sensitive::SensitiveText;
 pub use settings::{

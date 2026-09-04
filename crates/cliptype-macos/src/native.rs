@@ -60,6 +60,7 @@ unsafe extern "C" {
     fn ct_macos_post_return() -> i32;
     fn ct_macos_post_tab() -> i32;
     fn ct_macos_post_backspace() -> i32;
+    fn ct_macos_post_cursor_right() -> i32;
     fn ct_macos_post_paste(expected_revision: i64) -> i32;
 
     fn ct_macos_hotkey_create(
@@ -221,6 +222,7 @@ impl KeyboardPort for MacKeyboard {
             unicode_text: state,
             line_break: state,
             tab: state,
+            cursor_right: state,
             modifier_observation: CapabilityState::Available,
         }
     }
@@ -283,6 +285,27 @@ impl KeyboardPort for MacKeyboard {
     fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
         // SAFETY: fixed balanced Backspace key event.
         if unsafe { ct_macos_post_backspace() } == 0 {
+            Ok(DispatchResult::NoneAccepted {
+                requested: NativeEventCount::new(2),
+                native: Some(NativeError::new(
+                    if Self::ready() {
+                        NativeErrorKind::BlockedCauseUnknown
+                    } else {
+                        NativeErrorKind::PermissionDenied
+                    },
+                    None,
+                )),
+            })
+        } else {
+            Ok(DispatchResult::Complete {
+                events: NativeEventCount::new(2),
+            })
+        }
+    }
+
+    fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
+        // SAFETY: fixed balanced cursor-right key event.
+        if unsafe { ct_macos_post_cursor_right() } == 0 {
             Ok(DispatchResult::NoneAccepted {
                 requested: NativeEventCount::new(2),
                 native: Some(NativeError::new(

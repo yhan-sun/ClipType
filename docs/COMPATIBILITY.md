@@ -49,6 +49,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
+| `code` | Sends bounded keyboard actions, skips leading indentation, and uses cursor-right for matching auto-generated delimiters/quotes. It assumes editor auto-pair and auto-indent are enabled. |
 | `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
@@ -71,7 +72,11 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 
 ### Rich clipboard formats
 
-Clipboard and Code modes leave all formats unchanged and invoke ordinary paste. Rich targets may prefer HTML, RTF, image, or application-specific formats already present beside `CF_UNICODETEXT`. Use keyboard mode when Unicode text-event semantics are required; use Code mode when an editor's per-character pair completion or auto-indent must not duplicate the copied block.
+Clipboard mode leaves all formats unchanged and invokes ordinary paste. Code
+mode uses Unicode keyboard events and cursor-right actions, so it is intended
+for text editors with auto-pair and auto-indent enabled. Rich targets may
+prefer HTML, RTF, image, or application-specific formats already present beside
+`CF_UNICODETEXT`; use Clipboard mode for those formats.
 
 ### Remote and virtual desktops
 

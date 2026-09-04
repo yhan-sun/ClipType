@@ -108,11 +108,16 @@ impl TargetPort for StableTarget {
 #[derive(Clone, Default)]
 struct CountingKeyboard {
     calls: Arc<AtomicUsize>,
+    cursor_right_calls: Arc<AtomicUsize>,
 }
 
 impl CountingKeyboard {
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    fn cursor_right_calls(&self) -> usize {
+        self.cursor_right_calls.load(Ordering::Relaxed)
     }
 }
 
@@ -122,6 +127,7 @@ impl KeyboardPort for CountingKeyboard {
             unicode_text: CapabilityState::Available,
             line_break: CapabilityState::Available,
             tab: CapabilityState::Available,
+            cursor_right: CapabilityState::Available,
             modifier_observation: CapabilityState::Available,
         }
     }
@@ -131,6 +137,13 @@ impl KeyboardPort for CountingKeyboard {
         _batch: cliptype_core::TextBatch<'_>,
     ) -> Result<DispatchResult, KeyboardError> {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        Ok(DispatchResult::Complete {
+            events: NativeEventCount::new(2),
+        })
+    }
+
+    fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
+        self.cursor_right_calls.fetch_add(1, Ordering::Relaxed);
         Ok(DispatchResult::Complete {
             events: NativeEventCount::new(2),
         })
@@ -231,6 +244,13 @@ fn available_paste_capabilities() -> PasteCapabilities {
     }
 }
 
+fn unavailable_paste_capabilities() -> PasteCapabilities {
+    PasteCapabilities {
+        paste_chord: CapabilityState::Unavailable,
+        clipboard_revision_guard: CapabilityState::Unavailable,
+    }
+}
+
 fn config(mode: InjectionMode, threshold: usize) -> ProductConfig {
     ProductConfig {
         mode,
@@ -300,10 +320,10 @@ fn explicit_clipboard_uses_one_revision_guarded_paste_only() {
 }
 
 #[test]
-fn code_mode_uses_one_revision_guarded_paste_only() {
+fn code_mode_uses_keyboard_actions_and_skips_auto_pairs() {
     let clipboard = RevisionedClipboard::stable("if (x[0]) { return {}; }", 7, 1);
     let keyboard = CountingKeyboard::default();
-    let paste = ScriptedPaste::complete();
+    let paste = ScriptedPaste::new([], unavailable_paste_capabilities());
     let coordinator = coordinator(
         clipboard,
         StableTarget::default(),
@@ -315,10 +335,11 @@ fn code_mode_uses_one_revision_guarded_paste_only() {
 
     start_and_wait(&coordinator);
 
-    assert_eq!(keyboard.calls(), 0);
-    assert_eq!(paste.calls(), 1);
+    assert!(keyboard.calls() > 0);
+    assert_eq!(keyboard.cursor_right_calls(), 4);
+    assert_eq!(paste.calls(), 0);
     assert_eq!(coordinator.status().backend, Some(InjectionBackend::Code));
-    assert_eq!(coordinator.status().batches_completed, 1);
+    assert_eq!(coordinator.status().batches_completed, 24);
 }
 
 #[test]

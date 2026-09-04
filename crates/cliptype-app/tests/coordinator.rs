@@ -235,6 +235,7 @@ impl KeyboardPort for FakeKeyboard {
             unicode_text: CapabilityState::Available,
             line_break: CapabilityState::Available,
             tab: CapabilityState::Available,
+            cursor_right: CapabilityState::Available,
             modifier_observation: CapabilityState::Available,
         }
     }

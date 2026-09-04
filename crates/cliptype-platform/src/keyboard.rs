@@ -59,6 +59,7 @@ pub struct KeyboardCapabilities {
     pub unicode_text: CapabilityState,
     pub line_break: CapabilityState,
     pub tab: CapabilityState,
+    pub cursor_right: CapabilityState,
     pub modifier_observation: CapabilityState,
 }
 
@@ -126,6 +127,12 @@ pub trait KeyboardPort: Send + Sync {
     /// coordinator applies the same delay, jitter, cancellation, focus, and
     /// modifier checks to this action as it does to ordinary text actions.
     fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
+        Err(KeyboardError::UnsupportedSemanticElement)
+    }
+
+    /// Dispatches exactly one cursor-right action used to pass over an editor's
+    /// already-generated closing delimiter or quote in Code mode.
+    fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
         Err(KeyboardError::UnsupportedSemanticElement)
     }
 }

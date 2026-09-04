@@ -41,7 +41,7 @@ tray / reviewed global trigger
   -> build and freeze keyboard, clipboard, or code plan
   -> reject known higher-integrity target
   -> revalidate destination and modifiers
-  -> dispatch bounded keyboard batches or one guarded Paste chord
+  -> dispatch bounded keyboard batches, Code actions, or one guarded Paste chord
   -> classify complete / none / partial / unknown result
   -> publish content-free completion
   -> release session slot
@@ -61,11 +61,18 @@ The clipboard plan is content-free except for element count and backend identity
 
 ### Code plan
 
-The Code plan is a named guarded-paste plan. It uses the current clipboard and
-the same content-blind revision witness as the Clipboard plan, but keeps a
-distinct backend identity so status and tests show that the user explicitly
-selected code-safe whole-block delivery. It never enters the per-character
-keyboard path.
+The Code plan is a named keyboard plan. It normalizes the current clipboard
+text, drops leading spaces and Tabs at the start of each normal-code line, and
+emits a bounded action sequence. Opening `()`, `{}`, `[]`, and quote
+delimiters are typed normally; a matching closer or quote is represented as a
+cursor-right action so the destination editor's already-generated pair is
+skipped. Brackets and quotes inside recognized strings and comments remain
+literal. The plan requires keyboard and cursor-right capabilities and never
+uses clipboard paste or revision evidence.
+
+This is intentionally a destination-editor contract: Code mode assumes
+auto-pair is enabled. It cannot verify the editor's completion setting or read
+target content without violating the content-free target boundary.
 
 ### Auto selection
 

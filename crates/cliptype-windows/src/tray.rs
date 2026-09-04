@@ -775,7 +775,7 @@ const fn notice_text(notice: TrayNotice) -> (&'static str, &'static str, u32) {
             ("ClipType", "Clipboard paste command completed.", NIIF_INFO)
         }
         TrayNotice::Completed(InjectionBackend::Code) => {
-            ("ClipType", "Code block paste completed.", NIIF_INFO)
+            ("ClipType", "Code typing completed.", NIIF_INFO)
         }
         TrayNotice::Busy => ("ClipType", "Another session is active.", NIIF_WARNING),
         TrayNotice::Cancelled => ("ClipType", "The active session was cancelled.", NIIF_INFO),

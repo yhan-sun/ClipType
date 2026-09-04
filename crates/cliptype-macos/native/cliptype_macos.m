@@ -251,6 +251,10 @@ int ct_macos_post_backspace(void) {
     return ct_post_balanced_key((CGKeyCode)51, 0);
 }
 
+int ct_macos_post_cursor_right(void) {
+    return ct_post_balanced_key((CGKeyCode)124, 0);
+}
+
 int ct_macos_post_paste(int64_t expected_revision) {
     if (ct_macos_clipboard_change_count() != expected_revision) return -1;
     return ct_post_balanced_key((CGKeyCode)9, kCGEventFlagMaskCommand);

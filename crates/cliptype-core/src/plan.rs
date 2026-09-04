@@ -12,6 +12,7 @@ pub enum CapabilityRequirement {
     UnicodeText,
     LineBreak,
     Tab,
+    CursorRight,
     ModifierObservation,
 }
 
@@ -21,6 +22,7 @@ pub struct PlanCapabilities {
     pub unicode_text: CapabilityState,
     pub line_break: CapabilityState,
     pub tab: CapabilityState,
+    pub cursor_right: CapabilityState,
     pub modifier_observation: CapabilityState,
 }
 
@@ -147,6 +149,7 @@ mod tests {
             unicode_text: CapabilityState::Available,
             line_break: CapabilityState::Available,
             tab: CapabilityState::Available,
+            cursor_right: CapabilityState::Available,
             modifier_observation: CapabilityState::Available,
         }
     }

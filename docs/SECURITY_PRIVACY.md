@@ -20,9 +20,11 @@ ClipType is a local, single-user, normal-integrity desktop process. It is not a 
 
 Clipboard mode uses the clipboard value that is already current. It never writes, clears, owns, replaces, snapshots for restoration, or restores clipboard contents.
 
-Code mode uses the same current-clipboard, revision-guarded paste transaction.
-It is explicit so source code can avoid per-character auto-pair and
-auto-indent interactions; it does not add a second clipboard storage path.
+Code mode reads the current clipboard text and uses the keyboard adapter. It
+skips source indentation and emits cursor-right actions for matching pairs the
+editor is expected to have generated; it does not use Clipboard paste or a
+revision-guarded paste transaction. It does not add a second clipboard storage
+path or read destination content.
 
 The flow is:
 

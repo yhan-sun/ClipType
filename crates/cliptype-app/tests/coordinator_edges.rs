@@ -218,6 +218,7 @@ fn available_capabilities() -> KeyboardCapabilities {
         unicode_text: CapabilityState::Available,
         line_break: CapabilityState::Available,
         tab: CapabilityState::Available,
+        cursor_right: CapabilityState::Available,
         modifier_observation: CapabilityState::Available,
     }
 }

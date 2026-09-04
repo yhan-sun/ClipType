@@ -3,8 +3,9 @@
 use std::{fmt, num::NonZeroUsize};
 
 use crate::{
-    CapabilityState, ConfigError, KeyboardPlan, P1Config, PlanCapabilities, PlanError,
-    SemanticElementCount, SemanticElementLimit, SensitiveText, TabPolicy, build_keyboard_plan,
+    CapabilityRequirement, CapabilityState, ConfigError, KeyboardPlan, P1Config, PlanCapabilities,
+    PlanError, SemanticElementCount, SemanticElementLimit, SensitiveText, TabPolicy, TextAtom,
+    build_keyboard_plan,
 };
 
 /// User-visible injection mode.
@@ -14,8 +15,7 @@ pub enum InjectionMode {
     Clipboard,
     #[default]
     Auto,
-    /// Paste the current clipboard as one guarded code block so editor
-    /// auto-pair and auto-indent handlers do not process each character.
+    /// Use paced keyboard actions with code-aware indentation and pair rules.
     Code,
 }
 
@@ -160,11 +160,70 @@ impl fmt::Debug for ClipboardPlan {
     }
 }
 
+/// One keyboard action in Code mode.
+///
+/// `CursorRight` passes over a closing delimiter or quote that the destination
+/// editor generated after the corresponding opener. The planner only reasons
+/// about the source text; it never reads destination content.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CodeAction {
+    Atom(TextAtom),
+    CursorRight,
+}
+
+impl fmt::Debug for CodeAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Atom(atom) => formatter.debug_tuple("Atom").field(atom).finish(),
+            Self::CursorRight => formatter.write_str("CursorRight"),
+        }
+    }
+}
+
+/// Immutable keyboard plan for source code and structured text.
+pub struct CodePlan {
+    actions: Vec<CodeAction>,
+    elements: SemanticElementCount,
+    config: P1Config,
+    capabilities: PlanCapabilities,
+}
+
+impl CodePlan {
+    pub fn actions(&self) -> &[CodeAction] {
+        &self.actions
+    }
+
+    pub const fn element_count(&self) -> SemanticElementCount {
+        self.elements
+    }
+
+    pub const fn config(&self) -> P1Config {
+        self.config
+    }
+
+    pub const fn capabilities(&self) -> PlanCapabilities {
+        self.capabilities
+    }
+}
+
+impl fmt::Debug for CodePlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CodePlan")
+            .field("elements", &self.elements.get())
+            .field("actions", &self.actions.len())
+            .field("config", &self.config)
+            .field("capabilities", &self.capabilities)
+            .field("content", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Immutable backend-specific plan for one P2 session.
 pub enum InjectionPlan {
     Keyboard(KeyboardPlan),
     Clipboard(ClipboardPlan),
-    Code(ClipboardPlan),
+    Code(CodePlan),
 }
 
 impl InjectionPlan {
@@ -179,7 +238,8 @@ impl InjectionPlan {
     pub fn element_count(&self) -> SemanticElementCount {
         match self {
             Self::Keyboard(plan) => plan.text().element_count(),
-            Self::Clipboard(plan) | Self::Code(plan) => plan.element_count(),
+            Self::Clipboard(plan) => plan.element_count(),
+            Self::Code(plan) => plan.element_count(),
         }
     }
 }
@@ -258,10 +318,7 @@ pub fn build_injection_plan(
             require_clipboard(capabilities, revision_available)?;
             Ok(InjectionPlan::Clipboard(ClipboardPlan { elements }))
         }
-        InjectionMode::Code => {
-            require_clipboard(capabilities, revision_available)?;
-            Ok(InjectionPlan::Code(ClipboardPlan { elements }))
-        }
+        InjectionMode::Code => build_code(text, config, capabilities, elements),
         InjectionMode::Auto => {
             let clipboard_available = clipboard_is_available(capabilities, revision_available);
             let keyboard_available =
@@ -292,6 +349,203 @@ fn build_keyboard(
     build_keyboard_plan(text, config.safety, capabilities.keyboard)
         .map(InjectionPlan::Keyboard)
         .map_err(ProductPlanError::Keyboard)
+}
+
+fn build_code(
+    text: SensitiveText,
+    config: ProductConfig,
+    capabilities: ProductCapabilities,
+    elements: SemanticElementCount,
+) -> Result<InjectionPlan, ProductPlanError> {
+    let keyboard = build_keyboard_plan(text, config.safety, capabilities.keyboard)
+        .map_err(ProductPlanError::Keyboard)?;
+    let actions = build_code_actions(keyboard.text().atoms());
+    require_keyboard_capability(
+        capabilities.keyboard.cursor_right,
+        CapabilityRequirement::CursorRight,
+    )?;
+
+    Ok(InjectionPlan::Code(CodePlan {
+        actions,
+        elements,
+        config: keyboard.config(),
+        capabilities: keyboard.capabilities(),
+    }))
+}
+
+fn require_keyboard_capability(
+    state: CapabilityState,
+    requirement: CapabilityRequirement,
+) -> Result<(), ProductPlanError> {
+    match state {
+        CapabilityState::Available => Ok(()),
+        CapabilityState::Degraded => Err(ProductPlanError::Keyboard(
+            PlanError::CapabilityDegraded(requirement),
+        )),
+        CapabilityState::Unavailable => Err(ProductPlanError::Keyboard(
+            PlanError::CapabilityUnavailable(requirement),
+        )),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CodeLexState {
+    Normal,
+    LineComment,
+    BlockComment { closing: bool },
+    String { delimiter: char, escaped: bool },
+}
+
+fn build_code_actions(atoms: &[TextAtom]) -> Vec<CodeAction> {
+    let mut actions = Vec::with_capacity(atoms.len());
+    let mut state = CodeLexState::Normal;
+    let mut pair_stack = Vec::with_capacity(atoms.len().min(32));
+    let mut line_start = true;
+
+    for (index, atom) in atoms.iter().copied().enumerate() {
+        let next = atoms.get(index.saturating_add(1)).copied();
+
+        match state {
+            CodeLexState::Normal => {
+                if line_start && is_code_indentation(atom) {
+                    continue;
+                }
+
+                match atom {
+                    TextAtom::LineBreak => {
+                        actions.push(CodeAction::Atom(atom));
+                        line_start = true;
+                    }
+                    TextAtom::Tab => {
+                        actions.push(CodeAction::Atom(atom));
+                        line_start = false;
+                    }
+                    TextAtom::Scalar(value) => {
+                        if value == '/' && next == Some(TextAtom::Scalar('/')) {
+                            actions.push(CodeAction::Atom(atom));
+                            state = CodeLexState::LineComment;
+                            line_start = false;
+                        } else if value == '/' && next == Some(TextAtom::Scalar('*')) {
+                            actions.push(CodeAction::Atom(atom));
+                            state = CodeLexState::BlockComment { closing: false };
+                            line_start = false;
+                        } else if let Some(delimiter) = quote_delimiter(value) {
+                            actions.push(CodeAction::Atom(atom));
+                            pair_stack.push(Pair::Quote(delimiter));
+                            state = CodeLexState::String {
+                                delimiter,
+                                escaped: false,
+                            };
+                            line_start = false;
+                        } else if let Some(expected) = opening_pair(value) {
+                            actions.push(CodeAction::Atom(atom));
+                            pair_stack.push(Pair::Bracket(expected));
+                            line_start = false;
+                        } else if pair_stack.last() == Some(&Pair::Bracket(value)) {
+                            pair_stack.pop();
+                            actions.push(CodeAction::CursorRight);
+                            line_start = false;
+                        } else {
+                            actions.push(CodeAction::Atom(atom));
+                            line_start = false;
+                        }
+                    }
+                }
+            }
+            CodeLexState::LineComment => {
+                actions.push(CodeAction::Atom(atom));
+                if matches!(atom, TextAtom::LineBreak) {
+                    state = CodeLexState::Normal;
+                    line_start = true;
+                }
+            }
+            CodeLexState::BlockComment { closing } => {
+                actions.push(CodeAction::Atom(atom));
+                match atom {
+                    TextAtom::Scalar(value) if closing && value == '/' => {
+                        state = CodeLexState::Normal;
+                        line_start = false;
+                    }
+                    TextAtom::Scalar(value)
+                        if !closing && value == '*' && next == Some(TextAtom::Scalar('/')) =>
+                    {
+                        state = CodeLexState::BlockComment { closing: true };
+                        line_start = false;
+                    }
+                    TextAtom::LineBreak => {
+                        line_start = true;
+                    }
+                    _ => {
+                        line_start = false;
+                    }
+                }
+            }
+            CodeLexState::String { delimiter, escaped } => match atom {
+                TextAtom::Scalar(_) if escaped => {
+                    actions.push(CodeAction::Atom(atom));
+                    state = CodeLexState::String {
+                        delimiter,
+                        escaped: false,
+                    };
+                    line_start = false;
+                }
+                TextAtom::Scalar('\\') => {
+                    actions.push(CodeAction::Atom(atom));
+                    state = CodeLexState::String {
+                        delimiter,
+                        escaped: true,
+                    };
+                    line_start = false;
+                }
+                TextAtom::Scalar(value) if value == delimiter => {
+                    if pair_stack.last() == Some(&Pair::Quote(delimiter)) {
+                        pair_stack.pop();
+                        actions.push(CodeAction::CursorRight);
+                    } else {
+                        actions.push(CodeAction::Atom(atom));
+                    }
+                    state = CodeLexState::Normal;
+                    line_start = false;
+                }
+                TextAtom::LineBreak => {
+                    actions.push(CodeAction::Atom(atom));
+                    line_start = true;
+                }
+                _ => {
+                    actions.push(CodeAction::Atom(atom));
+                    line_start = false;
+                }
+            },
+        }
+    }
+
+    actions
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pair {
+    Bracket(char),
+    Quote(char),
+}
+
+const fn is_code_indentation(atom: TextAtom) -> bool {
+    matches!(atom, TextAtom::Scalar(' ') | TextAtom::Tab)
+}
+
+const fn opening_pair(value: char) -> Option<char> {
+    match value {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        _ => None,
+    }
+}
+
+const fn quote_delimiter(value: char) -> Option<char> {
+    match value {
+        '\'' | '"' | '`' => Some(value),
+        _ => None,
+    }
 }
 
 fn require_clipboard(
@@ -388,10 +642,10 @@ fn inspect_elements(
 #[cfg(test)]
 mod tests {
     use super::{
-        AutoClipboardThreshold, InjectionBackend, InjectionMode, InjectionPlan,
-        ProductCapabilities, ProductConfig, ProductPlanError, build_injection_plan,
+        AutoClipboardThreshold, CapabilityRequirement, InjectionBackend, InjectionMode,
+        InjectionPlan, ProductCapabilities, ProductConfig, ProductPlanError, build_injection_plan,
     };
-    use crate::{CapabilityState, P1Config, PlanCapabilities, SensitiveText};
+    use crate::{CapabilityState, P1Config, PlanCapabilities, PlanError, SensitiveText};
 
     fn capabilities() -> ProductCapabilities {
         ProductCapabilities {
@@ -399,6 +653,7 @@ mod tests {
                 unicode_text: CapabilityState::Available,
                 line_break: CapabilityState::Available,
                 tab: CapabilityState::Available,
+                cursor_right: CapabilityState::Available,
                 modifier_observation: CapabilityState::Available,
             },
             clipboard_paste: CapabilityState::Available,
@@ -450,39 +705,97 @@ mod tests {
     }
 
     #[test]
-    fn code_mode_uses_guarded_paste_for_short_ascii_code() {
-        let unavailable_keyboard = ProductCapabilities {
-            keyboard: PlanCapabilities {
-                unicode_text: CapabilityState::Unavailable,
-                line_break: CapabilityState::Unavailable,
-                tab: CapabilityState::Unavailable,
-                modifier_observation: CapabilityState::Unavailable,
-            },
+    fn code_mode_uses_keyboard_code_actions_for_indentation_and_pairs() {
+        let plan = build_injection_plan(
+            SensitiveText::new("if (items[0] == '{') {\n  \treturn {};\n}".to_owned()),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("Code mode needs the keyboard code capabilities");
+
+        assert_eq!(plan.backend(), InjectionBackend::Code);
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRight))
+                .count(),
+            5
+        );
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::Atom(crate::TextAtom::Tab)))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn code_mode_does_not_require_clipboard_paste_or_revision() {
+        let keyboard_only = ProductCapabilities {
+            clipboard_paste: CapabilityState::Unavailable,
+            clipboard_revision_guard: CapabilityState::Unavailable,
             ..capabilities()
         };
         let plan = build_injection_plan(
-            SensitiveText::new("if (items[0] == '{') {\n\treturn {};\n}".to_owned()),
-            true,
+            SensitiveText::new("fn main() {}".to_owned()),
+            false,
             config(InjectionMode::Code, 256),
-            unavailable_keyboard,
+            keyboard_only,
         )
-        .expect("Code mode only needs the guarded paste capabilities");
+        .expect("Code mode is keyboard-based");
 
-        assert_eq!(plan.backend(), InjectionBackend::Code);
         assert!(matches!(plan, InjectionPlan::Code(_)));
     }
 
     #[test]
-    fn code_mode_requires_a_known_clipboard_revision() {
+    fn code_mode_requires_cursor_right_capability() {
+        let no_cursor_right = ProductCapabilities {
+            keyboard: PlanCapabilities {
+                cursor_right: CapabilityState::Unavailable,
+                ..capabilities().keyboard
+            },
+            ..capabilities()
+        };
         assert!(matches!(
             build_injection_plan(
                 SensitiveText::new("fn main() {}".to_owned()),
-                false,
+                true,
                 config(InjectionMode::Code, 256),
-                capabilities(),
+                no_cursor_right,
             ),
-            Err(ProductPlanError::ClipboardRevisionUnavailable)
+            Err(ProductPlanError::Keyboard(
+                PlanError::CapabilityUnavailable(CapabilityRequirement::CursorRight)
+            ))
         ));
+    }
+
+    #[test]
+    fn code_mode_keeps_comment_and_string_delimiters_literal() {
+        let plan = build_injection_plan(
+            SensitiveText::new(
+                "// [not a pair]\n/* { not a pair } */\nlet value = \"[{}]\";\n".to_owned(),
+            ),
+            true,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("comment and string fixture is supported");
+        let InjectionPlan::Code(plan) = plan else {
+            panic!("Code mode must produce a Code plan");
+        };
+
+        assert_eq!(
+            plan.actions()
+                .iter()
+                .filter(|action| matches!(action, super::CodeAction::CursorRight))
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -584,6 +897,17 @@ mod tests {
 
         assert!(!debug.contains(marker));
         assert!(matches!(plan, InjectionPlan::Clipboard(_)));
+
+        let code = build_injection_plan(
+            SensitiveText::new(marker.to_owned()),
+            false,
+            config(InjectionMode::Code, 256),
+            capabilities(),
+        )
+        .expect("code plan");
+        let debug = format!("{code:?}");
+        assert!(!debug.contains(marker));
+        assert!(matches!(code, InjectionPlan::Code(_)));
     }
 
     #[test]

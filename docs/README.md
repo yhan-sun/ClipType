@@ -5,7 +5,7 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 ## Current status
 
 - P1 controlled Windows clipboard-to-input evidence and the fail-closed target-evidence fix are merged into `main`.
-- P2 implements the native Windows tray product, persistent settings, keyboard/clipboard/auto modes, human-paced typing controls, startup integration, packaging, compatibility gates, branding, and public prerelease pipeline.
+- P2 implements the native Windows tray product, persistent settings, keyboard/clipboard/code/auto modes, human-paced typing controls, startup integration, packaging, compatibility gates, branding, and public prerelease pipeline.
 - `v0.1.0-beta.1` is a Windows x86_64 GitHub prerelease.
 - macOS is not part of `v0.1.0-beta.1`.
 - P3 targets a graphical settings window, user-recorded Trigger/Cancel shortcuts with OS conflict probing and rollback, and a signed/notarized macOS Universal 2 product for `v0.2.0-beta.1`.

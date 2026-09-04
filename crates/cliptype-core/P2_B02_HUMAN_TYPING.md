@@ -4,7 +4,7 @@ This note records the release-blocking keyboard contract implemented for issue #
 
 ## Scope
 
-The keyboard backend turns normalized clipboard text into a bounded sequence of semantic typing actions. Each action is dispatched separately and is paced independently. Clipboard-paste mode is unchanged and never uses humanized typo simulation.
+The keyboard backend turns normalized clipboard text into a bounded sequence of semantic typing actions. Each action is dispatched separately and is paced independently. Code mode uses the same keyboard boundary with code-aware indentation and pair actions; Clipboard-paste mode is unchanged and never uses humanized typo simulation.
 
 ## Required invariants
 
@@ -27,7 +27,7 @@ Active sessions retain an immutable settings and random-state snapshot. Changes 
 
 Typo simulation is explicit opt-in and defaults to zero probability. Eligible ASCII keys may be replaced temporarily by a documented adjacent US-QWERTY key, followed by Backspace and the intended key. CJK, emoji, combining marks, line breaks, Tab, and unsupported controls are never mutated into typos.
 
-This feature is not suitable for passwords, source code, terminals, shell commands, administrative tools, or exact-data entry.
+This feature is not suitable for passwords, source code, terminals, shell commands, administrative tools, or exact-data entry. Code mode always disables corrected typo simulation.
 
 ## Unicode
 

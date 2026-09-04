@@ -11,8 +11,8 @@ use windows_sys::Win32::{
     Foundation::GetLastError,
     UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN,
-        VK_SHIFT, VK_TAB,
+        KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT,
+        VK_RWIN, VK_SHIFT, VK_TAB,
     },
 };
 
@@ -36,6 +36,7 @@ impl KeyboardPort for WindowsKeyboard {
             unicode_text: CapabilityState::Available,
             line_break: CapabilityState::Available,
             tab: CapabilityState::Available,
+            cursor_right: CapabilityState::Available,
             modifier_observation: CapabilityState::Available,
         }
     }
@@ -46,6 +47,10 @@ impl KeyboardPort for WindowsKeyboard {
 
     fn dispatch_backspace(&self) -> Result<DispatchResult, KeyboardError> {
         dispatch_encoded(encode_backspace())
+    }
+
+    fn dispatch_cursor_right(&self) -> Result<DispatchResult, KeyboardError> {
+        dispatch_encoded(encode_virtual_key(VK_RIGHT))
     }
 }
 
@@ -117,6 +122,16 @@ fn encode_backspace() -> EncodedBatch {
         inputs: vec![
             keyboard_input(VK_BACK, 0, 0),
             keyboard_input(VK_BACK, 0, KEYEVENTF_KEYUP),
+        ],
+        semantic_boundaries: vec![2],
+    }
+}
+
+fn encode_virtual_key(key: u16) -> EncodedBatch {
+    EncodedBatch {
+        inputs: vec![
+            keyboard_input(key, 0, 0),
+            keyboard_input(key, 0, KEYEVENTF_KEYUP),
         ],
         semantic_boundaries: vec![2],
     }

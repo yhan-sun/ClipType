@@ -55,4 +55,5 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0010`](0010-flutter-macos-arm64-runner.md) — Flutter macOS arm64 runner over the Rust application core with a Swift/AppKit shell.
 - [`ADR-0011`](0011-unicode-first-auto-selection.md) — Non-ASCII Auto selection prefers revision-guarded paste before the size threshold.
 - [`ADR-0012`](0012-flutter-sole-macos-frontend.md) — Remove the legacy macOS Slint composition root and keep Flutter as the sole macOS front end.
-- [`ADR-0013`](0013-code-mode-guarded-paste.md) — Use one revision-guarded paste for code blocks so editor auto-pair and auto-indent do not duplicate source structure.
+- [`ADR-0013`](0013-code-mode-guarded-paste.md) — Superseded whole-block paste decision for Code mode.
+- [`ADR-0014`](0014-code-mode-keyboard-pair-aware.md) — Use keyboard code actions that delegate indentation and auto-pairing to the destination editor.

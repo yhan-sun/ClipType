@@ -1,4 +1,5 @@
-//! Native-neutral live coordinator for keyboard and current-clipboard paste paths.
+//! Native-neutral live coordinator for keyboard, code-keyboard, and
+//! current-clipboard paste paths.
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -11,9 +12,9 @@ use std::{
 };
 
 use cliptype_core::{
-    AutoClipboardThreshold, CapabilityState, ConfigError, DispatchDecision, DispatchObservation,
-    FlowEvent, FlowState, InjectionBackend, InjectionPlan, IntegrityRelation, NoInputReason,
-    NormalizationError, P1Config, PlanCapabilities, PlanError, PreparationFailure,
+    AutoClipboardThreshold, CapabilityState, CodeAction, CodePlan, ConfigError, DispatchDecision,
+    DispatchObservation, FlowEvent, FlowState, InjectionBackend, InjectionPlan, IntegrityRelation,
+    NoInputReason, NormalizationError, P1Config, PlanCapabilities, PlanError, PreparationFailure,
     ProductCapabilities, ProductConfig, ProductConfigError, ProductPlanError, SessionPhase,
     TerminalOutcome, TextAtom, TextBatch, build_injection_plan, classify_dispatch, transition,
 };
@@ -546,9 +547,8 @@ fn run_session(context: &mut SessionContext) -> SessionCompletion {
 
     match plan {
         InjectionPlan::Keyboard(plan) => run_keyboard_plan(context, &plan),
-        InjectionPlan::Clipboard(_) | InjectionPlan::Code(_) => {
-            run_clipboard_plan(context, revision)
-        }
+        InjectionPlan::Clipboard(_) => run_clipboard_plan(context, revision),
+        InjectionPlan::Code(plan) => run_code_plan(context, &plan),
     }
 }
 
@@ -562,21 +562,30 @@ fn run_keyboard_plan(
         if let Some(wrong) =
             adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
         {
-            if let Err(outcome) =
-                dispatch_timed_action(context, plan, KeyboardAction::Atom(wrong), &mut random)
-            {
+            if let Err(outcome) = dispatch_timed_action(
+                context,
+                plan.config(),
+                KeyboardAction::Atom(wrong),
+                &mut random,
+            ) {
                 return SessionCompletion::Finished(outcome);
             }
-            if let Err(outcome) =
-                dispatch_timed_action(context, plan, KeyboardAction::Backspace, &mut random)
-            {
+            if let Err(outcome) = dispatch_timed_action(
+                context,
+                plan.config(),
+                KeyboardAction::Backspace,
+                &mut random,
+            ) {
                 return SessionCompletion::Finished(outcome);
             }
         }
 
-        if let Err(outcome) =
-            dispatch_timed_action(context, plan, KeyboardAction::Atom(atom), &mut random)
-        {
+        if let Err(outcome) = dispatch_timed_action(
+            context,
+            plan.config(),
+            KeyboardAction::Atom(atom),
+            &mut random,
+        ) {
             return SessionCompletion::Finished(outcome);
         }
     }
@@ -588,11 +597,28 @@ fn run_keyboard_plan(
 enum KeyboardAction {
     Atom(TextAtom),
     Backspace,
+    CursorRight,
+}
+
+fn run_code_plan(context: &mut SessionContext, plan: &CodePlan) -> SessionCompletion {
+    let mut random = TypingRandom::new(context.typing_seed);
+
+    for action in plan.actions().iter().copied() {
+        let action = match action {
+            CodeAction::Atom(atom) => KeyboardAction::Atom(atom),
+            CodeAction::CursorRight => KeyboardAction::CursorRight,
+        };
+        if let Err(outcome) = dispatch_timed_action(context, plan.config(), action, &mut random) {
+            return SessionCompletion::Finished(outcome);
+        }
+    }
+
+    complete_flow(context)
 }
 
 fn dispatch_timed_action(
     context: &mut SessionContext,
-    plan: &cliptype_core::KeyboardPlan,
+    config: P1Config,
     action: KeyboardAction,
     random: &mut TypingRandom,
 ) -> Result<(), TerminalOutcome> {
@@ -617,11 +643,8 @@ fn dispatch_timed_action(
 
     let native = match action {
         KeyboardAction::Atom(atom) => {
-            let batch = TextBatch::new(
-                std::slice::from_ref(&atom),
-                plan.config().dispatch_batch_limit,
-            )
-            .map_err(|_| TerminalOutcome::InternalInvariant)?;
+            let batch = TextBatch::new(std::slice::from_ref(&atom), config.dispatch_batch_limit)
+                .map_err(|_| TerminalOutcome::InternalInvariant)?;
             context
                 .ports
                 .keyboard
@@ -632,6 +655,11 @@ fn dispatch_timed_action(
             .ports
             .keyboard
             .dispatch_backspace()
+            .map_err(map_keyboard_error)?,
+        KeyboardAction::CursorRight => context
+            .ports
+            .keyboard
+            .dispatch_cursor_right()
             .map_err(map_keyboard_error)?,
     };
     accept_dispatch(context, native)
@@ -846,6 +874,7 @@ fn product_capabilities(
             unicode_text: keyboard.unicode_text,
             line_break: keyboard.line_break,
             tab: keyboard.tab,
+            cursor_right: keyboard.cursor_right,
             modifier_observation: keyboard.modifier_observation,
         },
         clipboard_paste: paste.paste_chord,
