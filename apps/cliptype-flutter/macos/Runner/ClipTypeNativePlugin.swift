@@ -107,7 +107,7 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
             let args = call.arguments as? [String: Any] ?? [:]
             result(applyHotkeys(arguments: args))
         case "trigger":
-            result(performTrigger())
+            triggerFromFlutter(result)
         case "cancel":
             result(performCancel())
         case "requestAccessibility":
@@ -326,6 +326,20 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
 
     private func triggerFromNative() {
         _ = performTrigger()
+    }
+
+    private func triggerFromFlutter(_ result: @escaping FlutterResult) {
+        guard accessibility.state == "granted" else {
+            result(performTrigger())
+            return
+        }
+        guard appDelegate?.prepareForExternalTrigger() == true else {
+            result(performTrigger())
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            result(self?.performTrigger() ?? ["result": "native_failure"])
+        }
     }
 
     private func cancelFromNative() {

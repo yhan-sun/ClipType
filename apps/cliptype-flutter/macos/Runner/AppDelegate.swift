@@ -33,6 +33,17 @@ class AppDelegate: FlutterAppDelegate {
     NSApp.activate(ignoringOtherApps: true)
   }
 
+  /// Hides the settings UI before a button-triggered session captures its
+  /// destination. The next run-loop turn lets macOS restore the previously
+  /// active application without inventing or restoring a target ourselves.
+  func prepareForExternalTrigger() -> Bool {
+    guard let window = mainFlutterWindow, window.isVisible, window.isKeyWindow else {
+      return false
+    }
+    NSApp.hide(nil)
+    return true
+  }
+
   func terminateClipType() {
     guard !terminationRequested else { return }
     terminationRequested = true

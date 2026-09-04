@@ -33,6 +33,11 @@ Destination evidence is captured before potentially contended clipboard work:
 10. dispatch bounded batches with safety checks;
 11. publish a content-free result and release the session slot.
 
+The macOS settings-window Trigger button first hides the settings window and
+yields a bounded handoff so the previously active application can regain
+focus. The global shortcut path does not need this handoff. Both paths capture
+and revalidate the destination through the same coordinator policy.
+
 ## Planner
 
 Inputs include requested mode, validated text properties, capabilities, target evidence, batch/interval settings, permission/integrity evidence, focus policy, modifier policy, and checkpoint policy.

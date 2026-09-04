@@ -26,7 +26,9 @@ open build/macos/Build/Products/Release/ClipType.app
 The Xcode target builds the Rust static library for
 `aarch64-apple-darwin` before compiling and linking the Swift shell. The
 release output is `ClipType.app` with bundle identifier
-`io.cliptype.ClipType`.
+`io.github.yhan-sun.ClipType`. The identifier is kept stable across the
+frontend migration so macOS Accessibility consent continues to refer to the
+ClipType product rather than a new app identity.
 
 ## Runtime boundary
 
@@ -69,6 +71,11 @@ Accessibility page; the app never changes the consent itself. The native shell
 observes the result for a short bounded window after opening the page. Closing
 Settings hides the window while the menu-bar process and registered commands
 remain alive. Quit performs bounded native shutdown.
+
+When the visible Trigger button is used, the shell hides the settings window
+and yields briefly before capturing the destination, so the previously active
+application can regain focus. The global Trigger shortcut remains available
+when the destination should stay visibly focused throughout the action.
 
 Start at Login uses `SMAppService.mainApp` where available. The local candidate
 has no privileged helper and no extra entitlements; macOS consent is never

@@ -45,6 +45,9 @@ fixed categories such as `ok`, `invalid`, `busy`, `permission_required`,
 When an explicit Trigger action finds Accessibility trust missing, the Flutter
 runner opens the macOS Accessibility settings page and continues a bounded
 permission-state observation; macOS consent remains user-controlled.
+The visible Trigger button hides the settings window and yields one bounded
+run-loop handoff before target capture, so it does not accidentally target the
+ClipType settings controls themselves.
 
 ## Local verification gate
 

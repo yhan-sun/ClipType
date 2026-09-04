@@ -26,6 +26,11 @@ the Flutter shell. Keep `crates/cliptype-ui` only for the existing Windows
 composition root; removing that Windows presentation dependency requires a
 separate migration decision.
 
+Keep the existing product bundle identifier,
+`io.github.yhan-sun.ClipType`, for the Flutter replacement. This preserves the
+macOS application identity used by Accessibility consent while removing the
+legacy frontend itself.
+
 The Flutter shell remains one ordinary application process. It does not bypass
 macOS Accessibility consent, move clipboard or injected plaintext into the UI
 boundary, or add a second runtime process.

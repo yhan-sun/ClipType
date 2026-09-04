@@ -50,7 +50,7 @@ CUA: probe Trigger and Cancel availability
 CUA: record Escape cancellation and Delete clearing
 CUA: close/hide Settings and verify process remains
 CUA: reopen Settings and verify one window/status item
-osascript -e 'tell application id "io.cliptype.ClipType" to quit'
+osascript -e 'tell application id "io.github.yhan-sun.ClipType" to quit'
 pgrep -x ClipType
 
 Idle resource sample
