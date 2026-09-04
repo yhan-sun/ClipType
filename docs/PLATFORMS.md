@@ -106,22 +106,28 @@ Cross-application synthetic input commonly requires user-granted system permissi
 
 Use workspace/accessibility/window APIs only for target identity and
 permission-safe focus evidence. Do not inspect focused text or window titles.
-Native controls use exact focused-element identity. For an `AXWebArea`
-render host, use stable process plus focused-window identity because editors
-such as Monaco may rebuild their focused Accessibility node during normal
-typing. If a Chromium editor does not expose a traversable `AXWebArea` parent
-chain, support for the web-only `AXDOMIdentifier` or `AXDOMClassList` attribute
-name supplies the same classification without reading either value. A
-process/window change or evidence loss still stops safely; logical field
-changes within one web render surface may be indistinguishable. The fixed
-bridge returns only content-free session categories and counters.
+Native controls use exact focused-element identity. An initial `AXWebArea`
+render-host classification selects stable process plus focused-window identity
+for the session because Monaco may rebuild its focused Accessibility node
+during normal typing. If a Chromium editor does not expose a traversable
+`AXWebArea` parent chain, support for the web-only `AXDOMIdentifier` or
+`AXDOMClassList` attribute name supplies the initial classification without
+reading either value. A later same-window node may temporarily lose that
+classification without looking like a target change. A process/window change,
+missing stable window identity, disappearance, or capture failure still stops
+safely; logical field changes within one web render surface may be
+indistinguishable. The fixed bridge returns only content-free categories and
+counters.
 
 ### Distribution
 
 macOS release requires code signing/notarization planning before claiming
-general availability. The P4 arm64 `.app` is also available in
-`v0.2.0-beta.2` as a clearly labelled ad-hoc testing preview; it is not a
-Universal 2, Developer ID, notarized, or general public macOS release.
+general availability. The unreleased `v0.2.0-beta.3` candidate prepares a
+clearly labelled additive arm64 testing preview built on an Apple Silicon
+runner; `v0.2.0-beta.2` remains immutable. The preview is ad-hoc signed and is
+not a Universal 2, Developer ID, notarized, Gatekeeper-ready, or general public
+macOS release. Publication remains blocked until the repository's physical
+release evidence is complete.
 
 ### Shell and command ownership
 

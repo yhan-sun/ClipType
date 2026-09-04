@@ -2,7 +2,7 @@
 
 ## Current release channel
 
-ClipType `v0.1.0-beta.1` is the first public Windows x86_64 beta. The compatibility promise is evidence-based and narrower than “all Windows applications.”
+ClipType `v0.2.0-beta.3` is the current unreleased candidate. Windows x86_64 remains the primary beta channel, with a proposed additive macOS arm64 testing preview. Publication remains blocked by the open physical evidence gate. The compatibility promise is evidence-based and narrower than “all applications.”
 
 ## Supported Windows environments
 
@@ -49,7 +49,7 @@ This category includes many native and framework-based desktop applications, bro
 |---|---|
 | `keyboard` | Sends bounded Unicode/key batches. Stops on target change, evidence loss, conflicting modifiers, cancellation, partial input, or unknown native progress. |
 | `clipboard` | Verifies a content-blind clipboard revision and sends one bounded `Ctrl+V`. It never writes, clears, owns, restores, or stores the clipboard. The destination may choose an existing rich-text clipboard format. |
-| `code` | Sends bounded keyboard actions, skips leading indentation, and uses right-arrow navigation for matching auto-generated ordinary delimiters/quotes. A line-leading closer crosses the editor-generated line and its indentation instead of inserting a duplicate Return. Python-style triple-quoted boundaries (`"""`, `'''`) and Markdown triple-backtick fences are typed explicitly. It assumes editor auto-pair and auto-indent are enabled for ordinary pairs. |
+| `code` | Separate keyboard-only backend; Paste is unavailable by design. Pair-aware behavior is limited to `()`, `{}`, `[]`, `""`, and `''`. Matching source closers skip editor-generated closers; line-leading closers, including after `//` comments, cross the editor-generated closing line without a duplicate Return. Brackets in strings/comments, triple quotes, Markdown fences, and single backticks are literal. It assumes ordinary auto-pair and auto-indent are enabled. |
 | `auto` | Freezes one backend at session start from Unicode shape, payload size, and proven capabilities; non-ASCII text prefers revision-guarded paste. Explicit modes never silently fall back. |
 
 ## Known boundaries
@@ -61,12 +61,14 @@ A normal-integrity ClipType process does not inject into a higher-integrity appl
 ### Focus evidence
 
 ClipType captures and revalidates non-content destination evidence. Native
-controls can usually be distinguished. On macOS, an `AXWebArea` render host is
-tracked by frontmost process plus focused top-level window so transient Monaco
-focus-node replacement does not look like a target switch. Switching process
-or window still stops. Multiple logical fields inside one shared render
-surface may remain indistinguishable, so ClipType does not claim an exact
-logical-field or caret guarantee there.
+controls can usually be distinguished. On macOS, an initial `AXWebArea`
+classification selects a sticky frontmost-process plus focused-window policy,
+so repeated Monaco focus-node replacement in the same window, including a
+temporarily unclassified replacement node, does not look like a target switch.
+Switching process/window or losing stable window evidence still stops before
+the next action. Multiple logical fields inside one shared render surface may
+remain indistinguishable, so ClipType does not claim an exact logical-field or
+caret guarantee there.
 
 ### Terminals and operational input
 
@@ -79,14 +81,14 @@ Global trigger and cancel commands use reviewed system registrations with no-rep
 ### Rich clipboard formats
 
 Clipboard mode leaves all formats unchanged and invokes ordinary paste. Code
-mode uses Unicode keyboard events and right-arrow navigation, including
-line-end navigation for generated closing lines, so it is intended
-for text editors with ordinary auto-pair and auto-indent enabled. Python-style
-triple-quoted boundaries are sent explicitly because they are not reliably
-auto-completed; Markdown triple-backtick fences are literal boundaries and
-pair handling continues inside them. Rich targets may
-prefer HTML, RTF, image, or application-specific formats already present beside
-`CF_UNICODETEXT`; use Clipboard mode for those formats.
+mode uses only Unicode keyboard/key-navigation events and is intended for text
+editors with ordinary auto-pair and auto-indent enabled. Its pair grammar is
+limited to `()`, `{}`, `[]`, `""`, and `''`; string/comment brackets and
+single backticks are literal, while triple-quoted boundaries are sent
+explicitly. Markdown fences are literal boundaries and pair handling continues
+inside them. Rich targets may prefer HTML, RTF, image, or application-specific
+formats already present beside `CF_UNICODETEXT`; use Clipboard mode for those
+formats.
 
 ### Remote and virtual desktops
 
@@ -119,4 +121,4 @@ Never attach real clipboard contents, credentials, private messages, focused-fie
 
 ## Pre-beta regression gate
 
-The current public-beta candidate remains blocked by Issue #41 until Chinese input reliability, per-action pacing, tray controls, and a replacement exact-SHA interactive validation are complete. Earlier Issue #33 beta-ready wording is superseded and must not be used as a release authorization.
+The `v0.2.0-beta.3` candidate remains blocked by Issue #41 until the replacement exact-SHA physical validation reconciles Issue #33. Automated Code-mode, Windows, and hosted macOS evidence does not authorize merge, tag, signing, publication, or a broad compatibility claim by itself.

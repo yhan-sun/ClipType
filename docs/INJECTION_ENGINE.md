@@ -31,15 +31,16 @@ There must not be two competing live state machines in core and app.
   next action. Pair navigation receives an additional Code-only settle barrier.
   The queue only contains planned source actions; it never reads
   destination-editor text.
-  Python-style triple-quoted runs (`"""` and `'''`) are typed explicitly at
-  both boundaries because editors do not reliably synthesize a skippable
-  three-character pair. Markdown triple-backtick fences are also typed
-  literally; code inside a fence remains subject to normal Code-mode pair
-  handling. Ordinary brackets inside a normal single- or double-quoted string
-  are kept in the pair queue too, so any generated inner closers are consumed
-  before the string boundary;
-  their source characters remain literal. Recognized comments remain literal;
-  no clipboard revision witness is used.
+  Pair-aware behavior is restricted to `()`, `{}`, `[]`, `""`, and `''`.
+  Brackets inside ordinary quoted strings and recognized comments are typed
+  literally and never enter the pair stack; only the generated closing quote
+  is skipped for an ordinary string. Python-style triple-quoted runs
+  (`"""` and `'''`) are typed explicitly at both boundaries because editors
+  do not reliably synthesize a skippable three-character pair. Markdown
+  triple-backtick fences and single backticks are literal; code inside a fence
+  remains subject to normal Code-mode pair handling. The line-leading closer
+  rule is also evaluated at a `//` comment boundary before Return is emitted.
+  No clipboard revision witness is used.
 - `auto`: capability/target/Unicode-shape/size-based selection. Non-ASCII text prefers a revision-guarded paste when available; the configured threshold remains the size crossover for otherwise keyboard-friendly text.
 
 ## Trigger order

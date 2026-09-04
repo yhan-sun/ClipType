@@ -1,6 +1,6 @@
 # ADR-0018: macOS render hosts use stable window target evidence
 
-- Status: Accepted
+- Status: Superseded by ADR-0020
 - Date: 2026-09-05
 - Scope: macOS target capture and focus-change protection
 - Related: ADR-0002, ADR-0004, ADR-0010, ADR-0017

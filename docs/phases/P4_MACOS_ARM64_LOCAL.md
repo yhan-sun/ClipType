@@ -7,7 +7,7 @@
 - UI: Flutter macOS desktop with English / Simplified Chinese display mode
 - Native shell: Swift/AppKit
 - Policy/runtime: Rust core, application coordinator, and macOS adapters
-- Release status: arm64 testing preview attached to `v0.2.0-beta.2`; not a general public macOS beta
+- Release status: beta.3 arm64 testing-preview candidate; publication blocked pending physical evidence
 
 ## Scope
 
@@ -68,7 +68,10 @@ latency. If a physical case is not run, it remains `NOT RUN`.
 
 ## Release boundary
 
-This phase may produce a local `.app` for inspection. It must not be described
-as `MACOS ARM64 BETA READY` without the physical and release evidence listed
-above. No push, merge, tag, release publication, Apple credential, or
-notarization action is part of this local track.
+This phase may produce a local or hosted arm64 `.app` testing preview. The
+beta.3 candidate workflow may build, install, launch-smoke, and retain versioned
+ad-hoc ZIP/DMG artifacts. It must not publish or be described as `MACOS ARM64
+BETA READY` without the physical evidence listed above and repository release
+authorization. Developer ID, notarization, stapling, Gatekeeper acceptance,
+Universal 2, Intel/Rosetta, persistent Accessibility consent, and real VS
+Code/Monaco input are not inferred from hosted launch smoke.
