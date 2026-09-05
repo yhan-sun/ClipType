@@ -79,6 +79,7 @@ Older tags and assets remain immutable.
 
 for rel in [
     ".github/apply-code-fix-beta5.log",
+    ".github/rust-code-fix-beta5.log",
     ".github/cliptype-code-fix-trigger",
     ".github/workflows/bootstrap-code-fix-beta5.yml",
     ".github/scripts/apply_code_fix_beta5.py",
