@@ -2,7 +2,7 @@
 
 ## Current release channel
 
-ClipType `v0.2.0-beta.3` is the current prerelease candidate. Windows x86_64 remains the primary beta channel, with an additive macOS arm64 testing preview. Under the current explicit maintainer authorization, this narrowly labelled prerelease may be published after its exact-head automated gates pass. Physical evidence remains required before expanding named-application, Accessibility, or general macOS compatibility claims. The compatibility promise is evidence-based and narrower than “all applications.”
+ClipType `v0.2.0-beta.4` is the current prerelease candidate. Windows x86_64 remains the primary beta channel, with an additive macOS arm64 testing preview. Under the current explicit maintainer authorization, this narrowly labelled prerelease may be published after its exact-head automated gates pass. Physical evidence remains required before expanding named-application, Accessibility, or general macOS compatibility claims. The compatibility promise is evidence-based and narrower than “all applications.”
 
 ## Supported Windows environments
 
@@ -24,7 +24,7 @@ The P4 candidate is restricted to an interactive Apple Silicon Mac:
 
 | Environment | Support level | Evidence and conditions |
 |---|---|---|
-| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.3` carries a clearly labelled arm64 Flutter preview. The exact-main workflow builds, ad-hoc signs, installs `/Applications/ClipType.app`, launch-smokes it, verifies arm64 bundle/ZIP/DMG integrity, and attaches the assets additively. Accessibility permission and real target-application behavior remain separate physical evidence gates. |
+| macOS arm64 with an unlocked interactive desktop | **Testing preview / evidence required** | `v0.2.0-beta.4` carries a clearly labelled arm64 Flutter preview. The exact-main workflow builds, ad-hoc signs, installs `/Applications/ClipType.app`, launch-smokes it, verifies arm64 bundle/ZIP/DMG integrity, and attaches the assets additively. Accessibility permission and real target-application behavior remain separate physical evidence gates. |
 | macOS x86_64 or Rosetta | **Not supported by P4** | No x86_64 build, Universal 2 artifact, or Rosetta claim is made. |
 | Signed/notarized public macOS distribution | **Not provided by P4** | The attached preview is ad-hoc signed and has no Developer ID/notarization evidence. |
 
@@ -121,7 +121,7 @@ Never attach real clipboard contents, credentials, private messages, focused-fie
 
 ## Physical-evidence follow-up
 
-Publishing the narrowly labelled `v0.2.0-beta.3` prerelease is not itself a
+Publishing the narrowly labelled `v0.2.0-beta.4` prerelease is not itself a
 broad compatibility claim. Issues #41 and #33 remain physical-evidence
 trackers; until an exact-release interactive report reconciles them, the
 project must not claim universal CJK keyboard behavior, completed persistent

@@ -69,7 +69,7 @@ latency. If a physical case is not run, it remains `NOT RUN`.
 ## Release boundary
 
 This phase may produce a local or hosted arm64 `.app` testing preview. The
-beta.3 candidate workflow may build, install, launch-smoke, and retain versioned
+beta.4 candidate workflow may build, install, launch-smoke, and retain versioned
 ad-hoc ZIP/DMG artifacts. It must not publish or be described as `MACOS ARM64
 BETA READY` without the physical evidence listed above and repository release
 authorization. Developer ID, notarization, stapling, Gatekeeper acceptance,
