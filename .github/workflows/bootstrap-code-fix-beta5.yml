@@ -1,0 +1,54 @@
+name: Bootstrap Code Fix Beta5
+
+on:
+  push:
+    branches:
+      - fix/code-navigation-beta5
+    paths:
+      - .github/cliptype-code-fix-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: macos-14
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Apply reviewed fix payload
+        run: python3 .github/scripts/apply_code_fix_beta5.py
+      - name: Verify diff hygiene
+        run: |
+          git diff --check
+          git status --short
+      - name: Rust quality gate
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 test --workspace --locked
+          cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
+      - name: Flutter quality gate
+        working-directory: apps/cliptype-flutter
+        run: |
+          git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          export PATH="$RUNNER_TEMP/flutter/bin:$PATH"
+          flutter config --enable-macos-desktop
+          dart format --output=none --set-exit-if-changed lib test
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build macos --release
+      - name: Portable native contract checks
+        run: |
+          python3 scripts/verify_code_navigation.py
+          python3 scripts/verify_bridge_completion.py
+      - name: Commit verified candidate
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: isolate macOS code-mode navigation modifiers"
+          git push origin HEAD:fix/code-navigation-beta5
