@@ -12,6 +12,8 @@ class AppStatus {
     required this.startup,
     required this.generation,
     required this.batchesCompleted,
+    required this.hotkeysRegistered,
+    required this.bridgeAvailable,
   });
 
   factory AppStatus.initial() => const AppStatus(
@@ -22,6 +24,8 @@ class AppStatus {
     startup: 'not_registered',
     generation: 0,
     batchesCompleted: 0,
+    hotkeysRegistered: false,
+    bridgeAvailable: true,
   );
 
   factory AppStatus.fromMap(Map<Object?, Object?> value) {
@@ -37,6 +41,8 @@ class AppStatus {
       startup: value['startup'] as String? ?? 'unknown',
       generation: _asInt(value['generation']),
       batchesCompleted: _asInt(value['batchesCompleted']),
+      hotkeysRegistered: value['hotkeysRegistered'] as bool? ?? false,
+      bridgeAvailable: value['bridgeAvailable'] as bool? ?? true,
     );
   }
 
@@ -47,6 +53,8 @@ class AppStatus {
   final String startup;
   final int generation;
   final int batchesCompleted;
+  final bool hotkeysRegistered;
+  final bool bridgeAvailable;
 
   bool get active => phase != SessionPhase.idle;
 

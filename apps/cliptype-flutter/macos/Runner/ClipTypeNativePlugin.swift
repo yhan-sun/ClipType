@@ -62,7 +62,12 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         case .openSettings, .about: showSettings()
         case .toggleEnabled: toggleEnabled()
         case .toggleStartup: toggleStartup()
-        case .permission: _ = requestAccessibility()
+        case .permission:
+            if accessibility.state == "granted" {
+                _ = openAccessibilitySettings()
+            } else {
+                _ = requestAccessibility()
+            }
         case .quit: appDelegate?.terminateClipType()
         }
     }
@@ -93,6 +98,8 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         switch call.method {
         case "getState":
             result(stateMap())
+        case "getBuildInfo":
+            result(buildInfo())
         case "getInterfaceLanguage":
             result(["language": statusItem.interfaceLanguage])
         case "setInterfaceLanguage":
@@ -156,7 +163,30 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
             "batchesCompleted": snapshot?.batchesCompleted ?? 0,
             "permission": accessibility.state,
             "startup": startup.state,
+            "hotkeysRegistered": hotkeys.currentPair != nil,
+            "bridgeAvailable": rust.isAvailable,
             "bridgeError": rust.isAvailable ? NSNull() : "bridge_unavailable",
+        ]
+    }
+
+    private func buildInfo() -> [String: Any] {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let build = info["CFBundleVersion"] as? String ?? "Unknown"
+        #if arch(arm64)
+        let architecture = "Apple Silicon arm64"
+        #elseif arch(x86_64)
+        let architecture = "Intel x86_64"
+        #else
+        let architecture = "Unknown"
+        #endif
+        return [
+            "version": version,
+            "build": build,
+            "architecture": architecture,
+            "channel": info["ClipTypeReleaseChannel"] as? String ?? "Unknown",
+            "signing": info["ClipTypeSigningStatus"] as? String ?? "Unknown",
+            "notarization": info["ClipTypeNotarizationStatus"] as? String ?? "Unknown",
         ]
     }
 
@@ -402,7 +432,9 @@ final class ClipTypeNativePlugin: NSObject, FlutterStreamHandler {
         statusItem?.update(
             snapshot: rust.snapshot(),
             permission: accessibility.state,
-            startup: startup.state
+            startup: startup.state,
+            hotkeysRegistered: hotkeys.currentPair != nil,
+            bridgeAvailable: rust.isAvailable
         )
     }
 

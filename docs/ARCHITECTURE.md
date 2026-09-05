@@ -231,6 +231,15 @@ Invalid snapshots remain local and are shown inline; native failures remain
 retryable. There is no UI-level Apply transaction, and reset actions save the
 current page's defaults immediately.
 
+The beta.7 Flutter shell presents the same contracts through task-oriented
+Overview, Input, Shortcuts, System, and About surfaces. Overview derives a
+content-free readiness category from enabled state, Accessibility state,
+native-runtime availability, hot-key registration, and session phase.
+Shortcut recorder values remain UI candidates until the existing native
+transactional pair replacement succeeds. About obtains version/build/channel
+metadata from the running bundle through a content-free method; no clipboard or
+target plaintext enters the UI boundary. See ADR-0022.
+
 Trigger/Cancel are registered with the system hot-key API as a transactional
 pair. A candidate is validated and probed before the old pair is released;
 failure removes temporary registrations and leaves the prior pair active.

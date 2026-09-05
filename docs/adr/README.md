@@ -64,6 +64,8 @@ ADRs capture decisions that should not be changed silently by implementation wor
 - [`ADR-0019`](0019-code-mode-bounded-pair-contexts.md) — Restrict Code-mode pairing to five source-context-safe pair families.
 - [`ADR-0020`](0020-macos-render-host-sticky-session.md) — Keep initial macOS render-host process/window classification sticky for a session.
 
+- [`ADR-0022`](0022-task-oriented-macos-settings-ux.md) — Task-oriented Flutter macOS settings, readiness, transactional shortcut presentation, and runtime build identity.
+
 ## Proposed ADRs
 
 - [`ADR-0021`](0021-macos-synthetic-modifier-isolation.md) — Isolate macOS synthetic event state from physical modifier evidence; native candidate awaiting review and physical validation.

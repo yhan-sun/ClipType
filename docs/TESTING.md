@@ -151,7 +151,12 @@ notarization, Gatekeeper, or physical Accessibility gates.
 
 The Flutter tests also cover automatic settings persistence, coalescing rapid
 updates into the latest snapshot, invalid-setting rejection before the native
-call, and the retryable save-state contract.
+call, and the retryable save-state contract. Beta.7 adds UI contract coverage
+for Code-mode corrected-typo control availability, incomplete numeric edits
+remaining local, runtime-derived build/version presentation, Overview readiness,
+explicit permission remediation, and transactional shortcut replacement. The
+Apple Silicon release build remains the compile gate for Swift/AppKit menu-bar
+and bundle-metadata changes.
 
 ## Release pipeline validation
 
