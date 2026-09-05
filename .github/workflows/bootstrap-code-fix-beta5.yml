@@ -61,16 +61,33 @@ jobs:
           fi
           rm -f .github/rust-code-fix-beta5.log
       - name: Flutter quality gate
+        shell: bash
         working-directory: apps/cliptype-flutter
         run: |
-          git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
-          export PATH="$RUNNER_TEMP/flutter/bin:$PATH"
-          flutter config --enable-macos-desktop
-          dart format --output=none --set-exit-if-changed lib test
-          flutter pub get
-          flutter analyze
-          flutter test
-          flutter build macos --release
+          set +e
+          {
+            git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter" &&
+            export PATH="$RUNNER_TEMP/flutter/bin:$PATH" &&
+            flutter config --enable-macos-desktop &&
+            dart format lib test &&
+            dart format --output=none --set-exit-if-changed lib test &&
+            flutter pub get &&
+            flutter analyze &&
+            flutter test &&
+            flutter build macos --release
+          } > "$GITHUB_WORKSPACE/.github/flutter-code-fix-beta5.log" 2>&1
+          code=$?
+          cat "$GITHUB_WORKSPACE/.github/flutter-code-fix-beta5.log"
+          if [ "$code" -ne 0 ]; then
+            cd "$GITHUB_WORKSPACE"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/flutter-code-fix-beta5.log
+            git commit -m "ci: record beta5 Flutter gate failure"
+            git push origin HEAD:fix/code-navigation-beta5
+            exit "$code"
+          fi
+          rm -f "$GITHUB_WORKSPACE/.github/flutter-code-fix-beta5.log"
       - name: Portable native contract checks
         run: |
           python3 scripts/verify_code_navigation.py
