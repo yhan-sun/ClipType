@@ -5,10 +5,13 @@ on:
     paths:
       - "apps/cliptype-flutter/**"
       - "crates/cliptype-*/**"
+      - "scripts/**"
       - "docs/**"
       - "release/**"
       - "Cargo.lock"
       - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ci.yml"
       - ".github/workflows/p4-macos-arm64.yml"
   push:
     branches:
@@ -38,6 +41,24 @@ jobs:
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify and record tested source identity
+        id: source
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$EXPECTED_SOURCE_SHA"
+          echo "sha=$actual" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          printf 'source_commit=%s\nsource_tree=%s\nworkflow_commit=%s\n' \
+            "$actual" "$tree" "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Require Apple Silicon runner
         shell: bash
@@ -56,6 +77,17 @@ jobs:
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
           test -f "docs/releases/$version.md"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run native Code and Swift bridge contract gates
+        shell: bash
+        env:
+          CC: clang
+          SWIFTC: swiftc
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_code_navigation.py
+          python3 -m unittest discover -s scripts/tests -p 'test_code_navigation_gate.py' -v
+          python3 scripts/verify_bridge_completion.py
 
       - name: Install pinned Flutter toolchain
         shell: bash
@@ -82,6 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 check --workspace --all-targets --locked
           cargo +1.98.0 test --workspace --locked
           cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
 
@@ -155,6 +188,8 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILT_APP: ${{ steps.bundle.outputs.app }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_TREE: ${{ steps.source.outputs.tree }}
         run: |
           set -euo pipefail
           dist="$GITHUB_WORKSPACE/dist/macos-arm64"
@@ -176,7 +211,9 @@ jobs:
 
           cat > "$dist/BUILD-INFO-macos.txt" <<INFO
           release_candidate=$VERSION
-          source_commit=$GITHUB_SHA
+          source_commit=$SOURCE_SHA
+          source_tree=$SOURCE_TREE
+          workflow_commit=$GITHUB_SHA
           target=aarch64-apple-darwin
           frontend=Flutter
           installed_path=/Applications/ClipType.app
