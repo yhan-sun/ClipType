@@ -46,7 +46,10 @@ fn heap_sort_plan_continues_after_first_inner_closing_line() {
         CodeAction::Atom(TextAtom::Scalar(' ')),
         CodeAction::Atom(TextAtom::Scalar('r')),
     ];
-    assert_eq!(&planned[boundary + 1..boundary + 1 + expected.len()], &expected);
+    assert_eq!(
+        &planned[boundary + 1..boundary + 1 + expected.len()],
+        &expected
+    );
     assert!(planned.len() - boundary > 500, "tail must not be discarded");
     let tail: String = planned[boundary + 1..]
         .iter()
