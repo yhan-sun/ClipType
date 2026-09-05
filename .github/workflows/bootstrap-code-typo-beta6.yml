@@ -1,0 +1,73 @@
+name: Bootstrap Code Typo Beta6
+
+on:
+  push:
+    branches:
+      - fix/code-mode-typos-beta6
+    paths:
+      - .github/cliptype-code-typo-beta6-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: macos-14
+    timeout-minutes: 55
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed beta6 patch
+        run: python3 .github/scripts/apply_code_typo_beta6.py
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q 'fn code_adjacent_typo' crates/cliptype-app/src/coordinator.rs
+          grep -q 'KeyboardAction::Backspace' crates/cliptype-app/src/coordinator.rs
+          grep -q '^v0.2.0-beta.6$' release/VERSION
+          grep -q '^version: 0.2.0-beta.6+5$' apps/cliptype-flutter/pubspec.yaml
+          test -f docs/releases/v0.2.0-beta.6.md
+          test ! -e .github/scripts/apply_code_typo_beta6.py
+          test ! -e .github/workflows/bootstrap-code-typo-beta6.yml
+          test ! -e .github/cliptype-code-typo-beta6-trigger
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin
+
+      - name: Rust full workspace gate
+        run: |
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 test --workspace --locked
+          cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Install pinned Flutter toolchain
+        run: |
+          git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Flutter format analyze test and macOS release build
+        working-directory: apps/cliptype-flutter
+        run: |
+          flutter config --enable-macos-desktop
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+          flutter build macos --release
+
+      - name: Commit verified candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: support corrected typos in Code mode"
+          git push origin HEAD:fix/code-mode-typos-beta6
