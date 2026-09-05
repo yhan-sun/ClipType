@@ -9,6 +9,7 @@ class HotkeyRecorder extends StatefulWidget {
     required this.value,
     required this.onChanged,
     required this.onCleared,
+    this.enabled = true,
     super.key,
   });
 
@@ -16,6 +17,7 @@ class HotkeyRecorder extends StatefulWidget {
   final String value;
   final ValueChanged<String> onChanged;
   final VoidCallback onCleared;
+  final bool enabled;
 
   @override
   State<HotkeyRecorder> createState() => _HotkeyRecorderState();
@@ -71,17 +73,23 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
       onKeyEvent: _handleKey,
       child: Semantics(
         button: true,
-        label: '${widget.title} shortcut recorder',
+        label: l10n.text(
+          '${widget.title} shortcut recorder',
+          '${widget.title} 快捷键录制器',
+        ),
+        liveRegion: _recording,
         value: value,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: () {
-                setState(() => _recording = true);
-                _focusNode.requestFocus();
-              },
+              onTap: widget.enabled
+                  ? () {
+                      setState(() => _recording = true);
+                      _focusNode.requestFocus();
+                    }
+                  : null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
                 padding: const EdgeInsets.all(16),
@@ -134,11 +142,13 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () {
-                  widget.onCleared();
-                  setState(() => _recording = false);
-                  _focusNode.unfocus();
-                },
+                onPressed: widget.enabled
+                    ? () {
+                        widget.onCleared();
+                        setState(() => _recording = false);
+                        _focusNode.unfocus();
+                      }
+                    : null,
                 child: Text(l10n.clear),
               ),
             ),

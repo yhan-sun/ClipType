@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'l10n/app_localizations.dart';
+import 'model/app_status.dart';
 import 'screens/about_page.dart';
-import 'screens/general_page.dart';
-import 'screens/permissions_page.dart';
+import 'screens/overview_page.dart';
 import 'screens/shortcuts_page.dart';
+import 'screens/system_page.dart';
 import 'screens/typing_page.dart';
 import 'state/settings_controller.dart';
 import 'widgets/setting_card.dart';
@@ -103,7 +104,7 @@ class _ClipTypeAppState extends State<ClipTypeApp> {
         color: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(color: scheme.outlineVariant),
         ),
       ),
@@ -140,6 +141,7 @@ class ClipTypeShell extends StatefulWidget {
 
 class _ClipTypeShellState extends State<ClipTypeShell> {
   int _page = 0;
+  bool _explainedSettingsTrigger = false;
 
   SettingsController get controller => widget.controller;
 
@@ -147,55 +149,46 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final feedback = controller.error ?? controller.message;
+    final compact = MediaQuery.sizeOf(context).width < 860;
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 22,
+        titleSpacing: 20,
         title: Row(
           children: [
             Icon(
-              Icons.content_paste_go,
+              Icons.keyboard_command_key_rounded,
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 10),
             const Text('ClipType'),
-            const SizedBox(width: 14),
-            StatusPill(
-              label: l10n.phaseLabel(controller.status.phase),
-              good: !controller.status.active,
-            ),
+            if (!compact) ...[
+              const SizedBox(width: 14),
+              StatusPill(
+                label: l10n.phaseLabel(controller.status.phase),
+                tone: _phaseTone(controller.status.phase),
+              ),
+            ],
           ],
         ),
         actions: [
-          FilledButton.tonalIcon(
-            onPressed: controller.trigger,
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: Text(l10n.trigger),
-          ),
-          const SizedBox(width: 4),
-          TextButton.icon(
-            onPressed: controller.status.active ? controller.cancel : null,
-            icon: const Icon(Icons.stop_rounded),
-            label: Text(l10n.cancel),
-          ),
-          PopupMenuButton<ClipTypeLanguage>(
-            tooltip: l10n.interfaceLanguage,
-            icon: const Icon(Icons.language),
-            onSelected: widget.onLanguageChanged,
-            itemBuilder: (context) => ClipTypeLanguage.values
-                .map(
-                  (language) => PopupMenuItem(
-                    value: language,
-                    child: Text(language.label),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(width: 12),
+          if (compact)
+            IconButton(
+              onPressed: _primaryActionCallback(),
+              tooltip: _primaryActionLabel(l10n),
+              icon: Icon(_primaryActionIcon()),
+            )
+          else
+            FilledButton.tonalIcon(
+              onPressed: _primaryActionCallback(),
+              icon: Icon(_primaryActionIcon()),
+              label: Text(_primaryActionLabel(l10n)),
+            ),
+          const SizedBox(width: 8),
         ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final extended = constraints.maxWidth >= 960;
+          final extended = constraints.maxWidth >= 980;
           return Row(
             children: [
               NavigationRail(
@@ -203,31 +196,31 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
                 selectedIndex: _page,
                 onDestinationSelected: (value) => setState(() => _page = value),
                 labelType: extended ? null : NavigationRailLabelType.all,
-                leading: const SizedBox(height: 16),
+                leading: const SizedBox(height: 12),
                 destinations: [
                   NavigationRailDestination(
-                    icon: Icon(Icons.tune_outlined),
-                    selectedIcon: Icon(Icons.tune),
-                    label: Text(l10n.general),
+                    icon: const Icon(Icons.dashboard_outlined),
+                    selectedIcon: const Icon(Icons.dashboard_rounded),
+                    label: Text(l10n.text('Overview', '概览')),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.keyboard_alt_outlined),
-                    selectedIcon: Icon(Icons.keyboard_alt),
+                    icon: const Icon(Icons.tune_outlined),
+                    selectedIcon: const Icon(Icons.tune_rounded),
+                    label: Text(l10n.text('Input', '输入')),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.keyboard_alt_outlined),
+                    selectedIcon: const Icon(Icons.keyboard_alt),
                     label: Text(l10n.shortcuts),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.speed_outlined),
-                    selectedIcon: Icon(Icons.speed),
-                    label: Text(l10n.typing),
+                    icon: const Icon(Icons.settings_outlined),
+                    selectedIcon: const Icon(Icons.settings),
+                    label: Text(l10n.text('System', '系统')),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.security_outlined),
-                    selectedIcon: Icon(Icons.security),
-                    label: Text(l10n.permissions),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.info_outline),
-                    selectedIcon: Icon(Icons.info),
+                    icon: const Icon(Icons.info_outline),
+                    selectedIcon: const Icon(Icons.info),
                     label: Text(l10n.about),
                   ),
                 ],
@@ -247,10 +240,7 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 10,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
                   child: Row(
                     children: [
                       Icon(
@@ -258,24 +248,18 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
                             ? Icons.info_outline
                             : Icons.error_outline,
                         size: 18,
-                        color: controller.error == null
-                            ? Theme.of(context).colorScheme.onSecondaryContainer
-                            : Theme.of(context).colorScheme.onErrorContainer,
                       ),
                       const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          feedback,
-                          style: TextStyle(
-                            color: controller.error == null
-                                ? Theme.of(context)
-                                      .colorScheme
-                                      .onSecondaryContainer
-                                : Theme.of(context)
-                                      .colorScheme
-                                      .onErrorContainer,
-                          ),
+                      Expanded(child: Text(feedback)),
+                      if (controller.readinessReason == 'permission')
+                        TextButton(
+                          onPressed: () => setState(() => _page = 3),
+                          child: Text(l10n.text('Open System', '打开系统页')),
                         ),
+                      IconButton(
+                        onPressed: controller.clearFeedback,
+                        tooltip: l10n.text('Dismiss', '关闭提示'),
+                        icon: const Icon(Icons.close, size: 18),
                       ),
                     ],
                   ),
@@ -286,14 +270,94 @@ class _ClipTypeShellState extends State<ClipTypeShell> {
   }
 
   Widget _pageBody() => switch (_page) {
-    0 => GeneralPage(
+    0 => OverviewPage(
+      controller: controller,
+      onOpenInput: () => setState(() => _page = 1),
+      onOpenShortcuts: () => setState(() => _page = 2),
+      onOpenSystem: () => setState(() => _page = 3),
+      onTrigger: _confirmAndTrigger,
+    ),
+    1 => TypingPage(controller: controller),
+    2 => ShortcutsPage(controller: controller),
+    3 => SystemPage(
       controller: controller,
       onLanguageChanged: widget.onLanguageChanged,
     ),
-    1 => ShortcutsPage(controller: controller),
-    2 => TypingPage(controller: controller),
-    3 => PermissionsPage(controller: controller),
-    _ => const AboutPage(),
+    _ => AboutPage(controller: controller),
+  };
+
+  VoidCallback? _primaryActionCallback() {
+    if (controller.status.active) return controller.cancel;
+    return switch (controller.readinessReason) {
+      'bridge' => null,
+      'disabled' || 'permission' => () => setState(() => _page = 3),
+      'shortcuts' => () => setState(() => _page = 2),
+      _ => _confirmAndTrigger,
+    };
+  }
+
+  String _primaryActionLabel(ClipTypeLocalizations l10n) {
+    if (controller.status.active) return l10n.text('Stop typing', '停止输入');
+    return switch (controller.readinessReason) {
+      'bridge' => l10n.text('Runtime unavailable', '运行时不可用'),
+      'disabled' => l10n.text('Enable ClipType', '启用 ClipType'),
+      'permission' => l10n.text('Grant access', '完成授权'),
+      'shortcuts' => l10n.text('Set shortcuts', '设置快捷键'),
+      _ => l10n.text('Start typing', '开始输入'),
+    };
+  }
+
+  IconData _primaryActionIcon() {
+    if (controller.status.active) return Icons.stop_rounded;
+    return switch (controller.readinessReason) {
+      'bridge' => Icons.error_outline,
+      'disabled' => Icons.power_settings_new,
+      'permission' => Icons.security_outlined,
+      'shortcuts' => Icons.keyboard_alt_outlined,
+      _ => Icons.play_arrow_rounded,
+    };
+  }
+
+  Future<void> _confirmAndTrigger() async {
+    if (!controller.readyForInput) return;
+    if (!_explainedSettingsTrigger) {
+      final l10n = context.l10n;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.open_in_new_rounded),
+          title: Text(
+            l10n.text('Type into the previous app?', '要向上一个应用开始输入吗？'),
+          ),
+          content: Text(
+            l10n.text(
+              'ClipType will hide this settings window, return focus to the app you were using before it, then begin the bounded input session. The global shortcut does not show this confirmation.',
+              'ClipType 会隐藏此设置窗口，把焦点交还给你之前使用的应用，然后开始有界输入会话。使用全局快捷键触发时不会出现此确认。',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l10n.text('Continue', '继续')),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+      _explainedSettingsTrigger = true;
+    }
+    await controller.trigger();
+  }
+
+  StatusTone _phaseTone(SessionPhase phase) => switch (phase) {
+    SessionPhase.idle =>
+      controller.readyForInput ? StatusTone.success : StatusTone.neutral,
+    SessionPhase.preparing || SessionPhase.injecting => StatusTone.active,
+    SessionPhase.cancelling => StatusTone.warning,
   };
 }
 
@@ -308,7 +372,7 @@ class _LoadingView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.content_paste_go,
+              Icons.keyboard_command_key_rounded,
               size: 42,
               color: Theme.of(context).colorScheme.primary,
             ),
