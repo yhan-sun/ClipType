@@ -1,0 +1,20 @@
+info: syncing channel updates for 1.98.0-aarch64-apple-darwin
+info: latest update on 2026-08-20 for version 1.98.0 (88d9e12ae 2026-08-18)
+info: downloading 5 components
+
+  1.98.0-aarch64-apple-darwin installed - rustc 1.98.0 (88d9e12ae 2026-08-18)
+
+info: self-update is disabled for this build of rustup
+info: any updates to rustup will need to be fetched with your system package manager
+Diff in /Users/runner/work/ClipType/ClipType/crates/cliptype-core/tests/code_mode_heap_regression.rs:46:
+         CodeAction::Atom(TextAtom::Scalar(' ')),
+         CodeAction::Atom(TextAtom::Scalar('r')),
+     ];
+-    assert_eq!(&planned[boundary + 1..boundary + 1 + expected.len()], &expected);
++    assert_eq!(
++        &planned[boundary + 1..boundary + 1 + expected.len()],
++        &expected
++    );
+     assert!(planned.len() - boundary > 500, "tail must not be discarded");
+     let tail: String = planned[boundary + 1..]
+         .iter()
