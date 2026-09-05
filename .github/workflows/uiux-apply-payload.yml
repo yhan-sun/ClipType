@@ -1,0 +1,113 @@
+name: UIUX Apply and Validate
+
+on:
+  push:
+    branches:
+      - feat/macos-uiux-beta7
+    paths:
+      - ".github/uiux-payload/READY"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uiux-apply-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify and apply reviewed payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/uiux-payload/part-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/uiux-payload.zip"
+          echo "0d93389af9d8edd94cc929c50b4a9238c12ad58803073869e1bd7621b05474c7  $RUNNER_TEMP/uiux-payload.zip" | sha256sum --check
+          unzip -o "$RUNNER_TEMP/uiux-payload.zip" -d "$GITHUB_WORKSPACE"
+          rm -rf .github/uiux-payload
+          rm -f .github/workflows/uiux-apply-payload.yml
+          rm -f .github/workflows/uiux-source-export.yml
+          rm -f .github/workflows/uiux-validate-format.yml
+
+      - name: Install pinned Flutter toolchain
+        shell: bash
+        env:
+          FLUTTER_VERSION: 3.47.2
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/flutter/bin/flutter" --version
+
+      - name: Format, analyze, and test Flutter implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart format apps/cliptype-flutter/lib apps/cliptype-flutter/test
+          cd apps/cliptype-flutter
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Validate non-Flutter source and release coherence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path, aliases: true) or abort(path) }' \
+            .github/workflows/p4-macos-arm64.yml \
+            .github/workflows/windows-release.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import plistlib
+
+          version = Path('release/VERSION').read_text().strip()
+          pubspec = next(
+              line.split(':', 1)[1].strip()
+              for line in Path('apps/cliptype-flutter/pubspec.yaml').read_text().splitlines()
+              if line.startswith('version:')
+          )
+          assert pubspec.split('+', 1)[0] == version.removeprefix('v')
+          assert Path(f'docs/releases/{version}.md').is_file()
+          plistlib.loads(Path('apps/cliptype-flutter/macos/Runner/Info.plist').read_bytes())
+          json.loads(Path('apps/cliptype-flutter/macos/Runner/Assets.xcassets/StatusIcon.imageset/Contents.json').read_text())
+          dart = ''.join(path.read_text() for path in Path('apps/cliptype-flutter/lib').rglob('*.dart'))
+          assert '0.2.0-beta.2' not in dart
+          print(f'validated {version} / {pubspec}')
+          PY
+
+      - name: Commit validated implementation without bootstrap files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: overhaul macOS settings UX and prepare beta.7"
+          git push origin HEAD:feat/macos-uiux-beta7
+
+      - name: Export exact validated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          git archive --format=zip --output=export/cliptype-uiux-validated-source.zip HEAD
+          git rev-parse HEAD > export/SOURCE_SHA.txt
+          git show --stat --oneline HEAD > export/COMMIT.txt
+
+      - name: Upload validated source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptype-uiux-validated-source
+          path: export/
+          if-no-files-found: error
+          retention-days: 2
