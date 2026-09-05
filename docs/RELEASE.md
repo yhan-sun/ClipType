@@ -15,7 +15,7 @@ checksums and ad-hoc signing, and attaches the assets only after the exact tag
 and prerelease exist. It refuses existing asset names and re-downloads the
 published files for comparison. This does not replace the Universal 2,
 Developer ID, notarization, stapling, Gatekeeper, physical Accessibility, or
-real-editor requirements. `v0.2.0-beta.2` and all older releases remain
+real-editor requirements. `v0.2.0-beta.3` and all older releases remain
 immutable.
 
 ## Required assets

@@ -5,7 +5,7 @@ ClipType is a privacy-first Windows tray utility that reads the current clipboar
 The repository also contains the macOS Apple Silicon candidate. On macOS,
 `apps/cliptype-flutter` is the only settings/front-end composition root; the
 legacy Rust/Slint macOS application has been removed. The Rust core and macOS
-adapters remain shared runtime components. `v0.2.0-beta.2` includes a clearly
+adapters remain shared runtime components. `v0.2.0-beta.4` includes a clearly
 labelled arm64 macOS testing preview; it is not a general macOS release.
 
 ## Public beta

@@ -4,7 +4,7 @@ This directory contains the P4 Apple Silicon macOS candidate. It is a real
 ClipType settings/menu-bar application, not a Flutter counter demo.
 
 The candidate is arm64-only (`aarch64-apple-darwin`). A clearly labelled
-ad-hoc-signed arm64 testing preview is attached to `v0.2.0-beta.2`; it is not a
+ad-hoc-signed arm64 testing preview is attached to `v0.2.0-beta.4`; it is not a
 general macOS beta, Universal 2 artifact, or signed/notarized release. The
 broader release and compatibility boundary is in [P4](../../docs/phases/P4_MACOS_ARM64_LOCAL.md)
 and [ADR-0010](../../docs/adr/0010-flutter-macos-arm64-runner.md). Flutter is

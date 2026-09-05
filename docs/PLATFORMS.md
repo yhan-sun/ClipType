@@ -122,9 +122,9 @@ counters.
 ### Distribution
 
 macOS release requires code signing/notarization planning before claiming
-general availability. The unreleased `v0.2.0-beta.3` candidate prepares a
-clearly labelled additive arm64 testing preview built on an Apple Silicon
-runner; `v0.2.0-beta.2` remains immutable. The preview is ad-hoc signed and is
+general availability. The `v0.2.0-beta.4` candidate prepares a clearly labelled
+additive arm64 testing preview built on an Apple Silicon runner; `v0.2.0-beta.3`
+and older releases remain immutable. The preview is ad-hoc signed and is
 not a Universal 2, Developer ID, notarized, Gatekeeper-ready, or general public
 macOS release. Publication remains blocked until the repository's physical
 release evidence is complete.
