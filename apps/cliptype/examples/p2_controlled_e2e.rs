@@ -36,6 +36,80 @@ fn main() {
     }
 }
 
+// The controlled target belongs to this thread. Keep it responsive while the
+// worker dispatches input; waiting on its condition variable would starve the
+// EDIT control's message queue. Readiness is not proof of target-text delivery.
+#[cfg(any(windows, test))]
+fn wait_with_message_pump(
+    timeout: std::time::Duration,
+    mut pump: impl FnMut(),
+    mut is_idle: impl FnMut() -> bool,
+) -> bool {
+    let started = std::time::Instant::now();
+    loop {
+        pump();
+        if is_idle() {
+            return true;
+        }
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return false;
+        }
+        std::thread::sleep(remaining.min(std::time::Duration::from_millis(1)));
+    }
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use std::{cell::Cell, time::Duration};
+
+    use super::wait_with_message_pump;
+
+    #[test]
+    fn pumps_before_observing_an_already_idle_worker() {
+        let pumped = Cell::new(false);
+        assert!(wait_with_message_pump(
+            Duration::ZERO,
+            || pumped.set(true),
+            || {
+                assert!(pumped.get());
+                true
+            },
+        ));
+    }
+
+    #[test]
+    fn pending_worker_with_zero_budget_fails_closed() {
+        let calls = Cell::new(0);
+        assert!(!wait_with_message_pump(
+            Duration::ZERO,
+            || calls.set(calls.get() + 1),
+            || false,
+        ));
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn keeps_pumping_until_the_worker_becomes_idle() {
+        let calls = Cell::new(0);
+        assert!(wait_with_message_pump(
+            Duration::from_secs(5),
+            || calls.set(calls.get() + 1),
+            || calls.get() == 3,
+        ));
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn permanently_busy_worker_cannot_be_reported_as_idle() {
+        assert!(!wait_with_message_pump(
+            Duration::from_millis(2),
+            || {},
+            || false,
+        ));
+    }
+}
+
 #[cfg(windows)]
 mod windows_e2e {
     use std::{
@@ -217,7 +291,20 @@ mod windows_e2e {
             },
         ];
 
-        cases.into_iter().map(run_case).collect()
+        cases
+            .into_iter()
+            .map(|case| {
+                let name = case.name;
+                let backend = case.backend;
+                run_case(case).inspect_err(|error| {
+                    // Only fixed case labels and enums, never fixture text.
+                    eprintln!(
+                        "p2_controlled_e2e diagnostic case={name} expected_backend={backend:?} category={}",
+                        error.label(),
+                    );
+                })
+            })
+            .collect()
     }
 
     fn run_case(case: Case) -> Result<Observation, E2eError> {
@@ -255,7 +342,9 @@ mod windows_e2e {
         if !matches!(coordinator.trigger(), TriggerResult::Started { .. }) {
             return Err(E2eError::TriggerRejected);
         }
-        if coordinator.wait_for_idle(Duration::from_secs(8)) != WaitResult::Idle {
+        if !super::wait_with_message_pump(Duration::from_secs(8), pump_messages, || {
+            coordinator.wait_for_idle(Duration::ZERO) == WaitResult::Idle
+        }) {
             return Err(E2eError::CoordinatorTimeout);
         }
 
@@ -271,6 +360,16 @@ mod windows_e2e {
         let expected_units = case.expected.encode_utf16().count();
         let observed_units = observed.encode_utf16().count();
         if observed != case.expected {
+            // Query-only diagnostics; never refocus, replay a chord or inspect
+            // another application's text to make a failed case pass.
+            let foreground_matches = unsafe { GetForegroundWindow() } == window.parent;
+            let focus_matches = unsafe { get_focus() } == window.edit;
+            let revision_matches =
+                revision_before.matches(WindowsClipboard::new().current_revision());
+            eprintln!(
+                "p2_controlled_e2e diagnostic case={} foreground_matches={} focus_matches={} clipboard_revision_matches={}",
+                case.name, foreground_matches, focus_matches, revision_matches,
+            );
             return Err(E2eError::TextMismatch {
                 expected: expected_units,
                 observed: observed_units,

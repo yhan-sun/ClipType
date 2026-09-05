@@ -37,45 +37,65 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 18
     steps:
-      - name: Check out exact candidate
+      - name: Check out candidate integration
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record operating-system evidence
         shell: pwsh
         run: |
           $os = Get-CimInstance Win32_OperatingSystem
-          Write-Output "cliptype_compat os_caption=$($os.Caption) os_version=$($os.Version) os_build=$($os.BuildNumber) arch=$env:PROCESSOR_ARCHITECTURE"
+          $source = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw "source identity missing" }
+          $tree = git rev-parse 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0) { throw "source tree missing" }
+          Write-Output "cliptype_compat os_caption=$($os.Caption) os_version=$($os.Version) os_build=$($os.BuildNumber) arch=$env:PROCESSOR_ARCHITECTURE source_commit=$source source_tree=$tree"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component clippy
       - name: Check complete workspace
         run: cargo check --workspace --all-targets --locked
       - name: Test complete workspace
         run: cargo test --workspace --locked
+      - name: Test controlled-host wait contract
+        run: cargo test --locked -p cliptype --example p2_controlled_e2e
       - name: Lint complete workspace
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Exercise controlled keyboard and product paths
         shell: pwsh
         run: |
-          $p1 = cargo run --locked --quiet -p cliptype --example p1_controlled_e2e 2>&1
+          function Assert-PrivateOutput {
+            param([object[]] $Lines)
+            $text = $Lines -join "`n"
+            foreach ($sentinel in @(
+              "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
+              "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265"
+            )) {
+              if ($text.Contains($sentinel)) {
+                throw "privacy sentinel escaped into compatibility output"
+              }
+            }
+          }
+
+          $p1 = @(cargo run --locked --quiet -p cliptype --example p1_controlled_e2e 2>&1)
           $p1Code = $LASTEXITCODE
+          Assert-PrivateOutput -Lines $p1
           $p1 | Write-Output
           if ($p1Code -ne 0 -or ($p1 | Select-String -SimpleMatch "p1_controlled_e2e result=ok").Count -ne 1) {
             throw "P1 controlled compatibility path failed"
           }
 
-          $p2 = cargo run --locked --quiet -p cliptype --example p2_controlled_e2e 2>&1
-          $p2Code = $LASTEXITCODE
-          $p2 | Write-Output
-          if ($p2Code -ne 0 -or ($p2 | Select-String -SimpleMatch "p2_controlled_e2e result=ok").Count -ne 4) {
-            throw "P2 controlled compatibility paths failed"
-          }
-
-          $combined = ($p1 + $p2) -join "`n"
-          foreach ($sentinel in @(
-            "CLIPTYPE_E2E_PRIVATE_SENTINEL_7841",
-            "CLIPTYPE_P2_E2E_PRIVATE_SENTINEL_9265"
-          )) {
-            if ($combined.Contains($sentinel)) {
-              throw "privacy sentinel escaped into compatibility output"
+          # Required independent repetitions, not retries: any failure aborts.
+          foreach ($iteration in 1..3) {
+            Write-Output "cliptype_compat product_iteration=$iteration required_iterations=3"
+            $p2 = @(cargo run --locked --quiet -p cliptype --example p2_controlled_e2e 2>&1)
+            $p2Code = $LASTEXITCODE
+            Assert-PrivateOutput -Lines $p2
+            $p2 | Write-Output
+            if ($p2Code -ne 0 -or ($p2 | Select-String -SimpleMatch "p2_controlled_e2e result=ok").Count -ne 4) {
+              throw "P2 controlled compatibility paths failed on iteration $iteration"
+            }
+            foreach ($case in @("keyboard", "clipboard", "auto-short", "auto-long")) {
+              if (($p2 | Select-String -Pattern "^p2_controlled_e2e result=ok case=$case ").Count -ne 1) {
+                throw "P2 compatibility case evidence missing or duplicated: $case"
+              }
             }
           }
       - name: Build distribution executable
