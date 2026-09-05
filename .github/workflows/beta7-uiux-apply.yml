@@ -32,6 +32,15 @@ jobs:
           echo "a5695b6f2535c4f2e551d4d4dc58eba021c0f74bf6440c1a5d1af4ca73a8f68b  $RUNNER_TEMP/beta7.patch.bz2" | sha256sum --check
           bzip2 -dc "$RUNNER_TEMP/beta7.patch.bz2" > "$RUNNER_TEMP/beta7.patch"
           git apply --binary --index "$RUNNER_TEMP/beta7.patch"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/cliptype-flutter/lib/screens/overview_page.dart')
+          text = path.read_text()
+          needle = "import '../l10n/app_localizations.dart';\n"
+          if "import '../model/app_status.dart';" not in text:
+              text = text.replace(needle, needle + "import '../model/app_status.dart';\n", 1)
+          path.write_text(text)
+          PY
           rm -rf .github/uiux-beta7
           rm -f .github/workflows/beta7-uiux-apply.yml
 
