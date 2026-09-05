@@ -1,0 +1,111 @@
+name: Beta7 UIUX Apply and Validate
+
+on:
+  push:
+    branches:
+      - feat/macos-uiux-beta7-release
+    paths:
+      - ".github/uiux-beta7/READY"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta7-uiux-apply-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact clean beta.6 base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify and apply reviewed beta.7 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/uiux-beta7/part-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/beta7.patch.bz2"
+          echo "a5695b6f2535c4f2e551d4d4dc58eba021c0f74bf6440c1a5d1af4ca73a8f68b  $RUNNER_TEMP/beta7.patch.bz2" | sha256sum --check
+          bzip2 -dc "$RUNNER_TEMP/beta7.patch.bz2" > "$RUNNER_TEMP/beta7.patch"
+          git apply --binary --index "$RUNNER_TEMP/beta7.patch"
+          rm -rf .github/uiux-beta7
+          rm -f .github/workflows/beta7-uiux-apply.yml
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Run native-neutral Rust quality gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.0 fmt --all -- --check
+          cargo +1.98.0 check --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
+
+      - name: Install pinned Flutter toolchain
+        shell: bash
+        env:
+          FLUTTER_VERSION: 3.47.2
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/flutter/bin/flutter" --version
+
+      - name: Format, analyze, and test Flutter UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart format apps/cliptype-flutter/lib apps/cliptype-flutter/test
+          cd apps/cliptype-flutter
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Verify release and privacy-safe UI coherence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+
+          root = Path('.')
+          version = (root / 'release/VERSION').read_text().strip()
+          pubspec = next(
+              line.split(':', 1)[1].strip()
+              for line in (root / 'apps/cliptype-flutter/pubspec.yaml').read_text().splitlines()
+              if line.startswith('version:')
+          )
+          assert version == 'v0.2.0-beta.7'
+          assert pubspec == '0.2.0-beta.7+6'
+          assert (root / f'docs/releases/{version}.md').is_file()
+          plistlib.loads((root / 'apps/cliptype-flutter/macos/Runner/Info.plist').read_bytes())
+          dart = '\n'.join(p.read_text() for p in (root / 'apps/cliptype-flutter/lib').rglob('*.dart'))
+          assert '0.2.0-beta.2' not in dart
+          assert 'typo simulation is disabled' not in dart
+          swift = (root / 'apps/cliptype-flutter/macos/Runner/ClipTypeNativePlugin.swift').read_text()
+          assert '"hotkeysRegistered"' in swift
+          assert 'getBuildInfo' in swift
+          print(f'beta7 coherence pass: {version} / {pubspec}')
+          PY
+
+      - name: Commit only the validated implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: overhaul macOS settings UX and prepare beta.7"
+          git push origin HEAD:feat/macos-uiux-beta7-release
