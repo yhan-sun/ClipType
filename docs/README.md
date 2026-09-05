@@ -9,7 +9,7 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - `v0.1.0-beta.1` is a Windows x86_64 GitHub prerelease.
 - macOS is not part of `v0.1.0-beta.1`.
 - P3 targets a graphical settings window, user-recorded Trigger/Cancel shortcuts with OS conflict probing and rollback, and a signed/notarized macOS Universal 2 product for `v0.2.0-beta.1`.
-- P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to Apple Silicon arm64 validation. `v0.2.0-beta.4` includes it as a clearly labelled testing preview, not as a general public macOS beta.
+- P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to Apple Silicon arm64 validation. `v0.2.0-beta.5` includes it as a clearly labelled testing preview, not as a general public macOS beta.
 - The legacy Rust/Slint macOS composition root has been removed; `apps/cliptype-flutter` is now the sole macOS settings/front-end entry point. The shared Slint crate remains only for the Windows product until a separate Windows UI decision.
 
 ## Product and support

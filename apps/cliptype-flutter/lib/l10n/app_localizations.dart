@@ -273,13 +273,7 @@ class ClipTypeLocalizations {
     _ => _text('Not checked', '未检查'),
   };
 
-  String completionLabel(String value) => switch (value) {
-    'completed' => lastSessionCompleted,
-    'cancelled' => lastSessionCancelled,
-    'target_changed' => lastSessionTargetChanged,
-    'clipboard_changed' => lastSessionClipboardChanged,
-    _ => lastSessionStopped,
-  };
+  String completionLabel(String value) => completionMessage(value);
 
   String validationMessage(String? code) => switch (code) {
     'missing_hotkeys' || 'shortcuts_required' => _text(
@@ -388,7 +382,50 @@ class ClipTypeLocalizations {
       'Clipboard changed before paste; nothing further was sent.',
       '粘贴前剪贴板发生变化；未继续发送内容。',
     ),
-    _ => _text('The input operation stopped safely.', '输入操作已安全停止。'),
+    'permission' => _text(
+      'A security restriction stopped input. Check permissions.',
+      '安全权限限制阻止了输入，请检查权限。',
+    ),
+    'modifier_conflict' => _text(
+      'A modifier key was detected; remaining input stopped.',
+      '检测到修饰键冲突，剩余输入已停止。',
+    ),
+    'target_evidence_unavailable' => _text(
+      'Destination identity could not be verified; input stopped.',
+      '无法继续确认目标身份，输入已停止。',
+    ),
+    'target_disappeared' => _text(
+      'The destination is no longer available; input stopped.',
+      '目标已不可用，输入已停止。',
+    ),
+    'partial_input' => _text(
+      'Only part of a native action was accepted. Review the text; no retry was made.',
+      '原生动作仅部分成功，请检查已输入内容；程序没有自动重试。',
+    ),
+    'progress_unknown' => _text(
+      'Input progress is unknown. Review the text; no retry was made.',
+      '无法确认输入进度，请检查已输入内容；程序没有自动重试。',
+    ),
+    'blocked_cause_unknown' => _text(
+      'Native input was blocked; the cause is unknown.',
+      '原生输入被阻止，具体原因未知。',
+    ),
+    'native_failure' => _text(
+      'Native input failed; remaining input stopped.',
+      '原生输入失败，剩余输入已停止。',
+    ),
+    'internal_invariant' => _text(
+      'An internal input error occurred; remaining input stopped.',
+      '发生内部输入错误，剩余输入已停止。',
+    ),
+    'modifier_timeout' => _text(
+      'Modifier keys did not clear before the timeout.',
+      '等待修饰键释放超时。',
+    ),
+    _ => _text(
+      'Input failed; review any text already entered.',
+      '输入失败，请检查已输入的内容。',
+    ),
   };
 
   String errorMessage(String code) => switch (code) {

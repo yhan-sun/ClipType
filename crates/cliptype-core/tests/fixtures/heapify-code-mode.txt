@@ -1,0 +1,53 @@
+/// 将指定子树调整为最大堆（父节点 ≥ 子节点）
+/// - `arr`: 可变切片引用
+/// - `n`: 当前堆的有效大小（未排序部分长度）
+/// - `i`: 当前子树的根节点索引（从 0 开始）
+fn heapify<T: Ord>(arr: &mut [T], n: usize, i: usize) {
+    let mut largest = i;
+    let left = 2 * i + 1;
+    let right = 2 * i + 2;
+
+    if left < n && arr[left] > arr[largest] {
+        largest = left;
+    }
+    if right < n && arr[right] > arr[largest] {
+        largest = right;
+    }
+
+    if largest != i {
+        arr.swap(i, largest);          // 交换
+        heapify(arr, n, largest);      // 递归调整受影响的子树
+    }
+}
+
+/// 堆排序（升序）
+pub fn heap_sort<T: Ord>(arr: &mut [T]) {
+    let n = arr.len();
+    if n <= 1 {
+        return;
+    }
+
+    // 1. 构建最大堆（从最后一个非叶子节点开始向上调整）
+    for i in (0..n / 2).rev() {
+        heapify(arr, n, i);
+    }
+
+    // 2. 排序：将堆顶（最大值）与末尾交换，并缩小堆范围
+    for i in (1..n).rev() {
+        arr.swap(0, i);                // 将当前最大值移至尾部
+        heapify(arr, i, 0);            // 对缩小后的堆重新调整（忽略已排好的尾部）
+    }
+}
+
+fn main() {
+    let mut numbers = vec![12, 11, 13, 5, 6, 7];
+    println!("原始数组: {:?}", numbers);
+
+    heap_sort(&mut numbers);
+    println!("排序后数组: {:?}", numbers);
+
+    // 测试浮点数
+    let mut floats = vec![3.14, 1.5, 2.7, 0.8];
+    heap_sort(&mut floats);
+    println!("排序后浮点数: {:?}", floats);
+}
