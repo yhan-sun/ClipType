@@ -23,6 +23,62 @@ jobs:
       - name: Apply reviewed beta6 patch
         run: python3 .github/scripts/apply_code_typo_beta6.py
 
+      - name: Normalize Code typo let-chain for Clippy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/cliptype-app/src/coordinator.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''        if let KeyboardAction::Atom(atom) = action {
+              if let Some(wrong) =
+                  code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
+              {
+                  if let Err(outcome) = dispatch_timed_action(
+                      context,
+                      plan.config(),
+                      KeyboardAction::Atom(wrong),
+                      &mut random,
+                  ) {
+                      return SessionCompletion::Finished(outcome);
+                  }
+                  if let Err(outcome) = dispatch_timed_action(
+                      context,
+                      plan.config(),
+                      KeyboardAction::Backspace,
+                      &mut random,
+                  ) {
+                      return SessionCompletion::Finished(outcome);
+                  }
+              }
+          }
+          '''
+          new = '''        if let KeyboardAction::Atom(atom) = action
+              && let Some(wrong) =
+                  code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
+          {
+              if let Err(outcome) = dispatch_timed_action(
+                  context,
+                  plan.config(),
+                  KeyboardAction::Atom(wrong),
+                  &mut random,
+              ) {
+                  return SessionCompletion::Finished(outcome);
+              }
+              if let Err(outcome) = dispatch_timed_action(
+                  context,
+                  plan.config(),
+                  KeyboardAction::Backspace,
+                  &mut random,
+              ) {
+                  return SessionCompletion::Finished(outcome);
+              }
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected one nested Code typo block')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Verify patch shape
         shell: bash
         run: |
