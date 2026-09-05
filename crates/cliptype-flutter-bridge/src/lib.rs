@@ -278,34 +278,42 @@ fn backend_code(backend: Option<cliptype_core::InjectionBackend>) -> i32 {
 
 #[cfg(target_os = "macos")]
 fn completion_code(completion: Option<cliptype_app::SessionCompletion>) -> i32 {
+    use cliptype_app::SessionCompletion::{Finished, PreparationFailed};
+    use cliptype_core::{PreparationFailure, TerminalOutcome};
+
+    // Values 0..=6 retain their ABI meaning; append detailed failure codes.
+    // Keep terminal outcomes exhaustive so a new failure cannot silently turn
+    // into a generic "stopped safely" message at the Flutter boundary.
     match completion {
         None => 0,
-        Some(cliptype_app::SessionCompletion::PreparationFailed(
-            cliptype_core::PreparationFailure::Cancelled,
-        ))
-        | Some(cliptype_app::SessionCompletion::Finished(
-            cliptype_core::TerminalOutcome::Cancelled,
-        )) => 2,
-        Some(cliptype_app::SessionCompletion::Finished(
-            cliptype_core::TerminalOutcome::Completed,
-        )) => 1,
-        Some(cliptype_app::SessionCompletion::Finished(
-            cliptype_core::TerminalOutcome::TargetChanged
-            | cliptype_core::TerminalOutcome::TargetDisappeared
-            | cliptype_core::TerminalOutcome::TargetEvidenceUnavailable,
-        )) => 3,
-        Some(cliptype_app::SessionCompletion::Finished(
-            cliptype_core::TerminalOutcome::ClipboardChanged,
-        )) => 4,
-        Some(cliptype_app::SessionCompletion::PreparationFailed(
-            cliptype_core::PreparationFailure::KnownSecurityRestriction,
-        ))
-        | Some(cliptype_app::SessionCompletion::Finished(
-            cliptype_core::TerminalOutcome::KnownSecurityRestriction,
-        )) => 5,
-        Some(_) => 6,
+        Some(Finished(outcome)) => match outcome {
+            TerminalOutcome::Completed => 1,
+            TerminalOutcome::Cancelled => 2,
+            TerminalOutcome::TargetChanged => 3,
+            TerminalOutcome::ClipboardChanged => 4,
+            TerminalOutcome::KnownSecurityRestriction => 5,
+            TerminalOutcome::ModifierConflict => 7,
+            TerminalOutcome::TargetEvidenceUnavailable => 8,
+            TerminalOutcome::TargetDisappeared => 9,
+            TerminalOutcome::PartialInput => 10,
+            TerminalOutcome::ProgressUnknown => 11,
+            TerminalOutcome::BlockedCauseUnknown => 12,
+            TerminalOutcome::NativeFailure => 13,
+            TerminalOutcome::InternalInvariant => 14,
+            TerminalOutcome::ModifierSettleTimeout => 15,
+        },
+        Some(PreparationFailed(failure)) => match failure {
+            PreparationFailure::Cancelled => 2,
+            PreparationFailure::KnownSecurityRestriction => 5,
+            PreparationFailure::InternalInvariant => 14,
+            PreparationFailure::ModifierSettleTimeout => 15,
+            _ => 6,
+        },
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod completion_tests;
 
 fn fill_state(runtime: &BridgeRuntime, output: &mut CtBridgeState) -> Result<(), i32> {
     #[cfg(target_os = "macos")]

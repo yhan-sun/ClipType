@@ -1,189 +1,0 @@
-Cloning into '/Users/runner/work/_temp/flutter'...
-Updating files:   0% (1/16071)Updating files:   1% (161/16071)Updating files:   1% (235/16071)Updating files:   2% (322/16071)Updating files:   3% (483/16071)Updating files:   4% (643/16071)Updating files:   5% (804/16071)Updating files:   6% (965/16071)Updating files:   7% (1125/16071)Updating files:   8% (1286/16071)Updating files:   9% (1447/16071)Updating files:  10% (1608/16071)Updating files:  11% (1768/16071)Updating files:  12% (1929/16071)Updating files:  13% (2090/16071)Updating files:  14% (2250/16071)Updating files:  15% (2411/16071)Updating files:  16% (2572/16071)Updating files:  17% (2733/16071)Updating files:  18% (2893/16071)Updating files:  19% (3054/16071)Updating files:  20% (3215/16071)Updating files:  21% (3375/16071)Updating files:  22% (3536/16071)Updating files:  23% (3697/16071)Updating files:  24% (3858/16071)Updating files:  25% (4018/16071)Updating files:  26% (4179/16071)Updating files:  27% (4340/16071)Updating files:  28% (4500/16071)Updating files:  29% (4661/16071)Updating files:  30% (4822/16071)Updating files:  31% (4983/16071)Updating files:  32% (5143/16071)Updating files:  33% (5304/16071)Updating files:  34% (5465/16071)Updating files:  35% (5625/16071)Updating files:  36% (5786/16071)Updating files:  37% (5947/16071)Updating files:  38% (6107/16071)Updating files:  39% (6268/16071)Updating files:  40% (6429/16071)Updating files:  40% (6562/16071)Updating files:  41% (6590/16071)Updating files:  42% (6750/16071)Updating files:  43% (6911/16071)Updating files:  44% (7072/16071)Updating files:  45% (7232/16071)Updating files:  46% (7393/16071)Updating files:  47% (7554/16071)Updating files:  48% (7715/16071)Updating files:  49% (7875/16071)Updating files:  50% (8036/16071)Updating files:  51% (8197/16071)Updating files:  52% (8357/16071)Updating files:  53% (8518/16071)Updating files:  54% (8679/16071)Updating files:  55% (8840/16071)Updating files:  56% (9000/16071)Updating files:  57% (9161/16071)Updating files:  58% (9322/16071)Updating files:  59% (9482/16071)Updating files:  60% (9643/16071)Updating files:  61% (9804/16071)Updating files:  62% (9965/16071)Updating files:  63% (10125/16071)Updating files:  64% (10286/16071)Updating files:  65% (10447/16071)Updating files:  66% (10607/16071)Updating files:  67% (10768/16071)Updating files:  68% (10929/16071)Updating files:  69% (11089/16071)Updating files:  70% (11250/16071)Updating files:  71% (11411/16071)Updating files:  72% (11572/16071)Updating files:  73% (11732/16071)Updating files:  74% (11893/16071)Updating files:  75% (12054/16071)Updating files:  76% (12214/16071)Updating files:  76% (12359/16071)Updating files:  77% (12375/16071)Updating files:  78% (12536/16071)Updating files:  79% (12697/16071)Updating files:  80% (12857/16071)Updating files:  81% (13018/16071)Updating files:  82% (13179/16071)Updating files:  83% (13339/16071)Updating files:  84% (13500/16071)Updating files:  85% (13661/16071)Updating files:  86% (13822/16071)Updating files:  87% (13982/16071)Updating files:  88% (14143/16071)Updating files:  89% (14304/16071)Updating files:  90% (14464/16071)Updating files:  91% (14625/16071)Updating files:  92% (14786/16071)Updating files:  93% (14947/16071)Updating files:  94% (15107/16071)Updating files:  95% (15268/16071)Updating files:  96% (15429/16071)Updating files:  97% (15589/16071)Updating files:  98% (15750/16071)Updating files:  99% (15911/16071)Updating files: 100% (16071/16071)Updating files: 100% (16071/16071), done.
-Downloading Darwin arm64 Dart SDK from Flutter engine a804b261645ef8c13eb3d5c44a5c2fb0340c5539...
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  4  215M    4 9140k    0     0  32.8M      0  0:00:06 --:--:--  0:00:06 32.8M 35  215M   35 75.9M    0     0  59.7M      0  0:00:03  0:00:01  0:00:02 59.7M 71  215M   71  153M    0     0  67.6M      0  0:00:03  0:00:02  0:00:01 67.6M100  215M  100  215M    0     0  71.0M      0  0:00:03  0:00:03 --:--:-- 71.0M
-Building flutter tool...
-Resolving dependencies...
-Downloading packages...
-+ _fe_analyzer_shared 95.0.0 (107.0.0 available)
-+ analyzer 10.1.0 (14.3.0 available)
-+ archive 3.6.1 (4.2.0 available)
-+ args 2.7.0
-+ async 2.13.1
-+ boolean_selector 2.1.2
-+ browser_launcher 1.1.3 (1.2.0 available)
-+ built_collection 5.1.1
-+ built_value 8.12.6 (8.13.0 available)
-+ checked_yaml 2.0.4
-+ cli_config 0.2.0
-+ clock 1.1.2 (1.1.3 available)
-+ code_assets 1.2.1 (2.0.0 available)
-+ code_builder 4.11.1 (4.12.0 available)
-+ collection 1.19.1
-+ completion 1.0.2
-+ convert 3.1.2
-+ coverage 1.15.1
-+ crypto 3.0.7
-+ csslib 1.0.2
-+ dap 1.4.0
-+ dart_service_protocol_shared 0.0.3
-+ dart_style 3.1.7 (3.1.13 available)
-+ data_assets 0.20.0
-+ dds 5.3.0 (5.4.0 available)
-+ dds_service_extensions 2.1.0
-+ devtools_shared 12.1.0 (14.0.0 available)
-+ dtd 4.0.0
-+ dwds 27.1.2 (27.1.3 available)
-+ extension_discovery 2.1.0
-+ fake_async 1.3.3
-+ ffi 2.2.0
-+ file 7.0.1
-+ file_testing 3.0.2 (3.1.0 available)
-+ fixnum 1.1.1
-+ flutter_template_images 5.0.0 (5.0.1 available)
-+ frontend_server_client 4.0.0
-+ glob 2.1.3 (2.2.0 available)
-+ graphs 2.3.2
-+ hooks 2.0.2 (2.2.0 available)
-+ hooks_runner 1.5.0 (1.6.3 available)
-+ html 0.15.6 (0.15.7 available)
-+ http 1.6.0
-+ http_multi_server 3.2.2
-+ http_parser 4.1.2
-+ intl 0.20.3
-+ io 1.0.5 (1.1.0 available)
-+ js 0.7.2 (discontinued)
-+ json_annotation 4.12.0
-+ json_rpc_2 4.1.0
-+ logging 1.3.0
-+ matcher 0.12.20
-+ meta 1.18.3 (1.19.0 available)
-+ mime 2.0.0 (2.1.0 available)
-+ multicast_dns 0.3.3+1
-+ mustache_template 2.0.5
-+ native_stack_traces 0.6.1
-+ node_preamble 2.0.2
-+ package_config 2.2.0 (3.0.0 available)
-+ path 1.9.1
-+ petitparser 7.0.2
-+ platform 3.1.6
-+ pool 1.5.2 (1.5.3 available)
-+ process 5.0.5 (5.0.6 available)
-+ pub_semver 2.2.0 (2.2.1 available)
-+ pubspec_parse 1.5.0 (1.6.0 available)
-+ record_use 0.6.0 (1.1.1 available)
-+ shelf 1.4.2
-+ shelf_packages_handler 3.0.2
-+ shelf_proxy 1.0.5
-+ shelf_static 1.1.3
-+ shelf_web_socket 3.0.0
-+ source_map_stack_trace 2.1.2
-+ source_maps 0.10.13 (0.10.14 available)
-+ source_span 1.10.2
-+ sprintf 7.0.0
-+ sse 4.2.0
-+ stack_trace 1.12.1 (1.12.2 available)
-+ standard_message_codec 0.0.1+5
-+ stream_channel 2.1.4
-+ string_scanner 1.4.1
-+ sync_http 0.3.1
-+ term_glyph 1.2.2
-+ test 1.31.1 (1.32.0 available)
-+ test_api 0.7.12 (0.7.14 available)
-+ test_core 0.6.18 (0.6.20 available)
-+ typed_data 1.4.0
-+ unified_analytics 8.0.15 (8.0.18 available)
-+ uuid 4.5.3 (4.6.0 available)
-+ vm_service 15.2.0 (15.3.0 available)
-+ vm_service_interface 2.0.1
-+ vm_snapshot_analysis 0.7.6
-+ watcher 1.2.1
-+ web 1.1.1
-+ web_socket 1.0.1
-+ web_socket_channel 3.0.3
-+ webdriver 3.1.0
-+ webkit_inspection_protocol 1.2.1
-+ xml 6.6.1 (7.0.1 available)
-+ yaml 3.1.3 (3.1.4 available)
-+ yaml_edit 2.2.4
-Changed 101 dependencies!
-1 package is discontinued.
-37 packages have newer versions incompatible with dependency constraints.
-Try `dart pub outdated` for more information.
-Setting "enable-macos-desktop" value to "true".
-
-You may need to restart any open editors for them to read new settings.
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/app.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/l10n/app_localizations.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/model/app_settings.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/screens/about_page.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/services/native_bridge.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/state/settings_controller.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/widgets/hotkey_recorder.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "test/completion_diagnostics_test.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Formatted 18 files (0 changed) in 0.08 seconds.
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/app.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/l10n/app_localizations.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/model/app_settings.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/screens/about_page.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/services/native_bridge.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/state/settings_controller.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "lib/widgets/hotkey_recorder.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Warning: Package resolution error when reading "analysis_options.yaml" file for "test/completion_diagnostics_test.dart":
-Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include at "/Users/runner/work/ClipType/ClipType/apps/cliptype-flutter/analysis_options.yaml".
-Formatted 18 files (0 changed) in 0.05 seconds.
-[1/10] Material Fonts                                              158ms
-[2/10] Gradle Wrapper                                                7ms
-[3/10] Flutter SDK
-  ├─ [1/5] sky_engine                                               47ms
-  ├─ [2/5] flutter_gpu                                               9ms
-  ├─ [3/5] flutter_patched_sdk                                     101ms
-  ├─ [4/5] flutter_patched_sdk_product                             119ms
-  └─ [5/5] darwin-arm64                                            938ms
-[4/10] iOS USB Artifact: libimobiledevice                           20ms
-[5/10] iOS USB Artifact: libusbmuxd                                  8ms
-[6/10] iOS USB Artifact: libplist                                    9ms
-[7/10] iOS USB Artifact: openssl                                    83ms
-[8/10] iOS USB Artifact: libimobiledeviceglue                       13ms
-[9/10] iOS USB Artifact: ios-deploy                                 25ms
-[10/10] darwin-arm64/font-subset                                    70ms
-Resolving dependencies...
-Downloading packages...
-  material_color_utilities 0.13.0 (0.13.1 available)
-  meta 1.18.3 (1.19.0 available)
-  test_api 0.7.12 (0.7.14 available)
-  vector_math 2.4.0 (2.4.2 available)
-Got dependencies!
-4 packages have newer versions incompatible with dependency constraints.
-Try `flutter pub outdated` for more information.
-Resolving dependencies...
-Downloading packages...
-  material_color_utilities 0.13.0 (0.13.1 available)
-  meta 1.18.3 (1.19.0 available)
-  test_api 0.7.12 (0.7.14 available)
-  vector_math 2.4.0 (2.4.2 available)
-Got dependencies!
-4 packages have newer versions incompatible with dependency constraints.
-Try `flutter pub outdated` for more information.
-Analyzing cliptype-flutter...                                   
-
-   info • Can't use a relative path to import a library in 'lib'. Try fixing the relative path or changing the import to a 'package:' import • test/completion_diagnostics_test.dart:4:8 • avoid_relative_lib_imports
-
-1 issue found. (ran in 8.9s)

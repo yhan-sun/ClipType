@@ -41,6 +41,15 @@ struct RustSnapshot {
         case CT_BRIDGE_COMPLETION_CLIPBOARD_CHANGED: return "clipboard_changed"
         case CT_BRIDGE_COMPLETION_PERMISSION: return "permission"
         case CT_BRIDGE_COMPLETION_FAILED: return "failed"
+        case CT_BRIDGE_COMPLETION_MODIFIER_CONFLICT: return "modifier_conflict"
+        case CT_BRIDGE_COMPLETION_TARGET_EVIDENCE_UNAVAILABLE: return "target_evidence_unavailable"
+        case CT_BRIDGE_COMPLETION_TARGET_DISAPPEARED: return "target_disappeared"
+        case CT_BRIDGE_COMPLETION_PARTIAL_INPUT: return "partial_input"
+        case CT_BRIDGE_COMPLETION_PROGRESS_UNKNOWN: return "progress_unknown"
+        case CT_BRIDGE_COMPLETION_BLOCKED_CAUSE_UNKNOWN: return "blocked_cause_unknown"
+        case CT_BRIDGE_COMPLETION_NATIVE_FAILURE: return "native_failure"
+        case CT_BRIDGE_COMPLETION_INTERNAL_INVARIANT: return "internal_invariant"
+        case CT_BRIDGE_COMPLETION_MODIFIER_TIMEOUT: return "modifier_timeout"
         default: return nil
         }
     }

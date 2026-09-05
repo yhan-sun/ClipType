@@ -6,6 +6,13 @@ ClipType separates policy proof, native mechanism proof, controlled end-to-end b
 
 Every report must state its evidence class and keep clipboard/target content out of output.
 
+## Code navigation candidate checks
+
+See [Code navigation verification](testing/CODE_NAVIGATION_FIX.md) for the
+portable native-event/Swift-mapping checks and the separate physical macOS
+matrix. Completion outcomes remain specific through the Flutter boundary.
+These checks are not substitutes for pinned Rust/Flutter or interactive gates.
+
 ## Native-neutral quality gate
 
 Run on Linux and Windows where applicable:
