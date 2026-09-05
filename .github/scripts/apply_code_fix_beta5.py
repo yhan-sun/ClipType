@@ -14,6 +14,13 @@ encoded = "".join(
 )
 obj = json.loads(zlib.decompress(base64.b64decode(encoded)))
 
+# Keep the Flutter regression test package-clean under the repository lint set.
+flutter_test = "apps/cliptype-flutter/test/completion_diagnostics_test.dart"
+obj["payload"][flutter_test] = obj["payload"][flutter_test].replace(
+    "import '../lib/l10n/app_localizations.dart';",
+    "import 'package:cliptype_flutter/l10n/app_localizations.dart';",
+)
+
 for change in obj["manifest"]["changes"]:
     path = ROOT / change["path"]
     text = path.read_text()
