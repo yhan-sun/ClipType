@@ -29,54 +29,32 @@ jobs:
           from pathlib import Path
           path = Path('crates/cliptype-app/src/coordinator.rs')
           text = path.read_text(encoding='utf-8')
-          old = '''        if let KeyboardAction::Atom(atom) = action {
-              if let Some(wrong) =
-                  code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
-              {
-                  if let Err(outcome) = dispatch_timed_action(
-                      context,
-                      plan.config(),
-                      KeyboardAction::Atom(wrong),
-                      &mut random,
-                  ) {
-                      return SessionCompletion::Finished(outcome);
-                  }
-                  if let Err(outcome) = dispatch_timed_action(
-                      context,
-                      plan.config(),
-                      KeyboardAction::Backspace,
-                      &mut random,
-                  ) {
-                      return SessionCompletion::Finished(outcome);
-                  }
-              }
-          }
-          '''
-          new = '''        if let KeyboardAction::Atom(atom) = action
-              && let Some(wrong) =
-                  code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
-          {
-              if let Err(outcome) = dispatch_timed_action(
-                  context,
-                  plan.config(),
-                  KeyboardAction::Atom(wrong),
-                  &mut random,
-              ) {
-                  return SessionCompletion::Finished(outcome);
-              }
-              if let Err(outcome) = dispatch_timed_action(
-                  context,
-                  plan.config(),
-                  KeyboardAction::Backspace,
-                  &mut random,
-              ) {
-                  return SessionCompletion::Finished(outcome);
-              }
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit('expected one nested Code typo block')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          old_head = "\n".join([
+              "        if let KeyboardAction::Atom(atom) = action {",
+              "            if let Some(wrong) =",
+          ]) + "\n"
+          new_head = "\n".join([
+              "        if let KeyboardAction::Atom(atom) = action",
+              "            && let Some(wrong) =",
+          ]) + "\n"
+          if text.count(old_head) != 1:
+              raise SystemExit('expected one Code typo let-chain head')
+          text = text.replace(old_head, new_head, 1)
+
+          old_tail = "\n".join([
+              "            }",
+              "        }",
+              "",
+              "        if matches!(",
+          ])
+          new_tail = "\n".join([
+              "        }",
+              "",
+              "        if matches!(",
+          ])
+          if text.count(old_tail) != 1:
+              raise SystemExit('expected one Code typo let-chain tail')
+          path.write_text(text.replace(old_tail, new_tail, 1), encoding='utf-8')
           PY
 
       - name: Verify patch shape
@@ -98,7 +76,9 @@ jobs:
 
       - name: Native-neutral Rust candidate gate
         run: |
+          cargo +1.98.0 fmt --all
           cargo +1.98.0 fmt --all -- --check
+          git diff --check
           cargo +1.98.0 test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
           cargo +1.98.0 clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
 
