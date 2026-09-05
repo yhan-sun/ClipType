@@ -68,3 +68,50 @@ fn lf_and_crlf_make_identical_code_plans() {
     let lf = include_str!("fixtures/heapify-code-mode.txt").replace("\r\n", "\n");
     assert_eq!(actions(&lf), actions(&lf.replace('\n', "\r\n")));
 }
+
+#[test]
+fn code_cannot_fall_back_to_available_paste_when_navigation_is_missing() {
+    let capabilities = ProductCapabilities {
+        keyboard: PlanCapabilities {
+            unicode_text: CapabilityState::Available,
+            line_break: CapabilityState::Available,
+            tab: CapabilityState::Available,
+            cursor_right: CapabilityState::Unavailable,
+            modifier_observation: CapabilityState::Available,
+        },
+        clipboard_paste: CapabilityState::Available,
+        clipboard_revision_guard: CapabilityState::Available,
+    };
+    let result = build_injection_plan(
+        SensitiveText::new(include_str!("fixtures/heapify-code-mode.txt").to_owned()),
+        true,
+        ProductConfig {
+            mode: InjectionMode::Code,
+            ..ProductConfig::default()
+        },
+        capabilities,
+    );
+    assert!(
+        result.is_err(),
+        "Code must fail closed, not paste, when keyboard navigation is unavailable"
+    );
+}
+
+#[test]
+fn repeated_heap_fixtures_preserve_every_function_and_the_final_tail() {
+    let fixture = include_str!("fixtures/heapify-code-mode.txt").replace("\r\n", "\n");
+    let source = format!("{}\n// CLIPTYPE_HEAP_REGRESSION_END\n", fixture.repeat(4));
+    let planned = actions(&source);
+    let scalars: String = planned
+        .iter()
+        .filter_map(|action| match action {
+            CodeAction::Atom(TextAtom::Scalar(value)) => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(scalars.matches("pub fn heap_sort<T: Ord>").count(), 4);
+    assert_eq!(scalars.matches("fn main").count(), 4);
+    assert_eq!(scalars.matches("排序后浮点数").count(), 4);
+    assert!(scalars.ends_with("// CLIPTYPE_HEAP_REGRESSION_END"));
+    assert_eq!(planned, actions(&source.replace('\n', "\r\n")));
+}
