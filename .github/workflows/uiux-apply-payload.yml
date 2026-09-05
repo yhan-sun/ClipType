@@ -28,9 +28,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/uiux-payload/patch-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/uiux.patch.gz"
-          echo "6587eb264451f6c2e382ef8ff191e90d0649324861e9eb011e3a639acdb162ca  $RUNNER_TEMP/uiux.patch.gz" | sha256sum --check
-          gzip -dc "$RUNNER_TEMP/uiux.patch.gz" > "$RUNNER_TEMP/uiux.patch"
+          cat .github/uiux-payload/patch2-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/uiux.patch.bz2"
+          echo "10d80d2a7f07380ef328e2cd5aa87868d429e84f146bf5ab784361791848cb6c  $RUNNER_TEMP/uiux.patch.bz2" | sha256sum --check
+          bzip2 -dc "$RUNNER_TEMP/uiux.patch.bz2" > "$RUNNER_TEMP/uiux.patch"
           git apply --binary --index "$RUNNER_TEMP/uiux.patch"
           rm -rf .github/uiux-payload
           rm -f .github/workflows/uiux-apply-payload.yml
