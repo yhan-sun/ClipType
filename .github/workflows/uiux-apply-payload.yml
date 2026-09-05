@@ -24,13 +24,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify and apply reviewed payload
+      - name: Verify and apply reviewed patch
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/uiux-payload/part-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/uiux-payload.zip"
-          echo "0d93389af9d8edd94cc929c50b4a9238c12ad58803073869e1bd7621b05474c7  $RUNNER_TEMP/uiux-payload.zip" | sha256sum --check
-          unzip -o "$RUNNER_TEMP/uiux-payload.zip" -d "$GITHUB_WORKSPACE"
+          cat .github/uiux-payload/patch-* | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/uiux.patch.gz"
+          echo "6587eb264451f6c2e382ef8ff191e90d0649324861e9eb011e3a639acdb162ca  $RUNNER_TEMP/uiux.patch.gz" | sha256sum --check
+          gzip -dc "$RUNNER_TEMP/uiux.patch.gz" > "$RUNNER_TEMP/uiux.patch"
+          git apply --binary --index "$RUNNER_TEMP/uiux.patch"
           rm -rf .github/uiux-payload
           rm -f .github/workflows/uiux-apply-payload.yml
           rm -f .github/workflows/uiux-source-export.yml
