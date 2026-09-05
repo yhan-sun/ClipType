@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../model/app_settings.dart';
+import '../model/build_info.dart';
 import '../model/app_status.dart';
 import '../services/native_bridge.dart';
 
@@ -19,6 +20,7 @@ class SettingsController extends ChangeNotifier {
   final NativeBridge bridge;
   AppSettings settings = AppSettings.defaults();
   AppStatus status = AppStatus.initial();
+  BuildInfo buildInfo = BuildInfo.unknown;
   bool loading = true;
   bool saving = false;
   AutoSaveStatus autoSaveStatus = AutoSaveStatus.saved;
@@ -50,6 +52,35 @@ class SettingsController extends ChangeNotifier {
   bool get hasLocalSaveWork =>
       _pendingSettings != null || _saveDebounce != null || _saveWorker != null;
   bool get canRetrySave => _failedSettings != null && _validationCode == null;
+  bool get permissionGranted => status.permission == 'granted';
+  bool get readyForInput =>
+      settings.enabled &&
+      permissionGranted &&
+      status.hotkeysRegistered &&
+      status.bridgeAvailable &&
+      !status.active;
+
+  String get readinessReason {
+    if (!status.bridgeAvailable) return 'bridge';
+    if (!settings.enabled) return 'disabled';
+    if (!permissionGranted) return 'permission';
+    if (!status.hotkeysRegistered) return 'shortcuts';
+    if (status.active) return 'active';
+    return 'ready';
+  }
+
+  void clearFeedback() {
+    _messageCode = null;
+    _errorCode = null;
+    _notifyListeners();
+  }
+
+  void resetHotkeyAvailability() {
+    triggerAvailability = 'not_checked';
+    cancelAvailability = 'not_checked';
+    overallAvailability = 'not_checked';
+    _notifyListeners();
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -60,6 +91,11 @@ class SettingsController extends ChangeNotifier {
       language = ClipTypeLanguageValues.fromCode(result['language'] as String?);
     } catch (_) {
       // English remains the safe default if the native shell is unavailable.
+    }
+    try {
+      buildInfo = BuildInfo.fromMap(await bridge.getBuildInfo());
+    } catch (_) {
+      buildInfo = BuildInfo.unknown;
     }
     await refresh();
   }
@@ -234,6 +270,45 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
+  Future<bool> applyHotkeys(String trigger, String cancel) async {
+    triggerAvailability = 'checking';
+    cancelAvailability = 'checking';
+    overallAvailability = 'checking';
+    _errorCode = null;
+    _messageCode = null;
+    _notifyListeners();
+    try {
+      final result = await bridge.applyHotkeys(trigger, cancel);
+      final code = result['result'] as String? ?? 'unknown';
+      if (code == 'ok' || code == 'available') {
+        settings = settings.copyWith(
+          triggerHotkey: trigger,
+          cancelHotkey: cancel,
+        );
+        triggerAvailability = 'available';
+        cancelAvailability = 'available';
+        overallAvailability = 'available';
+        _messageCode = 'availability:available';
+        _errorCode = null;
+        await refresh();
+        return true;
+      }
+      triggerAvailability = code;
+      cancelAvailability = code;
+      overallAvailability = code;
+      _errorCode = 'availability:$code';
+      return false;
+    } catch (_) {
+      triggerAvailability = 'unknown';
+      cancelAvailability = 'unknown';
+      overallAvailability = 'unknown';
+      _errorCode = 'availability_failed';
+      return false;
+    } finally {
+      _notifyListeners();
+    }
+  }
+
   Future<void> probeHotkeys(String trigger, String cancel) async {
     try {
       final result = await bridge.probeHotkeys(trigger, cancel);
@@ -258,15 +333,6 @@ class SettingsController extends ChangeNotifier {
       final result = await bridge.trigger();
       final resultCode = result['result'] as String?;
       _messageCode = 'result:$resultCode';
-      if (resultCode == 'permission_required') {
-        // A trigger is an explicit user action. Make the safe failure
-        // actionable without attempting to change macOS consent.
-        try {
-          await bridge.openAccessibilitySettings();
-        } catch (_) {
-          // Keep the fixed permission message visible if Settings cannot open.
-        }
-      }
       _syncActiveObservation(force: true);
     } catch (_) {
       _errorCode = 'trigger_failed';
@@ -315,7 +381,7 @@ class SettingsController extends ChangeNotifier {
   void _handleEvent(Map<Object?, Object?> event) {
     final type = event['type'] as String?;
     if (type == null) return;
-    if (type == 'hotkeyApplied') {
+    if (type == 'hotkeyApplied' || type == 'hotkeysApplied') {
       overallAvailability = 'available';
       triggerAvailability = 'available';
       cancelAvailability = 'available';

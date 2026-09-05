@@ -20,6 +20,12 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ClipTypeReleaseChannel</key>
+	<string>Apple Silicon testing preview</string>
+	<key>ClipTypeSigningStatus</key>
+	<string>Ad-hoc signed</string>
+	<key>ClipTypeNotarizationStatus</key>
+	<string>Not notarized</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>

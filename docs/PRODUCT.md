@@ -79,8 +79,12 @@ The Windows beta provides:
 - portable and per-user installation options;
 - content-free status and remediation categories.
 
-The macOS local candidate's Flutter settings save valid changes automatically
-and expose save state without requiring an Apply action.
+The macOS Apple Silicon candidate uses a task-oriented Flutter settings shell:
+Overview shows readiness and the next action; Input exposes mode-relevant
+controls; Shortcuts validates and transactionally applies candidate pairs;
+System owns Accessibility/startup/application preferences; About reads build
+identity from the running bundle. Valid settings still save automatically and
+no Apply transaction is added.
 
 ## Safety rules
 

@@ -21,6 +21,10 @@ class NativeBridge {
     return _mapResult(await _methods.invokeMethod<Object?>('getState'));
   }
 
+  Future<Map<Object?, Object?>> getBuildInfo() async {
+    return _mapResult(await _methods.invokeMethod<Object?>('getBuildInfo'));
+  }
+
   Future<Map<Object?, Object?>> getInterfaceLanguage() async {
     return _mapResult(
       await _methods.invokeMethod<Object?>('getInterfaceLanguage'),

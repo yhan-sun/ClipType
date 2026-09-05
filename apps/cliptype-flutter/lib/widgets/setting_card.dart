@@ -22,7 +22,7 @@ class SettingCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -65,7 +65,7 @@ class PageContent extends StatelessWidget {
             Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
+                constraints: const BoxConstraints(maxWidth: 760),
                 child: SizedBox(
                   width: double.infinity,
                   child: Column(
@@ -137,16 +137,32 @@ class PageHeader extends StatelessWidget {
   }
 }
 
+enum StatusTone { neutral, success, active, warning, error, disabled }
+
 class StatusPill extends StatelessWidget {
-  const StatusPill({required this.label, this.good = false, super.key});
+  const StatusPill({
+    required this.label,
+    this.good = false,
+    this.tone,
+    super.key,
+  });
 
   final String label;
   final bool good;
+  final StatusTone? tone;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = good ? theme.colorScheme.primary : theme.colorScheme.outline;
+    final resolved = tone ?? (good ? StatusTone.success : StatusTone.neutral);
+    final color = switch (resolved) {
+      StatusTone.success => theme.colorScheme.primary,
+      StatusTone.active => theme.colorScheme.tertiary,
+      StatusTone.warning => theme.colorScheme.secondary,
+      StatusTone.error => theme.colorScheme.error,
+      StatusTone.disabled => theme.colorScheme.outline,
+      StatusTone.neutral => theme.colorScheme.onSurfaceVariant,
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -172,6 +188,10 @@ class AutoSaveIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (controller.autoSaveStatus == AutoSaveStatus.saved &&
+        controller.validationError == null) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     final l10n = context.l10n;
     final (icon, label, color) = switch (controller.autoSaveStatus) {
@@ -327,22 +347,34 @@ class InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final labelWidget = Text(
+      label,
+      style: theme.textTheme.labelLarge?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 180,
-            child: Text(
-              label,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 480) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                labelWidget,
+                const SizedBox(height: 4),
+                SelectableText(value),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 160, child: labelWidget),
+              Expanded(child: SelectableText(value)),
+            ],
+          );
+        },
       ),
     );
   }
