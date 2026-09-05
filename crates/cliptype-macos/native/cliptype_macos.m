@@ -285,7 +285,10 @@ int ct_macos_capture_target(
 }
 
 uint64_t ct_macos_modifier_flags(void) {
-    return (uint64_t)CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState);
+    // The safety gate observes hardware modifiers, not flags from ClipType's
+    // own Command+Right/Command+V events in the combined login-session table.
+    // Never mask a physically held modifier or synthesize its release.
+    return (uint64_t)CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState);
 }
 
 int ct_macos_secure_input_enabled(void) {
@@ -294,29 +297,34 @@ int ct_macos_secure_input_enabled(void) {
 
 static int ct_post_balanced_key(CGKeyCode keycode, CGEventFlags flags) {
     if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return 0;
-    // A NULL source asks Quartz to use its default keyboard source. This is
-    // the native path intended for synthesized key presses and avoids tying a
-    // navigation event to a stale observed-session state.
-    CGEventRef down = CGEventCreateKeyboardEvent(NULL, keycode, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(NULL, keycode, false);
+    // Every bounded action owns a private state table. NULL/combined sources
+    // may inherit a previous synthetic chord's modifier flags.
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+    if (source == NULL) return 0;
+    CGEventRef down = CGEventCreateKeyboardEvent(source, keycode, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(source, keycode, false);
     if (down == NULL || up == NULL) {
         if (down != NULL) CFRelease(down);
         if (up != NULL) CFRelease(up);
+        CFRelease(source);
         return 0;
     }
     CGEventSetFlags(down, flags);
-    CGEventSetFlags(up, flags);
+    // End only this synthetic action's flags. This is the action key's key-up,
+    // NOT a Command/Shift/Option/Control key-up owned by the physical user.
+    CGEventSetFlags(up, 0);
     CGEventPost(kCGHIDEventTap, down);
     CGEventPost(kCGHIDEventTap, up);
     CFRelease(down);
     CFRelease(up);
+    CFRelease(source);
     return 1;
 }
 
 int ct_macos_post_unicode(const uint16_t *units, size_t length) {
     if (units == NULL || length == 0 || length > 32) return 0;
     if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return 0;
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
     if (source == NULL) return 0;
     CGEventRef down = CGEventCreateKeyboardEvent(source, (CGKeyCode)0, true);
     CGEventRef up = CGEventCreateKeyboardEvent(source, (CGKeyCode)0, false);
@@ -326,6 +334,8 @@ int ct_macos_post_unicode(const uint16_t *units, size_t length) {
         CFRelease(source);
         return 0;
     }
+    CGEventSetFlags(down, 0);
+    CGEventSetFlags(up, 0);
     CGEventKeyboardSetUnicodeString(down, (UniCharCount)length, (const UniChar *)units);
     CGEventPost(kCGHIDEventTap, down);
     CGEventPost(kCGHIDEventTap, up);
@@ -353,32 +363,37 @@ int ct_macos_post_cursor_right(void) {
 
 int ct_macos_post_cursor_right_to_line_end(void) {
     if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return 0;
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+    if (source == NULL) return 0;
 
-    // Code mode calls this only when the source closer starts a line and the
-    // editor has already placed its generated closer on the following line.
-    // Allocate the whole bounded sequence before posting any event so an
-    // allocation failure cannot leave the cursor between the two steps.
+    // Preserve ADR-0017's Right -> Command+Right navigation, but isolate its
+    // state and set ALL flags explicitly. Allocate before posting so failure
+    // cannot leave a partially dispatched navigation sequence.
     CGEventRef events[4] = {
-        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, true),
-        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, false),
-        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, true),
-        CGEventCreateKeyboardEvent(NULL, kVK_RightArrow, false),
+        CGEventCreateKeyboardEvent(source, kVK_RightArrow, true),
+        CGEventCreateKeyboardEvent(source, kVK_RightArrow, false),
+        CGEventCreateKeyboardEvent(source, kVK_RightArrow, true),
+        CGEventCreateKeyboardEvent(source, kVK_RightArrow, false),
     };
     for (size_t index = 0; index < 4; index++) {
         if (events[index] == NULL) {
             for (size_t release_index = 0; release_index < 4; release_index++) {
                 if (events[release_index] != NULL) CFRelease(events[release_index]);
             }
+            CFRelease(source);
             return 0;
         }
     }
 
-    CGEventSetFlags(events[2], kCGEventFlagMaskCommand);
-    CGEventSetFlags(events[3], kCGEventFlagMaskCommand);
+    const CGEventFlags flags[4] = {0, 0, kCGEventFlagMaskCommand, 0};
+    for (size_t index = 0; index < 4; index++) {
+        CGEventSetFlags(events[index], flags[index]);
+    }
     for (size_t index = 0; index < 4; index++) {
         CGEventPost(kCGHIDEventTap, events[index]);
         CFRelease(events[index]);
     }
+    CFRelease(source);
     return 1;
 }
 

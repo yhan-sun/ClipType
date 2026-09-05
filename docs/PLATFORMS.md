@@ -98,6 +98,14 @@ Use `NSPasteboard.general` for text access. `NSPasteboard.changeCount` can indic
 
 Use Core Graphics `CGEvent` facilities for synthetic keyboard/text events, with explicit Unicode behavior tests. The P4 Swift shell does not perform input itself; it delegates the bounded session to the Rust coordinator and `cliptype-macos` adapter.
 
+The macOS adapter isolates synthetic keyboard actions in private event-source
+state tables and sets flags explicitly for each balanced action. Physical
+modifier evidence is read from the HID-system state table rather than from
+ClipType's combined synthetic session state. It never releases a modifier key
+owned by the user. The Right followed by Command+Right Code navigation remains
+unchanged. Physical macOS verification remains required before widening real-
+editor compatibility claims. See [ADR-0021](adr/0021-macos-synthetic-modifier-isolation.md).
+
 ### Permissions
 
 Cross-application synthetic input commonly requires user-granted system permission. Use Accessibility trust APIs to detect/onboard, never to bypass consent. P4 requests permission only after an explicit UI/menu action and observes the result for a bounded interval.
