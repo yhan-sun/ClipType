@@ -5,7 +5,7 @@ ClipType is a privacy-first Windows tray utility that reads the current clipboar
 The repository also contains the macOS Apple Silicon candidate. On macOS,
 `apps/cliptype-flutter` is the only settings/front-end composition root; the
 legacy Rust/Slint macOS application has been removed. The Rust core and macOS
-adapters remain shared runtime components. `v0.2.0-beta.5` includes a clearly
+adapters remain shared runtime components. `v0.2.0-beta.6` includes a clearly
 labelled arm64 macOS testing preview; it is not a general macOS release.
 
 ## Public beta
@@ -23,6 +23,7 @@ See [Compatibility](docs/COMPATIBILITY.md) for the exact support contract and li
 
 - `keyboard` — bounded Unicode-oriented `SendInput` batches with target, modifier, cancellation, and partial-progress guards.
 - `clipboard` — verifies the current clipboard revision and sends one ordinary `Ctrl+V`; ClipType never rewrites or restores the clipboard.
+- `code` — keyboard-only code-aware input with editor auto-pair/auto-indent navigation and safe corrected-typo simulation.
 - `auto` — freezes one proven backend per session from Unicode shape, payload size, and available capabilities; non-ASCII text prefers guarded paste.
 
 Explicit modes never silently fall back.

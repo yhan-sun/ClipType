@@ -48,7 +48,12 @@ editor-generated closing line. Python-style triple-quoted boundaries
 single backticks are literal. Actions remain strict FIFO with bounded settle
 barriers so auto-pair and auto-indent updates complete before dependent
 navigation. Code mode never reads target content or claims editor-specific
-formatting semantics.
+formatting semantics. When corrected-typo probability is non-zero, Code
+mode applies it only to source Atom actions as `wrong key -> Backspace ->
+correct source atom`. Temporary wrong keys are restricted so they cannot be
+brackets, quotes, or `/`, preventing the typo simulation itself from triggering
+editor auto-pair or comment behavior. Cursor-navigation actions are never typo
+simulated, and non-ASCII text still has no fabricated QWERTY typo.
 
 ### Auto
 
