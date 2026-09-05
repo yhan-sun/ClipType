@@ -21,7 +21,6 @@ def replace_all_if_present(rel: str, old: str, new: str) -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-# 1. Code mode must honor corrected-typo probability for source Atom actions.
 replace_once(
     "crates/cliptype-app/src/coordinator.rs",
     '''    while let Some(action) = queue.pop_front() {
@@ -46,11 +45,9 @@ replace_once(
         // The Code-specific typo helper rejects temporary characters that can
         // themselves trigger editor auto-pair, quote, or comment behavior.
         if let KeyboardAction::Atom(atom) = action {
-            if let Some(wrong) = code_adjacent_typo(
-                atom,
-                context.config.typo_probability_percent,
-                &mut random,
-            ) {
+            if let Some(wrong) =
+                code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
+            {
                 if let Err(outcome) = dispatch_timed_action(
                     context,
                     plan.config(),
@@ -74,7 +71,6 @@ replace_once(
 ''',
 )
 
-# 2. Split probability from candidate selection and add a Code-safe candidate policy.
 replace_once(
     "crates/cliptype-app/src/coordinator.rs",
     '''fn adjacent_typo(
@@ -133,8 +129,7 @@ fn typo_probability_hit(probability_percent: u8, random: &mut TypingRandom) -> b
 }
 
 fn code_typo_candidate_is_safe(value: char) -> bool {
-    value.is_ascii_alphanumeric()
-        || matches!(value, '-' | '=' | ';' | ',' | '.' | '\\\\')
+    value.is_ascii_alphanumeric() || matches!(value, '-' | '=' | ';' | ',' | '.' | '\\\\')
 }
 
 fn adjacent_typo_candidate(atom: TextAtom, random: &mut TypingRandom) -> Option<TextAtom> {
@@ -142,7 +137,6 @@ fn adjacent_typo_candidate(atom: TextAtom, random: &mut TypingRandom) -> Option<
 ''',
 )
 
-# 3. Unit regressions for Code-safe typo generation.
 replace_once(
     "crates/cliptype-app/src/coordinator.rs",
     '''    use super::{TypingRandom, adjacent_typo, jittered_delay};
@@ -168,7 +162,10 @@ replace_once(
                 {
                     let scalar = wrong.exposed_scalar().expect("code typo is a scalar");
                     assert!(code_typo_candidate_is_safe(scalar));
-                    assert!(!matches!(scalar, '(' | ')' | '{' | '}' | '[' | ']' | '\\'' | '"' | '/'));
+                    assert!(!matches!(
+                        scalar,
+                        '(' | ')' | '{' | '}' | '[' | ']' | '\\'' | '"' | '/'
+                    ));
                 }
             }
         }
@@ -189,7 +186,6 @@ replace_once(
 ''',
 )
 
-# 4. Product documentation: Code typo correction is now an explicit contract.
 replace_once(
     "docs/PRODUCT.md",
     '''formatting semantics.\n\n### Auto\n''',
@@ -201,14 +197,12 @@ editor auto-pair or comment behavior. Cursor-navigation actions are never typo
 simulated, and non-ASCII text still has no fabricated QWERTY typo.\n\n### Auto\n''',
 )
 
-# Top-level README omitted Code from the mode list; keep the public surface accurate.
 replace_once(
     "README.md",
     '''- `clipboard` — verifies the current clipboard revision and sends one ordinary `Ctrl+V`; ClipType never rewrites or restores the clipboard.\n- `auto` — freezes one proven backend per session from Unicode shape, payload size, and available capabilities; non-ASCII text prefers guarded paste.\n''',
     '''- `clipboard` — verifies the current clipboard revision and sends one ordinary `Ctrl+V`; ClipType never rewrites or restores the clipboard.\n- `code` — keyboard-only code-aware input with editor auto-pair/auto-indent navigation and safe corrected-typo simulation.\n- `auto` — freezes one proven backend per session from Unicode shape, payload size, and available capabilities; non-ASCII text prefers guarded paste.\n''',
 )
 
-# 5. Advance the immutable prerelease version.
 replace_once("release/VERSION", "v0.2.0-beta.5\n", "v0.2.0-beta.6\n")
 replace_once(
     "apps/cliptype-flutter/pubspec.yaml",
@@ -258,7 +252,6 @@ Older tags and assets remain immutable.
     encoding="utf-8",
 )
 
-# Bootstrap-only files must never land in the candidate commit.
 for rel in [
     ".github/scripts/apply_code_typo_beta6.py",
     ".github/workflows/bootstrap-code-typo-beta6.yml",
