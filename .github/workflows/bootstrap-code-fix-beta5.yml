@@ -44,6 +44,7 @@ jobs:
           set +e
           {
             rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin &&
+            cargo +1.98.0 fmt --all &&
             cargo +1.98.0 fmt --all -- --check &&
             cargo +1.98.0 test --workspace --locked &&
             cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
