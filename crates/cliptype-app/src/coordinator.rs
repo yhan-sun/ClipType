@@ -622,12 +622,39 @@ fn run_code_plan(context: &mut SessionContext, plan: &CodePlan) -> SessionComple
     // This is a strict FIFO action queue. `CursorRight` is already the core
     // planner's decision for the current source closer; we never inspect the
     // destination editor or infer its text.
-    while let Some(action) = queue.pop_front() {
-        let action = match action {
+    while let Some(code_action) = queue.pop_front() {
+        let action = match code_action {
             CodeAction::Atom(atom) => KeyboardAction::Atom(atom),
             CodeAction::CursorRight => KeyboardAction::CursorRight,
             CodeAction::CursorRightToLineEnd => KeyboardAction::CursorRightToLineEnd,
         };
+
+        // Code mode uses the same corrected-typo setting as Keyboard mode,
+        // but only for source Atom actions. Navigation actions represent
+        // editor-generated closers and must never be humanized into typos.
+        // The Code-specific typo helper rejects temporary characters that can
+        // themselves trigger editor auto-pair, quote, or comment behavior.
+        if let KeyboardAction::Atom(atom) = action
+            && let Some(wrong) =
+                code_adjacent_typo(atom, context.config.typo_probability_percent, &mut random)
+        {
+            if let Err(outcome) = dispatch_timed_action(
+                context,
+                plan.config(),
+                KeyboardAction::Atom(wrong),
+                &mut random,
+            ) {
+                return SessionCompletion::Finished(outcome);
+            }
+            if let Err(outcome) = dispatch_timed_action(
+                context,
+                plan.config(),
+                KeyboardAction::Backspace,
+                &mut random,
+            ) {
+                return SessionCompletion::Finished(outcome);
+            }
+        }
 
         if matches!(
             action,
@@ -728,9 +755,51 @@ fn adjacent_typo(
     probability_percent: u8,
     random: &mut TypingRandom,
 ) -> Option<TextAtom> {
-    if probability_percent == 0 || random.below(100) >= u64::from(probability_percent) {
+    if !typo_probability_hit(probability_percent, random) {
         return None;
     }
+    adjacent_typo_candidate(atom, random)
+}
+
+fn code_adjacent_typo(
+    atom: TextAtom,
+    probability_percent: u8,
+    random: &mut TypingRandom,
+) -> Option<TextAtom> {
+    if !typo_probability_hit(probability_percent, random) {
+        return None;
+    }
+
+    // Rejection-sample the existing physical-neighbour map so Code mode never
+    // types a temporary auto-pair opener/closer, quote, or slash. Those keys can
+    // mutate editor state before Backspace and invalidate the planned cursor
+    // navigation. A right-bracket source has only structural neighbours in the
+    // shared map, so use its physical backslash neighbour as the safe fallback.
+    for _ in 0..16 {
+        let candidate = adjacent_typo_candidate(atom, random)?;
+        if candidate
+            .exposed_scalar()
+            .is_some_and(code_typo_candidate_is_safe)
+        {
+            return Some(candidate);
+        }
+    }
+
+    match atom.exposed_scalar() {
+        Some(']') => Some(TextAtom::Scalar('\\')),
+        _ => None,
+    }
+}
+
+fn typo_probability_hit(probability_percent: u8, random: &mut TypingRandom) -> bool {
+    probability_percent != 0 && random.below(100) < u64::from(probability_percent)
+}
+
+fn code_typo_candidate_is_safe(value: char) -> bool {
+    value.is_ascii_alphanumeric() || matches!(value, '-' | '=' | ';' | ',' | '.' | '\\')
+}
+
+fn adjacent_typo_candidate(atom: TextAtom, random: &mut TypingRandom) -> Option<TextAtom> {
     let TextAtom::Scalar(value) = atom else {
         return None;
     };
@@ -1218,7 +1287,10 @@ mod human_typing_tests {
 
     use cliptype_core::TextAtom;
 
-    use super::{TypingRandom, adjacent_typo, jittered_delay};
+    use super::{
+        TypingRandom, adjacent_typo, code_adjacent_typo, code_typo_candidate_is_safe,
+        jittered_delay,
+    };
 
     #[test]
     fn jitter_is_bounded_around_every_base_interval() {
@@ -1249,6 +1321,34 @@ mod human_typing_tests {
         assert_eq!(adjacent_typo(TextAtom::Scalar('你'), 25, &mut random), None);
         assert_eq!(adjacent_typo(TextAtom::LineBreak, 25, &mut random), None);
         assert_eq!(adjacent_typo(TextAtom::Tab, 25, &mut random), None);
+    }
+
+    #[test]
+    fn code_typos_are_correctable_without_structural_editor_side_effects() {
+        for source in ['a', 'p', '[', ']', '\'', '/', '='] {
+            for seed in 1..=128 {
+                let mut random = TypingRandom::new(seed);
+                if let Some(wrong) = code_adjacent_typo(TextAtom::Scalar(source), 100, &mut random)
+                {
+                    let scalar = wrong.exposed_scalar().expect("code typo is a scalar");
+                    assert!(code_typo_candidate_is_safe(scalar));
+                    assert!(!matches!(
+                        scalar,
+                        '(' | ')' | '{' | '}' | '[' | ']' | '\'' | '"' | '/'
+                    ));
+                }
+            }
+        }
+
+        let mut random = TypingRandom::new(7);
+        assert!(code_adjacent_typo(TextAtom::Scalar('a'), 100, &mut random).is_some());
+        let mut random = TypingRandom::new(7);
+        assert!(code_adjacent_typo(TextAtom::Scalar(']'), 100, &mut random).is_some());
+        let mut random = TypingRandom::new(7);
+        assert_eq!(
+            code_adjacent_typo(TextAtom::Scalar('你'), 100, &mut random),
+            None
+        );
     }
 
     #[test]
