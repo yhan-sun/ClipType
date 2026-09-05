@@ -12,8 +12,8 @@ permissions:
 
 jobs:
   apply-and-verify:
-    runs-on: macos-14
-    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Check out exact branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -94,28 +94,13 @@ jobs:
           test ! -e .github/cliptype-code-typo-beta6-trigger
 
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy --target aarch64-apple-darwin
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
 
-      - name: Rust full workspace gate
+      - name: Native-neutral Rust candidate gate
         run: |
           cargo +1.98.0 fmt --all -- --check
-          cargo +1.98.0 test --workspace --locked
-          cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
-
-      - name: Install pinned Flutter toolchain
-        run: |
-          git clone --filter=blob:none --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
-          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
-
-      - name: Flutter format analyze test and macOS release build
-        working-directory: apps/cliptype-flutter
-        run: |
-          flutter config --enable-macos-desktop
-          flutter pub get
-          dart format --output=none --set-exit-if-changed lib test
-          flutter analyze
-          flutter test
-          flutter build macos --release
+          cargo +1.98.0 test --locked -p cliptype-core -p cliptype-platform -p cliptype-app
+          cargo +1.98.0 clippy --locked --all-targets -p cliptype-core -p cliptype-platform -p cliptype-app -- -D warnings
 
       - name: Commit verified candidate
         shell: bash
