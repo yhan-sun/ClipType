@@ -1,59 +1,59 @@
 # Platform Backend Design
 
-This document records intended native mechanisms and known platform constraints. Exact crate choices may change without an ADR; changing the mechanism or security model requires the repository decision process.
+This document records current native mechanisms and known platform constraints. Exact crate choices may change without an ADR; changing a mechanism, security boundary, or compatibility promise requires the repository decision process.
 
 ## Windows
 
-Windows is the first implementation platform. Detailed P1 sequencing is in [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md).
-
-### P1 native discovery gate
-
-Before shared contracts are frozen, P1 runs an interactive Windows spike covering message-loop ownership, Unicode and control semantics, target evidence, modifier state, dispatch results, clipboard contention, and UIPI reporting. Research output informs contracts but is not itself a production adapter.
+Windows x86_64 is the primary beta platform. The historical P1 sequencing remains in [`phases/P1_WINDOWS_VERTICAL_SLICE.md`](phases/P1_WINDOWS_VERTICAL_SLICE.md); current product behavior includes later P2/P3 hardening.
 
 ### Clipboard
 
-Current plain text is read through Win32 clipboard APIs using `CF_UNICODETEXT` semantics. Native clipboard handles are borrowed from the OS; the adapter copies UTF-16 data into owned memory before unlocking/closing.
+Current plain text is read through Win32 clipboard APIs using `CF_UNICODETEXT` semantics. Native clipboard handles are borrowed from the OS; the adapter validates allocation bounds, copies UTF-16 data into owned memory while the clipboard is open, then unlocks/closes promptly.
 
-For P1 manual-trigger behavior:
+Rules:
 
-- acquire current text only after an explicit trigger;
-- use bounded handling for transient clipboard contention;
+- acquire current text only after an explicit trigger/session reservation and destination capture;
+- retry transient busy state only within bounded attempt/time budgets;
 - do not persist/cache plaintext;
 - do not implement clipboard history;
-- do not require `AddClipboardFormatListener` or `WM_CLIPBOARDUPDATE`.
-
-A listener may be evaluated later for content-blind status/change metadata or future product behavior, but continuous plaintext capture is not the P1 architecture.
+- use a content-blind sequence number as revision evidence;
+- never write, clear, replace, own, or restore the user's clipboard for current Clipboard mode.
 
 ### Keyboard injection
 
-Use Win32 `SendInput`. Prefer Unicode/text-oriented events where they preserve intended semantics and reduce keyboard-layout dependence.
+Windows uses Win32 `SendInput` with Unicode/text-oriented events and explicit special-key events where required.
 
-P1 translates native-neutral semantic atoms into bounded batches. It explicitly tests:
+The product handles semantic actions covering:
 
 - ASCII and punctuation;
 - CJK;
 - combining marks;
 - supplementary Unicode represented through UTF-16 units;
-- line-break alternatives;
+- normalized line breaks;
 - Tab;
-- unsupported controls.
+- Backspace for explicit corrected-typo behavior;
+- Code-mode cursor/navigation actions.
 
-Native event counts may prove complete, none, or partial insertion without proving an exact semantic-text prefix. Partial/unknown results are not retried.
+Keyboard/Code delivery is bounded and paced per action. Native event counts may prove complete, none, or partial insertion without proving an exact semantic-text prefix. Partial/progress-unknown results are terminal and not automatically retried.
+
+### Clipboard paste
+
+Clipboard mode uses one balanced `Ctrl+V` chord after target, integrity, modifier, cancellation, and expected revision checks. A changed or unavailable required revision fails closed. Because ClipType never performs a clipboard write/restore transaction, it cannot overwrite a newer external value while trying to restore an older snapshot.
 
 ### Modifier state
 
-`SendInput` does not reset physical keyboard state. P1 therefore uses a bounded pre-dispatch gate for trigger modifiers and may recheck conflicting modifiers between batches. ClipType never releases arbitrary physical user keys to make injection succeed.
+`SendInput` does not reset physical keyboard state. ClipType uses bounded pre-dispatch settling and later conflicting-modifier checks. It observes Ctrl/Alt/Shift/Windows state but never releases arbitrary physical user keys to make injection succeed.
 
 ### UIPI
 
 `SendInput` is subject to Windows User Interface Privilege Isolation. A normal-integrity process cannot inject into a higher-integrity target.
 
-Reporting must separate evidence from inference:
+Reporting separates evidence from inference:
 
-- if target-integrity comparison reliably proves a higher-integrity target, report a known security-boundary restriction;
-- if integrity evidence is unavailable and native insertion accepts no events, report a blocked/native-unknown result with appropriate guidance;
-- do not claim every zero-result is definitely UIPI;
-- do not elevate automatically or attempt to circumvent the boundary.
+- reliably proven higher-integrity relation => known security-boundary restriction;
+- unknown integrity plus zero accepted input => blocked/native-cause-unknown;
+- zero accepted events are not automatically labelled UIPI;
+- ClipType does not auto-elevate or circumvent the boundary.
 
 ### Target/focus evidence
 
@@ -62,146 +62,105 @@ Use the strongest practical non-content combination of:
 - foreground top-level window;
 - owning process and GUI thread;
 - active/focused native window evidence exposed by GUI-thread inspection;
-- optional integrity relationship for security reporting.
+- optional integrity relationship.
 
-Do not read focused text or log window titles by default.
+Do not read focused text or log window titles. Detailed original focus evidence that later degrades fails closed. Some applications host multiple logical fields inside one render surface, so ClipType does not promise exact logical-field/caret identity where the OS does not expose it.
 
-The adapter can detect many window/application changes, but some applications host multiple logical fields inside one native render surface. P1 therefore promises revalidation against available window/thread/focus evidence, not exact logical-caret identity in every application. Evidence becoming invalid/ambiguous during strict injection fails safely.
+### Hotkeys and message loop
 
-### Hotkey and message loop
+Use `RegisterHotKey` / `WM_HOTKEY` with no-repeat behavior rather than a low-level global keyboard hook.
 
-Use native global hotkey registration and report conflicts. Prefer the `RegisterHotKey`/`WM_HOTKEY` model with no-repeat behavior rather than a low-level global keyboard hook.
+The registering thread owns registration, message queue, live replacement, and teardown. Candidate Trigger/Cancel pairs are validated and probed through temporary registrations. Replacement is transactional: candidate registrations are secured before old registrations are removed where the API permits; failures clean up candidates and keep/restore the previous working pair.
 
-The registering thread owns the relevant message queue/lifecycle. It must remain responsive while an injection worker runs, so native text dispatch does not execute as one blocking operation on the hotkey message-loop thread.
+The message-loop owner remains responsive while injection work runs on a separate bounded worker.
 
-### P1 presentation
+### Tray, settings, and startup
 
-P1 requires only a minimal development host/status surface. It does not require a tray, settings window, installer, auto-start, or Windows App SDK adoption. Product-quality Windows presentation is P2.
+The Win32 product shell provides notification-area menu/status, content-free notifications, settings controls, trigger/cancel, and controlled shutdown. Start-at-login uses one product-owned current-user Run value and requires no service or elevation.
 
-### Expected support level
+### Windows release support
 
-Windows is the first production-quality target over P1/P2. P1 itself produces evidence for a vertical slice, not a public universal-compatibility claim.
+`v0.2.0-beta.8` publishes Windows x86_64 ZIP and portable EXE assets. Windows Server 2022/2025 hosted jobs are CI mechanism references. Windows 11 x64 is the recommended client; Windows 10 22H2 x64 is best effort. Representative physical/named-application evidence remains #33 and is not inferred from CI.
 
 ## macOS
 
-P4 includes a local, Apple Silicon-only Flutter/AppKit composition root. The
-candidate is one normal per-user process with one Flutter engine, one
-`NSStatusItem`, one Settings window, and one global shortcut owner. It is an
-unsigned local candidate and does not change the public Universal 2,
-Developer ID, notarization, or named-application support gates.
+The current P4 product line is Apple Silicon arm64 only. `apps/cliptype-flutter` is the sole macOS settings/front-end composition root, with one Flutter engine and one process. Swift/AppKit owns native shell mechanisms and a fixed content-free bridge to Rust.
+
+No Intel, Rosetta, or Universal 2 support/artifact is claimed by P4.
 
 ### Clipboard
 
-Use `NSPasteboard.general` for text access. `NSPasteboard.changeCount` can indicate ownership/content changes; the P4 bridge requests current clipboard data only inside a Rust-triggered session. No clipboard value crosses the Flutter/Swift status boundary, and no history or restore transaction is added.
+Use `NSPasteboard.general` for bounded current text access and `changeCount` as the content-blind revision witness. The Rust-triggered session owns plaintext lifetime; clipboard text never crosses Flutter/Swift status channels.
+
+Clipboard mode uses the user's existing pasteboard plus revision guarding. It does not write/restore the pasteboard or create a second clipboard store.
 
 ### Keyboard injection
 
-Use Core Graphics `CGEvent` facilities for synthetic keyboard/text events, with explicit Unicode behavior tests. The P4 Swift shell does not perform input itself; it delegates the bounded session to the Rust coordinator and `cliptype-macos` adapter.
+Use Core Graphics `CGEvent` facilities for bounded synthetic keyboard/text events. Rust owns plan/pacing/safety policy; Swift/AppKit does not independently inject product text.
 
-The modifier-isolation candidate uses private event-source state tables and
-explicit flags for each balanced action. Physical modifier evidence is read
-from the HID-system table rather than ClipType's combined synthetic session
-state. It never releases a modifier key owned by the user. The Right followed
-by Command+Right Code navigation remains unchanged. This construction change
-requires physical macOS verification; portable mock-Quartz tests do not prove
-real editor behavior. See [ADR-0021](adr/0021-macos-synthetic-modifier-isolation.md).
+Code navigation uses explicit bounded key actions. Synthetic event state is separated from physical HID-system modifier observation so ClipType's own generated modifier flags do not contaminate the physical-modifier safety gate. Physical modifiers are never released on the user's behalf.
+
+Native/mock/Swift contract gates cover this mechanism, but a real VS Code/Monaco session remains physical evidence in #61.
 
 ### Permissions
 
-Cross-application synthetic input commonly requires user-granted system permission. Use Accessibility trust APIs to detect/onboard, never to bypass consent. P4 requests permission only after an explicit UI/menu action and observes the result for a bounded interval.
+Cross-application synthetic input requires user-granted Accessibility permission. The app exposes content-free permission state and explicit remediation. It never bypasses consent or loops hidden prompts. Persistent grant/revoke behavior must be verified on a physical user desktop.
 
 ### Focus/target
 
-Use workspace/accessibility/window APIs only for target identity and
-permission-safe focus evidence. Do not inspect focused text or window titles.
-Native controls use exact focused-element identity. An initial `AXWebArea`
-render-host classification selects stable process plus focused-window identity
-for the session because Monaco may rebuild its focused Accessibility node
-during normal typing. If a Chromium editor does not expose a traversable
-`AXWebArea` parent chain, support for the web-only `AXDOMIdentifier` or
-`AXDOMClassList` attribute name supplies the initial classification without
-reading either value. A later same-window node may temporarily lose that
-classification without looking like a target change. A process/window change,
-missing stable window identity, disappearance, or capture failure still stops
-safely; logical field changes within one web render surface may be
-indistinguishable. The fixed bridge returns only content-free categories and
-counters.
+Use workspace/accessibility/window APIs only for target identity and permission-safe evidence; never read focused text, selected text, DOM values, document content, or window titles.
+
+Native controls use exact focused-element identity. An initial `AXWebArea` render-host classification selects a sticky process + focused-window session policy to tolerate legitimate same-window Monaco focus-node rebuilding. Process/window change, stable-window disappearance, or required evidence loss still stops. Logical-field movement hidden inside one shared render host remains a documented limitation.
+
+### Global shortcuts and shell
+
+Swift/AppKit owns one `NSStatusItem`, native menu commands, system Trigger/Cancel registration, `SMAppService`, and Flutter window lifecycle. The Flutter shortcut recorder captures only while its local control owns focus. Candidate pairs are validated/probed/applied transactionally; there is no general event tap/keylogger.
 
 ### Distribution
 
-macOS release requires code signing/notarization planning before claiming
-general availability. The `v0.2.0-beta.7` candidate carries a clearly labelled
-additive arm64 testing preview built on an Apple Silicon runner; earlier
-release tags and assets remain immutable. The preview is ad-hoc signed and is
-not a Universal 2, Developer ID, notarized, Gatekeeper-ready, or general public
-macOS release. Publication remains blocked until the repository's physical
-release evidence is complete.
+`v0.2.0-beta.8` carries a clearly labelled additive macOS arm64 testing preview:
 
-### Shell and command ownership
+- Flutter arm64 `.app` packaged as ZIP and DMG;
+- ad-hoc signature only;
+- exact-main Apple Silicon CI build/install/launch smoke;
+- arm64-only Mach-O verification;
+- SHA-256 manifest and build metadata;
+- additive upload only after the exact Windows-created prerelease/tag exists;
+- public re-download and byte/checksum verification.
 
-The Flutter runner uses `io.cliptype/native` and `io.cliptype/events`. Swift/AppKit
-owns one `NSStatusItem`, native menu commands, Carbon Trigger/Cancel
-registration, `SMAppService`, and the Flutter window lifecycle. Candidate hotkey
-pairs are probed and applied transactionally. The local recorder captures only
-while its Flutter control has focus; no event tap, global monitor, or keylogger
-is installed.
+The preview is not Developer ID signed, notarized, stapled, Gatekeeper-approved, Intel/Rosetta, Universal 2, or a broad named-application compatibility claim. Physical Apple Silicon behavior and any future trusted distribution promotion remain #61.
 
 ## Linux X11
 
-### Clipboard
+Linux is not shipped in the current beta.
 
-Use X11 selection semantics. Continuous clipboard-manager behavior is not needed for the initial flow; obtain current selection content when triggered and implement only ownership needed for later temporary paste transactions. XFixes notifications may be used for change metadata if required.
+Potential X11 mechanisms remain:
 
-### Keyboard injection
+- current selection acquisition without a plaintext history service;
+- XTEST/native input with an explicit Unicode/keymap compatibility matrix;
+- focus/window identity where available;
+- explicit-trigger/privacy policy despite X11's broad client interaction model.
 
-Use the XTEST extension/native X11 facilities. Unicode behavior depends on keymap/input semantics and requires an explicit compatibility matrix.
-
-### Focus
-
-Use X11 focus/window identity where available and describe evidence limitations honestly.
-
-### Security note
-
-X11 permits broad client interaction; ClipType still applies its explicit-trigger and privacy model rather than using the broadest possible access.
+No X11 support claim exists until a dedicated implementation and evidence gate is completed.
 
 ## Linux Wayland
 
-Wayland is not one uniform backend. ClipType MUST probe protocols, compositor capabilities, portal availability, and device permissions at runtime.
+Wayland is not one uniform backend and is not shipped in the current beta. Any future implementation must probe capabilities independently rather than setting one global support bit.
 
-### Clipboard capability options
+Potential capabilities may include:
 
-1. `ext-data-control-v1` where exposed.
-2. Legacy `wlr-data-control` may exist, but it is not the architectural endpoint.
-3. XDG Desktop Portal Clipboard may be available only through compatible portal sessions and is not a universal transparent clipboard-manager API.
-4. Standard Wayland data-device access is focus/seat oriented and does not itself provide universal global clipboard access.
-
-### Keyboard capability options
-
-1. `zwp_virtual_keyboard_v1` where exposed and authorized.
-2. Linux `uinput` through `/dev/uinput`, potentially requiring a small capability-scoped helper.
-3. Desktop/compositor-specific mechanisms may be researched but cannot silently become global support claims.
-
-### Capability tiers
-
-A Wayland environment may independently provide:
-
-- clipboard read;
-- clipboard write/restore;
-- global trigger;
-- synthetic text/key input;
+- clipboard read/write mechanisms exposed by compositor protocols or portals;
+- global trigger availability;
+- virtual keyboard or carefully scoped `uinput` delivery;
 - focus evidence.
 
-`Wayland supported` is not a boolean. `COMPATIBILITY.md` records actual combinations.
-
-### Privileged helper
-
-If uinput is required, the helper is Linux-only, minimal, local, and capability-scoped. It must not become a general root daemon or clipboard store.
+A privileged helper, if ever required for a specific Linux capability, must be local, minimal, capability-scoped, and must not become a clipboard store or general root daemon.
 
 ## Platform fallback policy
 
-Fallback is planner-visible and capability-safe. For example, if keyboard input is unavailable but clipboard paste is available, a future `auto` mode may choose paste. An explicit `keyboard` request fails clearly rather than silently changing the user's requested semantics.
+Fallback is planner-visible and capability-safe. Auto may select a proven alternate backend according to policy. An explicit Keyboard, Clipboard, or Code request fails clearly if its required capability is unavailable; it never silently changes the user's requested semantics.
 
-Fallback does not cross a security boundary or automatically launch an external privileged command.
+Fallback does not cross a security boundary or automatically launch a privileged external command.
 
 ## Research/reference APIs
 
