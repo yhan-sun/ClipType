@@ -2,26 +2,29 @@
 
 ClipType is a privacy-first Windows tray utility that reads the current clipboard only after an explicit trigger and delivers it to the current destination through bounded native input.
 
-The repository also contains the macOS Apple Silicon candidate. On macOS,
+The repository also contains the macOS Apple Silicon product preview. On macOS,
 `apps/cliptype-flutter` is the only settings/front-end composition root; the
 legacy Rust/Slint macOS application has been removed. The Rust core and macOS
-adapters remain shared runtime components. `v0.2.0-beta.7` includes a clearly
+adapters remain shared runtime components. `v0.2.0-beta.8` includes a clearly
 labelled arm64 macOS testing preview; it is not a general macOS release.
 
 ## Public beta
 
-The first public release channel is `v0.1.0-beta.1` for Windows x86_64.
+The current public prerelease is `v0.2.0-beta.8`. Windows x86_64 remains the
+primary beta channel, and the same release carries an additive macOS Apple
+Silicon arm64 testing preview.
 
-- **Recommended client:** Windows 11 x64 interactive desktop.
-- **Best-effort client:** Windows 10 22H2 x64, with an explicit operating-system support/security caveat.
+- **Recommended Windows client:** Windows 11 x64 interactive desktop.
+- **Best-effort Windows client:** Windows 10 22H2 x64, with an explicit operating-system support/security caveat.
 - **CI reference environments:** Windows Server 2022 and Windows Server 2025 Desktop Experience.
-- **Not shipped:** Windows ARM64, 32-bit Windows, Server Core, services, and non-interactive sessions.
+- **Not shipped on Windows:** Windows ARM64, 32-bit Windows, Server Core, services, and non-interactive sessions.
+- **macOS scope:** Apple Silicon arm64 testing preview only; no Intel/Rosetta/Universal 2, Developer ID, notarization, stapling, or broad named-application claim.
 
 See [Compatibility](docs/COMPATIBILITY.md) for the exact support contract and limitations.
 
 ## Product modes
 
-- `keyboard` — bounded Unicode-oriented `SendInput` batches with target, modifier, cancellation, and partial-progress guards.
+- `keyboard` — bounded Unicode-oriented `SendInput` actions with target, modifier, cancellation, and partial-progress guards.
 - `clipboard` — verifies the current clipboard revision and sends one ordinary `Ctrl+V`; ClipType never rewrites or restores the clipboard.
 - `code` — keyboard-only code-aware input with editor auto-pair/auto-indent navigation and safe corrected-typo simulation.
 - `auto` — freezes one proven backend per session from Unicode shape, payload size, and available capabilities; non-ASCII text prefers guarded paste.
@@ -39,7 +42,7 @@ ClipType:
 - runs as one normal, unprivileged user process;
 - does not auto-elevate or bypass Windows integrity boundaries;
 - never blindly retries partial or progress-unknown synthetic input;
-- keeps clipboard reads, modifier waits, native batches, cancellation, and shutdown bounded.
+- keeps clipboard reads, modifier waits, native actions, cancellation, and shutdown bounded.
 
 Clipboard text can contain secrets or operational commands. Review it before triggering input, especially in terminals or administrative tools.
 
@@ -48,19 +51,28 @@ Clipboard text can contain secrets or operational commands. Review it before tri
 The Windows product provides:
 
 - native notification-area tray icon and context menu;
-- global trigger and independent cancel hotkey presets;
-- enabled, notification, mode, speed, and start-at-login settings;
+- global trigger and independent cancel shortcuts;
+- enabled, notification, mode, exact characters-per-second, jitter, corrected-typo probability, and start-at-login settings;
 - strict versioned per-user configuration with backup recovery;
 - current-user installation and uninstallation without elevation;
 - content-free status notifications and controlled shutdown.
 
 Configuration is stored under the current user's local application data directory. See [Configuration](docs/CONFIGURATION.md).
 
+## macOS Apple Silicon preview
+
+The macOS Flutter/AppKit shell provides task-oriented Overview, Input,
+Shortcuts, System, and About surfaces backed by the same Rust runtime. Hosted
+Apple Silicon CI builds, ad-hoc signs, installs, launch-smokes, packages, and
+re-download-verifies the arm64 ZIP/DMG assets. Persistent Accessibility
+consent, representative real-application input, and trusted Apple distribution
+remain separate physical/signing acceptance work.
+
 ## Install and verification
 
-Public release assets include a ZIP package, portable executable, SHA-256 manifest, dependency inventory, build metadata, Sigstore bundles, and GitHub artifact attestations.
+Public Windows release assets include a ZIP package, portable executable, SHA-256 manifest, dependency inventory, build metadata, Sigstore bundles, and GitHub artifact attestations. The macOS testing preview includes an arm64 ZIP, DMG, build metadata, preview notice, and SHA-256 manifest.
 
-The first beta uses Sigstore keyless signing and GitHub provenance. It is not represented as Authenticode publisher-signed, so Windows reputation or SmartScreen warnings may appear. See [Release Process](docs/RELEASE.md) and the matching release notes for verification commands.
+Windows assets use Sigstore keyless signing and GitHub provenance. They are not represented as Authenticode publisher-signed, so Windows reputation or SmartScreen warnings may appear. The macOS preview is ad-hoc signed and not notarized. See [Release Process](docs/RELEASE.md) and the matching release notes for verification details.
 
 ## Development
 
@@ -68,6 +80,7 @@ Prerequisites:
 
 - Rust `1.98.0` as pinned by `rust-toolchain.toml`;
 - Windows for native adapter/product tests;
+- macOS Apple Silicon plus the pinned Flutter toolchain for the macOS product gate;
 - PowerShell for Windows packaging scripts.
 
 Native-neutral checks:
