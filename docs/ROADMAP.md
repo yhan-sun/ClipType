@@ -1,5 +1,15 @@
 # Roadmap
 
+## Current release
+
+`v0.2.0-beta.8` is the current public prerelease.
+
+- Windows x86_64 is the primary beta channel.
+- macOS Apple Silicon arm64 is an additive testing preview.
+- Windows assets are SHA-256 manifested, Sigstore keyless signed, and covered by GitHub artifact attestations.
+- macOS preview assets are ad-hoc signed, checksum verified, and re-downloaded after publication; they are not Developer ID signed, notarized, stapled, Intel/Rosetta, or Universal 2.
+- Published tags/assets are immutable; remediation uses a newer beta.
+
 ## Delivered
 
 ### P0 — foundations
@@ -17,108 +27,96 @@
 - single-session coordinator, cancellation, target revalidation, and conservative native result handling;
 - controlled Windows native edit-target E2E;
 - fail-closed regression for detailed target evidence that later degrades;
-- P1 automated evidence and independent review dependencies merged into `main`.
+- host/message-loop lifecycle and automated evidence merged into `main`.
+
+The old P1 phase tracker is complete. Representative physical Windows application validation is deliberately preserved in #33 rather than inferred from hosted CI.
 
 ### P2 — Windows productization
 
-- explicit keyboard, clipboard, and auto injection modes;
+- explicit keyboard, clipboard, code, and auto injection modes;
 - revision-guarded current-clipboard paste without clipboard rewrite/restore;
 - immutable per-session backend and configuration selection;
 - true characters-per-second pacing, bounded per-action jitter, and opt-in corrected adjacent-key typos;
+- per-action cancellation, target, and modifier checks;
 - strict recoverable per-user settings and schema migration;
 - native Win32 tray/menu/notifications and controlled shutdown;
-- reviewed hotkey presets and start-at-login integration;
-- backend benchmarks and repeated P1/P2 controlled E2E;
+- validated custom Trigger/Cancel shortcuts with OS probing and transactional replacement;
+- start-at-login integration;
+- backend benchmarks and repeated controlled E2E;
 - per-user portable/install/uninstall package smoke;
 - Windows Server 2022 and 2025 x86_64 compatibility matrix;
-- selected application and tray branding embedded in the executable;
-- SHA-256 manifests, Sigstore keyless signatures, GitHub artifact attestations, dependency inventory, and build metadata;
-- public GitHub prerelease pipeline for `v0.1.0-beta.1`.
+- application/tray branding;
+- public GitHub prerelease pipeline.
 
-## Current release
+The implementation work previously tracked in #41 is complete. Its remaining named-application/physical validation obligation is consolidated into #33.
 
-`v0.1.0-beta.1` is the first public Windows x86_64 prerelease. It does not include macOS, a graphical settings window, arbitrary user-recorded shortcuts, Authenticode publisher identity, or universal per-application compatibility.
+### P3 — cross-platform implementation history
 
-Issues #33 and #41 remain the post-fix Windows interactive-evidence track. Their closure is independent from the architectural start of P3 and is still required before stronger Windows compatibility wording.
+P3 introduced the shared settings/hotkey contracts, Windows live hotkey replacement, macOS native adapters, menu-bar/product-shell work, and release/evidence tooling. The original target of a shared macOS Slint UI plus Universal 2 distribution was later superseded by the maintainer-directed P4 architecture.
 
-## Current milestone
+Historical P3 implementation issues are closed when their shipped mechanism remains in the current product. Universal 2 and old-candidate validation tasks are closed as superseded rather than represented as completed support claims.
 
-### P3 — cross-platform settings UI, custom hotkeys, and macOS productization
+### P4 — macOS Apple Silicon Flutter rebuild
 
-**Target:** `v0.2.0-beta.1`  
-**Platforms:** Windows x86_64 and macOS Universal 2
+Delivered in the current product line:
 
-#### Wave 0 — architecture and contracts
+- Flutter is the sole macOS settings/front-end composition root;
+- one Apple Silicon arm64 product path; no Intel/Rosetta/Universal 2 claim;
+- Rust remains authoritative for settings, injection policy, target safety, pacing, cancellation, and content-free outcomes;
+- Swift/AppKit owns menu bar, Accessibility remediation, global hotkeys, startup integration, lifecycle, and the bounded Flutter/Rust bridge;
+- task-oriented Overview / Input / Shortcuts / System / About UI;
+- transactional shortcut validation/probing/replacement;
+- keyboard/clipboard/code/auto behavior with corrected-typo controls;
+- native Code-mode and Swift bridge contract gates;
+- Apple Silicon CI build, Flutter analyze/test, Rust quality gate, ad-hoc signing, `/Applications` install/launch smoke, ZIP/DMG packaging, checksum verification, additive release upload, and post-publication re-download verification;
+- continuous Code-mode regression coverage and Windows 2022/2025 controlled-host reliability coverage.
 
-- [ ] #44 — accept the desktop UI/process-model and UI-toolkit license ADR;
-- [ ] #45 — add native-neutral `HotkeySpec`/`HotkeyPair`, availability/apply outcomes, validation, and settings migration.
+The implementation/release portion of P4 is complete for the testing-preview scope. Remaining physical Apple Silicon behavior and trusted Apple distribution promotion are consolidated into #61.
 
-#### Wave 1 — shared UI and Windows custom shortcuts
+## Remaining acceptance gates
 
-- [ ] #46 — build the native-compiled shared settings window;
-- [ ] #47 — implement Windows OS-level hotkey probing and atomic live pair replacement with rollback.
+### #33 — representative Windows interactive validation
 
-#### Wave 2 — macOS native evidence and adapters
+Required before stronger named-application or universal Windows behavior claims:
 
-- [ ] #48 — run the macOS permission, Unicode, focus, hotkey, status-item, and event-loop spike;
-- [ ] #49 — implement macOS clipboard, keyboard, paste, focus, modifier, permission, and command adapters after the spike returns YES.
+- exact-release physical/unlocked Windows environment record;
+- real Trigger/Cancel behavior;
+- representative native, Chromium, VS Code/Electron, terminal, and elevated/security-boundary paths;
+- CJK/Unicode/newline/Tab behavior;
+- measured chars/s, jitter, cancellation, focus-switch behavior, and typo/Backspace pacing;
+- privacy sentinel;
+- final evidence-backed `WINDOWS BETA READY` or `NOT READY` recommendation.
 
-#### Wave 3 — macOS product shell and distribution
+### #61 — physical macOS acceptance and trusted distribution promotion
 
-- [ ] #50 — build the menu-bar `.app`, permission onboarding, settings integration, and login-item lifecycle;
-- [ ] #51 — build Universal 2 artifacts and gated Developer ID signing/notarization automation.
+Required before promoting the arm64 testing preview to a normal trusted macOS beta:
 
-#### Wave 4 — cross-platform evidence and prerelease
+- downloaded exact-release Apple Silicon application behavior;
+- persistent Accessibility grant/revoke and remediation;
+- real named-application Unicode/Code-mode behavior;
+- physical shortcut conflict/replacement, focus/cancel, modifiers, Secure Event Input, menu/status lifecycle, and Login Item behavior;
+- privacy sentinel;
+- Developer ID signature, Hardened Runtime, notarization, stapling, `codesign`/`spctl`, and exact-release provenance if trusted distribution is pursued.
 
-- Windows regression matrix for the graphical settings window and custom shortcuts;
-- physical Apple Silicon and Intel/Universal 2 evidence with named applications;
-- exact-SHA Unicode, focus, cancellation, shortcut-conflict, permission-revocation, privacy-sentinel, install/upgrade, and lifecycle evidence;
-- signed/notarized macOS release assets when maintainer credentials are configured;
-- final `CROSS_PLATFORM BETA READY` or `NOT READY` result.
+The Intel/Rosetta boundary is explicit: P4 does not ship or claim Intel/Rosetta/Universal 2 support.
 
-## P3 product surface
+## Engineering follow-ups
 
-The settings window contains:
+These are useful improvements but are not represented as completed compatibility evidence:
 
-- General — enabled, notifications, start at login;
-- Shortcuts — local Trigger/Cancel recorders, validation, OS probe status, Reset, automatic persistence, and rollback result;
-- Typing — Keyboard/Clipboard/Code/Auto mode, exact characters per second, jitter, corrected typo probability, Auto threshold, and safety guidance;
-- Permissions — macOS Accessibility state and explicit remediation;
-- About & Updates — version/channel, release notes, project licenses, dependency notices, and UI-toolkit attribution.
+- configure server-enforced branch protection / required checks when repository-administration access is available;
+- configure a trusted Windows Authenticode certificate or managed signing service if desired;
+- remove non-blocking CI/tooling deprecation warnings as upstream actions/toolchains evolve;
+- measure long-running tray/menu-bar lifecycle, startup, settings migration, and repeated-session resource behavior on physical clients;
+- evaluate package-manager publication after install/update semantics stabilize.
 
-Shortcut availability is evidence-based. ClipType can detect many OS-level global-registration conflicts, but it cannot prove that an application-local shortcut or another tool's hook will never also react; the UI reports that boundary as `Unknown` or `Cannot fully verify`.
-
-## Later milestones
-
-### P4 — field compatibility, trusted publisher, and operational hardening
-
-The P4 macOS Apple Silicon local runner is now an implementation track within
-this milestone. It provides an arm64-only Flutter/AppKit/Rust candidate and
-does not close the public Universal 2 or signing gates.
-
-#### P4-A — Apple Silicon local runner
-
-- [x] Replace the Flutter counter scaffold with the real ClipType settings UI;
-- [x] Integrate the fixed Flutter channels, Swift/AppKit shell, and Rust C ABI;
-- [x] Build and scan an arm64-only release `.app` locally;
-- [x] Record content-free automated and interactive local evidence;
-- [ ] Complete physical target-application, permission grant/revoke, conflict,
-  cancellation, Unicode, and latency evidence.
-
-- close post-fix Windows and macOS named-application evidence gaps;
-- configure a trusted Windows Authenticode certificate or managed signing service;
-- retain Sigstore and GitHub attestations as additional provenance;
-- add structured crash-category guidance without collecting dumps or clipboard content;
-- measure long-running tray/menu-bar lifecycle, startup, settings migration, and repeated-session resource behavior;
-- evaluate MSIX, Homebrew Cask, WinGet, or other package-manager publication after install/update semantics stabilize.
-
-### P5 — Linux and architecture expansion
+## Later platform expansion
 
 - evaluate Windows ARM64 with a dedicated artifact and compatibility matrix;
-- implement Linux X11 without weakening the platform-independent core;
+- implement Linux X11 without weakening platform-independent core policy;
 - treat Wayland as independent capabilities rather than a boolean platform claim;
-- add GTK/libadwaita or reuse the shared settings UI only after Linux backend evidence;
-- consider transformed/generated text only through a new clipboard-transaction ADR that cannot overwrite external changes.
+- add a Linux UI only after backend/evidence decisions are accepted;
+- consider transformed/generated text only through a separately reviewed clipboard-transaction design that cannot overwrite external changes.
 
 ## Stable 1.0 gate
 
@@ -128,5 +126,6 @@ A stable release requires more than green prerelease pipelines:
 - no unresolved high-severity data-loss, privacy, destination-safety, permission, privilege, shortcut, packaging, signing, or migration defect;
 - stable configuration migration and uninstall behavior;
 - an explicit support policy and security-maintenance plan;
-- trusted platform signing decisions for Windows and macOS;
+- trusted platform signing decisions appropriate to the supported platforms;
+- server/repository governance appropriate for stable release;
 - a separately reviewed release decision and version bump.
