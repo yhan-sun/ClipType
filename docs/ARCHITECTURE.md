@@ -2,7 +2,9 @@
 
 ## Style
 
-ClipType uses ports and adapters around a platform-independent Rust core. Policy, native capability/evidence, runtime coordination, platform mechanism, presentation, and release automation are separate boundaries.
+ClipType uses ports and adapters around a platform-independent Rust core. Policy, native capability/evidence, runtime coordination, platform mechanisms, presentation, and release automation are separate boundaries.
+
+### Windows composition
 
 ```text
                   cliptype-core
@@ -17,95 +19,90 @@ ClipType uses ports and adapters around a platform-independent Rust core. Policy
                apps/cliptype
 ```
 
-- `cliptype-core` owns domain values, normalization, limits, state transitions, outcomes, product configuration, and pure backend selection.
+### macOS Apple Silicon composition
+
+```text
+Flutter presentation
+       |
+Swift/AppKit shell
+       |
+cliptype-flutter-bridge (fixed C ABI)
+       |
+cliptype-app + cliptype-core + cliptype-platform
+       |
+cliptype-macos native adapters
+```
+
+- `cliptype-core` owns domain values, normalization, limits, state transitions, outcomes, product configuration, Code planning, and pure backend selection.
 - `cliptype-platform` owns native-neutral clipboard, target, keyboard, modifier, paste, command, capability, and dispatch-result contracts.
 - `cliptype-app` owns the live one-session coordinator, immutable session/configuration snapshots, cancellation, settings parsing, persistence, and recovery.
 - `cliptype-windows` owns Win32 clipboard, target/integrity evidence, keyboard dispatch, paste, hotkey/message loop, tray, and startup adapters.
 - `apps/cliptype` is the Windows composition root and owns process lifecycle, settings application, content-free status, and user command wiring.
-- `apps/cliptype-flutter` is the P4 macOS arm64 composition root. Flutter owns presentation; its Swift/AppKit shell owns channels, menu-bar lifecycle, global hotkeys, Accessibility/login-item adapters, and the fixed Rust bridge.
-- `crates/cliptype-flutter-bridge` owns the narrow content-free C ABI that keeps the Rust coordinator and `cliptype-macos` adapters behind the Swift shell.
-- There is no Rust/Slint macOS application composition root. `apps/cliptype-flutter` is the only macOS settings/front-end entry point; `crates/cliptype-ui` remains a Windows presentation dependency.
-- packaging/release workflows own reproducible assets, compatibility checks, signatures, attestations, and public publication.
+- `apps/cliptype-flutter` is the sole macOS settings/front-end composition root for the current P4 Apple Silicon line. Flutter owns presentation; Swift/AppKit owns channels, menu/status lifecycle, global shortcuts, Accessibility/startup mechanisms, and application lifecycle.
+- `crates/cliptype-flutter-bridge` owns the narrow content-free C ABI that keeps Rust coordination and macOS adapters behind the Swift shell.
+- `crates/cliptype-ui` remains a Windows presentation dependency; there is no legacy Rust/Slint macOS application composition root.
+- packaging/release workflows own reproducible assets, compatibility checks, signatures/attestations, exact-source identity, and publication.
 
 Core never imports platform APIs. Platform adapters do not choose product policy. Presentation does not implement injection policy directly.
 
 ## Product runtime
 
 ```text
-tray / reviewed global trigger
+explicit trigger / tray-menu command
   -> atomically reserve one session
   -> snapshot validated product settings
   -> capture initial destination evidence
   -> wait boundedly for physical trigger modifiers to clear
-  -> read bounded current clipboard text and revision
-  -> build and freeze keyboard, clipboard, or code plan
+  -> read bounded current clipboard text + revision
+  -> build and freeze keyboard / clipboard / code / auto-selected plan
   -> reject known higher-integrity target
-  -> revalidate destination and modifiers
-  -> dispatch bounded keyboard batches, Code actions, or one guarded Paste chord
+  -> revalidate destination, modifiers, cancellation and required revision
+  -> dispatch bounded semantic/native actions
   -> classify complete / none / partial / unknown result
   -> publish content-free completion
   -> release session slot
 ```
 
-The destination is captured before clipboard work. A second trigger is Busy, not queued. Cancellation is cooperative and checked at safe bounded points. An active session keeps its original settings/backend snapshot even when future settings change.
+The destination is captured before clipboard work. A second trigger is Busy, not queued. Cancellation is cooperative and checked at bounded points. Active sessions keep their original settings/backend snapshot even when future settings change.
 
 ## Core plans
 
 ### Keyboard plan
 
-The core normalizes the owned clipboard text into semantic atoms. A validated plan contains bounded slices and immutable safety configuration. Windows converts those atoms into Unicode or explicit control-key events.
+Core normalizes owned clipboard text into semantic atoms. Keyboard delivery applies validated per-action pacing, jitter, optional corrected-typo expansion, and immutable safety policy. Platform adapters translate one bounded semantic action into native events.
 
 ### Clipboard plan
 
-The clipboard plan is content-free except for element count and backend identity. It refers to the already-current OS clipboard and requires both paste capability and a known revision witness. No text is written into a paste plan for later clipboard restoration.
+Clipboard mode refers to the **already-current** operating-system clipboard. The plan requires ordinary Paste capability and a known content-blind revision witness.
+
+ClipType does not create a temporary clipboard transaction: it does not write, clear, replace, own, snapshot-for-restoration, or restore clipboard contents. Immediately before the single native Paste chord, target/integrity/modifier/cancellation/revision requirements are revalidated. A changed revision aborts before paste.
 
 ### Code plan
 
-The Code plan is a named keyboard plan. It normalizes the current clipboard
-text, drops leading spaces and Tabs at the start of each normal-code line, and
-emits a bounded action sequence. Opening `()`, `{}`, `[]`, and quote
-delimiters are typed normally; a matching closer or quote is represented as a
-cursor-right action so the destination editor's already-generated pair is
-skipped. A matching closer that starts a source line is represented by a
-line-closing right-navigation action. The planner suppresses a redundant
-source line break when auto-indent has already moved the generated closer to a
-following line; an empty multiline pair retains the first Return needed to
-create that line. Consecutive matching closers on the same source line are
-consumed as one generated-line group. macOS dispatches Right then Command+Right, while Windows
-dispatches Right then End, so generated indentation width is irrelevant.
-Pair-aware behavior is restricted to `()`, `{}`, `[]`, `""`, and `''`.
-Python-style triple-quoted runs (`"""` and `'''`) are emitted as explicit
-atoms at both boundaries and never use cursor-right because editors do not
-reliably generate their three-character closing pair. Brackets inside
-recognized strings and comments remain literal and never enter the pair stack;
-an ordinary generated closing quote is still skipped once. A `//` comment
-boundary applies the same line-leading generated-closer rule before Return is
-emitted. Markdown triple-backtick fences and single backticks are literal and
-do not put the lexer into backtick-string state, so pair handling continues for
-code between fences. The plan requires keyboard and cursor-right capabilities
-and never uses clipboard paste or revision evidence.
+Code mode is a named keyboard-only source plan.
 
-The live Code-mode worker drains the immutable actions through a strict FIFO
-queue. Each native action is followed by a short cancellable settle barrier;
-pair-navigation actions also receive a bounded navigation-only barrier before
-dispatch. These let asynchronous editor auto-pair and auto-indent handlers
-update before a navigation action depends on their generated state. Neither
-barrier inspects target text or changes Keyboard, Clipboard, or Auto behavior.
+It:
 
-This is intentionally a destination-editor contract: Code mode assumes
-ordinary auto-pair is enabled, while triple-quoted boundaries are explicit.
-It cannot verify the editor's completion setting or read target content without
-violating the content-free target boundary.
+- normalizes current clipboard text;
+- strips leading spaces/Tabs at normal-code line starts so the editor may supply indentation;
+- types ordinary source atoms;
+- recognizes only `()`, `{}`, `[]`, `""`, and `''` as pair-aware families;
+- represents matching source closers as bounded cursor-navigation actions when the destination editor is expected to have generated the closer;
+- uses a line-closing navigation action for matching closers that begin a source line, including after a `//` comment boundary;
+- keeps brackets inside recognized strings/comments literal;
+- emits Python-style triple-quoted boundaries explicitly;
+- treats Markdown backtick fences and single backticks as literal;
+- preserves strict FIFO action order and bounded settle barriers;
+- may apply corrected typo simulation to eligible source atoms only, never to cursor navigation or non-ASCII source text;
+- requires keyboard + navigation capabilities and never uses Paste/revision fallback.
+
+macOS uses bounded Right/Command+Right-style navigation mechanics behind its adapter; Windows uses the corresponding Right/End path. The plan never reads editor text, selected text, DOM values, caret content, or editor configuration. It is therefore a destination-editor contract, not editor automation.
 
 ### Auto selection
 
-Auto uses pure policy and current capability evidence. It can select clipboard only when paste and revision guarding are fully available. It selects one backend before dispatch and never changes backend mid-session. Explicit modes never silently fall back.
+Auto uses pure policy and current capability evidence. Non-ASCII text—including CJK, emoji, combining marks, and mixed Unicode—prefers the already-current revision-guarded paste path when available. Otherwise Auto may choose the proven Unicode keyboard path. The configured threshold remains a crossover for otherwise keyboard-friendly payloads.
 
-For any non-ASCII text—including CJK, emoji, combining marks, and mixed
-Unicode—Auto prefers the already-current, revision-guarded paste path even
-when the payload is below the size threshold. If that path is unavailable,
-Auto may use the proven Unicode keyboard path; explicit Keyboard mode keeps
-its requested semantics and never silently switches backends.
+One backend is frozen before dispatch. Explicit Keyboard, Clipboard, and Code modes never silently fall back.
 
 ## Native-neutral ports
 
@@ -118,79 +115,72 @@ Responsibilities:
 - expose a content-blind revision witness;
 - reject a known change across snapshot acquisition.
 
-It does not provide history, continuous observation, write, clear, ownership, or restore operations for the current product.
+It has no clipboard history/listener/write/clear/restore responsibility in the current product.
 
 ### TargetPort
 
 Responsibilities:
 
 - capture the strongest practical non-content destination identity;
-- compare new evidence with the original;
-- report disappearance, ambiguity, degradation, and integrity relation;
+- compare current evidence with the original;
+- report change, disappearance, ambiguity/degradation, and integrity relation;
 - redact opaque handles/tokens from diagnostics.
 
-It never reads focused-field text or window titles. On macOS, native controls
-retain exact focused-element comparison. An initial focused element beneath an
-`AXWebArea` selects a sticky `RenderHostLimited` session policy: the adapter
-compares the stable frontmost process and focused top-level window while
-tolerating replacement of the renderer's transient focus node, including a
-replacement sample that briefly lacks the original web classification. If a
-DOM-backed node does not expose a traversable parent chain, web-only supported
-attribute names provide the initial content-free classification; their values
-are never read. Process/window changes or missing stable window evidence still
-stop, while logical-field changes inside one render-host window may remain
-indistinguishable.
+It never reads focused-field text or window titles.
+
+On macOS, native controls retain exact focused-element comparison. An initial focused element beneath an `AXWebArea` selects a sticky render-host-limited session policy: the adapter compares stable frontmost process + focused top-level window while tolerating transient same-window renderer focus-node replacement. Process/window changes or loss of required stable window evidence stop. Logical-field changes inside one shared render-host window may remain indistinguishable and are documented as such.
 
 ### KeyboardPort and ModifierPort
 
 Responsibilities:
 
-- advertise Unicode/line-break/Tab/modifier capabilities;
+- advertise Unicode/line-break/Tab/navigation/modifier capabilities;
 - observe conflicting physical modifiers;
-- accept bounded semantic batches;
+- accept bounded semantic actions;
 - return complete, none, partial, or progress-unknown native results.
 
-The adapter never releases physical keys owned by the user. Retry policy remains in core/application and forbids retry after partial/unknown progress.
+Adapters never release physical keys owned by the user. Partial/unknown native progress is terminal and never blindly retried.
 
 ### PastePort
 
 Responsibilities:
 
-- advertise ordinary paste and revision-guard capabilities;
-- verify the expected revision immediately before dispatch;
+- advertise ordinary Paste and revision-guard capabilities;
+- verify the expected current-clipboard revision immediately before dispatch;
 - send one balanced native Paste chord;
 - return conservative native progress.
 
-It never rewrites or restores clipboard contents.
+It never rewrites/restores clipboard contents.
 
 ### Command source
 
-The command source registers reviewed trigger/cancel hotkey pairs with no-repeat behavior, owns its Windows message queue, and delivers only typed product commands. It is not a general keyboard-capture port.
+Command sources register validated Trigger/Cancel pairs with no-repeat behavior and deliver typed product commands only. They are not general keyboard-capture interfaces.
 
 ## Windows adapters
 
 ### Clipboard
 
-`CF_UNICODETEXT` is copied from clipboard-owned global memory within configured byte limits. Sequence-number checks are content-blind. Clipboard contention is mapped to bounded retryable categories; malformed, non-text, empty, or oversized data fails clearly.
+`CF_UNICODETEXT` is copied from clipboard-owned global memory within configured byte limits. Sequence-number checks are content-blind. Clipboard contention maps to bounded retryable categories; malformed/non-text/empty/oversized data fails clearly.
 
 ### Keyboard and paste
 
-`SendInput` is used for bounded Unicode/key events and for one balanced `Ctrl+V` chord. Accepted native event counts are preserved. Zero accepted events are not automatically labelled UIPI unless integrity evidence independently proves that boundary.
+`SendInput` is used for bounded Unicode/key events and one balanced `Ctrl+V`. Accepted native event counts are preserved. Zero accepted events are not automatically labelled UIPI unless independent integrity evidence proves a restricted relation.
+
+Keyboard and Code work is paced per semantic action with bounded jitter and optional corrected typo actions. Cancellation, original-target comparison, and modifier checks occur at bounded action checkpoints.
 
 ### Destination and integrity
 
-Foreground top-level window, process/thread identity, GUI-thread active/focus evidence, and integrity relation form the destination witness. Detailed original evidence that later weakens fails closed. The normal process does not inject into a known higher-integrity target.
+Foreground top-level window, process/thread identity, GUI-thread active/focus evidence, and integrity relation form the destination witness. Detailed original evidence that later weakens fails closed. A normal process does not inject into a known higher-integrity target.
 
-### Tray and startup
+### Hotkeys, tray, and startup
 
-A dedicated Win32 tray thread owns the hidden window, notification icon, menu, and message loop. The host coordinates tray events with the coordinator and settings store. Start-at-login uses one product-owned value under the current user's Run key and a quoted executable command.
+The Win32 command source owns `RegisterHotKey` registrations/message-loop lifetime. Candidate Trigger/Cancel pairs are validated/probed and replaced transactionally with rollback on failure; no `WH_KEYBOARD_LL` keylogger path is used.
 
-## macOS Flutter composition root (P4 local arm64)
+A dedicated tray thread owns the hidden window, notification icon, menu, and message loop. Start-at-login uses one product-owned value under the current user's Run key.
 
-The local macOS candidate has one process and one Flutter engine. Swift/AppKit
-retains one `NSStatusItem`, one `NSMenu`, and one Settings window. Closing the
-window hides it so the status item and registered commands remain alive; Quit
-performs bounded Rust shutdown and removes native state.
+## macOS Flutter/AppKit composition
+
+The current macOS product line has one process and one Flutter engine. Swift/AppKit retains one `NSStatusItem`, one native menu, and one Settings window. Closing Settings hides it so native commands remain alive; Quit performs bounded Rust shutdown and removes native state.
 
 The fixed Flutter boundary is:
 
@@ -198,123 +188,99 @@ The fixed Flutter boundary is:
 Flutter MethodChannel: io.cliptype/native
 Flutter EventChannel:  io.cliptype/events
              │ bounded settings/commands/content-free events
-Swift/AppKit shell → cliptype-flutter-bridge static library
-             │ fixed integer status and enum/counter snapshot
-Rust Coordinator → cliptype-core + cliptype-platform + cliptype-macos
+Swift/AppKit shell -> cliptype-flutter-bridge static library
+             │ fixed C ABI: settings, enums, counters, result categories
+Rust Coordinator -> cliptype-core + cliptype-platform + cliptype-macos
 ```
 
-The channel and C ABI do not carry clipboard text, injected text, focused
-values, window titles, recorded-key history, user identity, or content
-fingerprints. Flutter does not read the pasteboard or execute input. Rust
-continues to own validation, session reservation, backend selection, target
-and modifier safety, revision guarding, pacing, cancellation, and terminal
-outcomes. Swift owns only native shell mechanisms and command registration.
+The channel/C ABI do not carry clipboard text, injected text, focused values, window titles, recorded-key history, user identity, or content fingerprints. Flutter does not read the pasteboard or execute product input. Rust owns validation, session reservation, backend selection, target/modifier/revision safety, pacing, cancellation, and outcomes.
 
-The macOS target token contains only opaque process, focused-window, and
-focused-element identity plus an `AXWebArea` classification bit. A bounded
-Accessibility parent-role walk classifies the initial web render host without
-requesting titles, values, selection, or document text. That initial
-classification selects a sticky process/window comparison policy so a rebuilt
-same-window focus node may temporarily lose classification without stopping;
-native controls continue to require the exact focused element.
+### Target and modifier evidence
 
-The display language is a separate non-sensitive presentation preference. The
-Flutter window and the native status menu synchronize its English/Simplified
-Chinese value through the fixed method channel; it is not part of the Rust
-product settings or injection policy.
+The macOS target token contains only opaque process/window/focused-element identity plus content-free render-host classification. Bounded Accessibility role/attribute-name inspection may classify the initial web render host without reading titles, values, selections, DOM identifier values, class-list values, or document text.
 
-Flutter product-setting controls submit complete validated snapshots to the
-settings controller as they change. Discrete changes save immediately; text
-fields and sliders use a short debounce, and the controller serializes and
-coalesces writes so only the latest snapshot can follow an in-flight save.
-Invalid snapshots remain local and are shown inline; native failures remain
-retryable. There is no UI-level Apply transaction, and reset actions save the
-current page's defaults immediately.
+Synthetic key event state is isolated from physical modifier evidence: physical conflicts are observed from the HID/system state rather than a state table polluted by ClipType's own generated flags. ClipType never releases the user's physical modifiers.
 
-The beta.7 Flutter shell presents the same contracts through task-oriented
-Overview, Input, Shortcuts, System, and About surfaces. Overview derives a
-content-free readiness category from enabled state, Accessibility state,
-native-runtime availability, hot-key registration, and session phase.
-Shortcut recorder values remain UI candidates until the existing native
-transactional pair replacement succeeds. About obtains version/build/channel
-metadata from the running bundle through a content-free method; no clipboard or
-target plaintext enters the UI boundary. See ADR-0022.
+### Settings and shortcuts
 
-Trigger/Cancel are registered with the system hot-key API as a transactional
-pair. A candidate is validated and probed before the old pair is released;
-failure removes temporary registrations and leaves the prior pair active.
-The local recorder is a focused Flutter control and is not a global event tap,
-key logger, or broad keyboard monitor.
+Flutter presents task-oriented Overview, Input, Shortcuts, System, and About surfaces. Product-setting changes submit complete validated snapshots; invalid drafts remain local. Writes are serialized/coalesced through the application settings boundary.
 
-Observation is event-driven while idle. A bounded timer may refresh state only
-while a session is active, and a separate short-lived observation may follow an
-explicit Accessibility onboarding action, including opening System Settings.
-There is no permanent 40 ms application poll.
+Shortcut recorder values are local candidates until native validation/probing succeeds. Swift/AppKit owns system registrations; failure cleans temporary registrations and keeps/restores the previous pair. There is no general event tap, global key monitor, or unrelated key history.
 
-P4 is an Apple Silicon-only local candidate (`aarch64-apple-darwin`). It does
-not widen the public P3 Universal 2, signing, notarization, or compatibility
-claims. See [ADR-0010](adr/0010-flutter-macos-arm64-runner.md).
+### Observation model
 
-## Settings
+Idle observation is event-driven. A bounded refresh timer may exist while a session is active, and a short-lived permission observation may follow explicit Accessibility onboarding. There is no permanent high-frequency application poll.
 
-The fixed versioned schema includes enabled state, mode, auto threshold, speed, notifications, start-at-login, and reviewed hotkey preset. Parsing rejects unknown, duplicate, missing, malformed, or unsupported fields without echoing their values.
+## Settings persistence
 
-Saving uses an adjacent temporary file, durable flush, validated backup rotation, and replacement. A missing file loads safe defaults; a corrupt primary may recover from a valid backup. Settings never contain clipboard contents or target data.
+The versioned schema stores only product configuration. Parsing rejects unknown/duplicate/missing/malformed/unsupported values without echoing sensitive contents.
+
+Saving uses an adjacent temporary file, durable flush, validated backup rotation, and replacement. A missing file loads safe defaults; a corrupt primary may recover from a valid backup. Settings never contain clipboard text or target data.
 
 ## Process and concurrency
 
-The default product is one normal-integrity per-user process. Native message-loop threads communicate with the application through typed channels/signals; the bounded injection worker is separate so hotkey/tray queues remain responsive.
+The default product is one normal-integrity per-user process. Native message-loop/UI owners communicate with application services through typed signals/channels. Bounded input work runs off presentation/message-loop owners.
 
-Poisoned synchronization primitives are recovered without exposing plaintext. Worker panics are caught at the session boundary and mapped to an internal-invariant outcome. Shutdown requests cancellation, waits within a configured grace period, joins completed workers, removes tray state, and unregisters commands.
+Poisoned synchronization primitives are recovered without formatting plaintext. Worker panics are caught at the session boundary and mapped to content-free internal-invariant outcomes. Shutdown requests cancellation, waits within a configured grace period, joins completed workers, and unregisters/removes native state.
 
-No service, driver, privileged helper, automatic elevation, or general daemon/client split is used on Windows.
+No Windows service, driver, privileged helper, automatic elevation, or general daemon/client split exists.
 
 ## Error and outcome model
 
-Preparation failures and terminal outcomes remain typed and content-free, including:
+Preparation failures and terminal outcomes remain typed/content-free, including:
 
 - disabled, busy, shutting down;
 - unsupported/degraded capability;
-- empty, non-text, malformed, oversized, unavailable, or changed clipboard;
-- target changed, disappeared, ambiguous, or evidence unavailable;
+- empty/non-text/malformed/oversized/unavailable/changed clipboard;
+- revision changed/unavailable;
+- target changed/disappeared/ambiguous/evidence unavailable;
 - modifier conflict/settle timeout;
 - known security restriction versus blocked cause unknown;
 - complete, cancelled, partial input, progress unknown, native failure, or internal invariant.
 
-UI/logging maps these categories to fixed remediation text. It does not include clipboard text, window title/content, raw handles, or revision numbers.
+UI/logging maps categories to fixed remediation text without clipboard text, window content/title, raw handles, or revision numbers.
 
-## Compatibility and release architecture
+## Release architecture
 
-Compatibility is stated by evidence class and mechanism, not by universal application branding. The matrix runs the complete x86_64 product on Windows Server 2022 and 2025 hosted images. Client support and limitations are defined separately in `docs/COMPATIBILITY.md`.
+### Windows
 
 The public release workflow:
 
 - rebuilds from the exact `main` commit;
-- reruns check/test/Clippy;
-- creates versioned ZIP and portable executable assets;
-- embeds licenses, configuration, release notes, dependency/license inventory, and build metadata;
-- generates SHA-256 checksums;
-- signs assets with Sigstore keyless GitHub OIDC identity;
+- reruns workspace check/test/Clippy;
+- builds optimized versioned ZIP/EXE assets;
+- embeds licenses, configuration, release notes, dependency inventory, and build metadata;
+- scans distributable privacy boundaries;
+- creates SHA-256 checksums;
+- signs primary assets/manifests with Sigstore keyless GitHub OIDC identity;
 - verifies signatures before publication;
 - creates GitHub artifact attestations;
-- creates an immutable prerelease only when the tag does not already exist.
+- creates a prerelease/tag only when the version is unused.
 
-Authenticode trusted-publisher signing is a separate future boundary because it requires a trusted certificate or managed signing service.
+Authenticode trusted-publisher signing is a separate credential boundary.
+
+### macOS Apple Silicon testing preview
+
+For a new `release/VERSION`, P4 rebuilds the exact same `main` commit on an Apple Silicon runner, runs native/Swift/Rust/Flutter gates, verifies arm64-only/ad-hoc-signed bundle integrity, installs/launch-smokes `/Applications/ClipType.app`, and creates ZIP/DMG + metadata/checksum assets.
+
+The attachment job waits until the Windows-created prerelease **and exact tag ref** are both visible and bound to the same `GITHUB_SHA`, refuses existing asset names, uploads additively, then re-downloads and byte/checksum-verifies the public files.
+
+The current P4 artifact is not Intel/Rosetta/Universal 2, Developer ID signed, notarized, stapled, or a broad macOS compatibility claim. Physical Apple Silicon acceptance and any trusted distribution promotion remain #61.
 
 ## Invariants
 
 1. Core policy is platform-independent.
 2. Native adapters do not decide product policy.
 3. Destination evidence is captured before clipboard acquisition and revalidated before dispatch.
-4. Detailed evidence degradation fails closed.
+4. Detailed evidence degradation fails closed within the documented platform policy.
 5. Injection is explicit, one-session, bounded, and cancellable.
 6. Physical modifiers are observed, never released.
 7. Partial/unknown native input is never blindly retried.
 8. Clipboard plaintext is ephemeral and absent from persistence/diagnostics/network transport.
-9. Clipboard mode never writes, clears, owns, or restores the clipboard.
-10. Active plans and settings snapshots are immutable.
+9. Clipboard mode uses the already-current clipboard and never writes/clears/restores it.
+10. Active plans/settings snapshots are immutable.
 11. Privilege is not escalated or bypassed.
 12. Compatibility wording cannot exceed evidence.
-13. Public assets are versioned, checksummed, signed, attested, and never silently replaced.
-14. Cross-cutting changes require an ADR.
+13. Published assets are versioned, checksummed, provenance-bound, and never silently replaced.
+14. Cross-cutting changes require the ADR/document process.
 15. The Flutter/native boundary remains fixed, bounded, and content-free.
