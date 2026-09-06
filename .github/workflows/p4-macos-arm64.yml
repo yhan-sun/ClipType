@@ -297,19 +297,26 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: release-assets
 
-      - name: Wait boundedly for the Windows release workflow
+      - name: Wait boundedly for the exact Windows prerelease and tag
         shell: bash
         run: |
           set -euo pipefail
-          found=false
+          ready=false
           for _ in $(seq 1 120); do
             if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              found=true
-              break
+              target="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+              prerelease="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+              if tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha 2>/dev/null)"; then
+                test "$target" = "$GITHUB_SHA"
+                test "$tag_sha" = "$GITHUB_SHA"
+                test "$prerelease" = true
+                ready=true
+                break
+              fi
             fi
             sleep 10
           done
-          test "$found" = true
+          test "$ready" = true
 
       - name: Verify exact tag, prerelease, and additive asset names
         shell: bash
