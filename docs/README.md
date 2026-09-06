@@ -1,24 +1,24 @@
 # ClipType Documentation
 
-This index describes the repository after the P1 Windows vertical slice, P2 Windows productization, the P3 cross-platform product plan, and the local P4 macOS Apple Silicon runner.
+This index describes the repository after the P1 Windows vertical slice, P2 Windows productization, the P3 cross-platform implementation work, and the P4 macOS Apple Silicon Flutter rebuild.
 
 ## Current status
 
 - P1 controlled Windows clipboard-to-input evidence and the fail-closed target-evidence fix are merged into `main`.
-- P2 implements the native Windows tray product, persistent settings, keyboard/clipboard/code/auto modes, human-paced typing controls, startup integration, packaging, compatibility gates, branding, and public prerelease pipeline.
-- `v0.1.0-beta.1` is a Windows x86_64 GitHub prerelease.
-- macOS is not part of `v0.1.0-beta.1`.
-- P3 targets a graphical settings window, user-recorded Trigger/Cancel shortcuts with OS conflict probing and rollback, and a signed/notarized macOS Universal 2 product for `v0.2.0-beta.1`.
-- P4 adds a real Flutter macOS settings/menu-bar candidate backed by the Rust runtime and restricted to Apple Silicon arm64 validation. `v0.2.0-beta.7` includes it as a clearly labelled testing preview, not as a general public macOS beta.
-- The legacy Rust/Slint macOS composition root has been removed; `apps/cliptype-flutter` is now the sole macOS settings/front-end entry point. The shared Slint crate remains only for the Windows product until a separate Windows UI decision.
+- P2 implements the native Windows tray product, persistent settings, keyboard/clipboard/code/auto modes, human-paced typing controls, startup integration, packaging, compatibility gates, branding, and the public prerelease pipeline.
+- `v0.2.0-beta.8` is the current public prerelease. Windows x86_64 remains the primary beta channel.
+- The same `v0.2.0-beta.8` release carries a clearly labelled macOS Apple Silicon arm64 testing preview.
+- The legacy Rust/Slint macOS composition root has been removed; `apps/cliptype-flutter` is the sole macOS settings/front-end entry point. The shared Slint crate remains only for the Windows product until a separate Windows UI decision.
+- The earlier P3 Universal 2 / shared-macOS-UI plan is historical. P4 intentionally narrowed macOS scope to Apple Silicon arm64 and Flutter.
+- Remaining release-acceptance work is physical/evidence based: representative Windows interactive validation is tracked in #33; physical Apple Silicon behavior and trusted Apple distribution promotion are tracked in #61.
 
 ## Product and support
 
 - [Product](PRODUCT.md) — current shipped intent, modes, product surface, and non-goals.
-- [Compatibility](COMPATIBILITY.md) — current Windows support contract and limitations.
+- [Compatibility](COMPATIBILITY.md) — current Windows/macOS evidence contract and limitations.
 - [Configuration](CONFIGURATION.md) — current versioned per-user settings and bounds.
 - [Release Process](RELEASE.md) — package contents, Sigstore signing, GitHub attestations, publication, and rollback.
-- [Roadmap](ROADMAP.md) — delivered P1/P2 and active P3 milestones.
+- [Roadmap](ROADMAP.md) — delivered phases and the remaining evidence/signing gates.
 
 ## Architecture and safety
 
@@ -35,17 +35,15 @@ This index describes the repository after the P1 Windows vertical slice, P2 Wind
 - [Development Workflow](DEVELOPMENT_WORKFLOW.md) — branch, review, and validation rules.
 - [Dependency Policy](DEPENDENCY_POLICY.md) — dependency and license expectations.
 - [References](REFERENCES.md) — primary platform/API references.
-- [P1 Phase](phases/P1_WINDOWS_VERTICAL_SLICE.md) — Windows vertical-slice scope and gate.
-- [P2 Phase](phases/P2_WINDOWS_PRODUCTIZATION.md) — Windows productization scope and gate.
-- [P3 Phase](phases/P3_CROSS_PLATFORM_UI_MACOS.md) — graphical settings, custom shortcuts, macOS adapters, product shell, signing/notarization, and cross-platform prerelease gate.
-- [P4 Local macOS Phase](phases/P4_MACOS_ARM64_LOCAL.md) — the arm64-only Flutter/AppKit/Rust candidate and its local evidence boundary.
+- [P1 Phase](phases/P1_WINDOWS_VERTICAL_SLICE.md) — historical Windows vertical-slice scope and gate.
+- [P2 Phase](phases/P2_WINDOWS_PRODUCTIZATION.md) — historical Windows productization scope and gate.
+- [P3 Phase](phases/P3_CROSS_PLATFORM_UI_MACOS.md) — historical shared-UI/Universal-2 plan and implementation record.
+- [P4 Local macOS Phase](phases/P4_MACOS_ARM64_LOCAL.md) — the arm64-only Flutter/AppKit/Rust product line and its evidence boundary.
 - [P1 Automated Evidence](testing/P1_AUTOMATED_EVIDENCE.md) — historical P1 candidate evidence.
 
-Current release documentation describes the observed Windows beta and the
-clearly labelled macOS arm64 testing preview. P3 documents the broader
-cross-platform release plan, while P4 records the arm64 candidate and exact
-local evidence. No Universal 2 artifact, signed/notarized macOS distribution,
-or arbitrary named-application compatibility is implied.
+Current release documentation describes the Windows beta and the clearly labelled
+macOS arm64 testing preview. No Intel/Rosetta/Universal 2 artifact, trusted
+Apple distribution, or arbitrary named-application compatibility is implied.
 
 ## Authority
 

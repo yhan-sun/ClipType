@@ -90,6 +90,7 @@ These are release-blocking:
 - Injection must be explicitly user-triggered by default.
 - Cancellation and focus-change protections must fail safe.
 - Do not bypass OS security boundaries such as Windows UIPI or macOS Accessibility consent.
+- Clipboard delivery uses the user's already-current clipboard plus content-blind revision guarding; it must not write, clear, replace, restore, or silently take ownership of clipboard contents.
 
 ## 6. Dependency policy
 
@@ -109,7 +110,9 @@ Prefer official OS APIs and small focused crates. Do not add a framework to solv
 - Platform adapters require integration tests where CI/platform automation can exercise them.
 - Every bug fix should add a regression test when technically possible.
 - Injection tests must include Unicode, multiline text, cancellation, focus change, and modifier-key contamination cases appropriate to the backend.
-- Clipboard-paste tests must verify restoration and self-generated clipboard-event suppression.
+- Clipboard-paste tests must verify content-blind revision guarding, unchanged clipboard text/revision where the test controls both, and fail-closed behavior when the revision changes. They must not require a write/restore transaction that the product does not perform.
+- Code-mode tests must prove keyboard-only behavior, bounded pair/navigation semantics, and the absence of any Paste fallback.
+- Hosted CI must not be represented as physical named-application or persistent-permission evidence.
 
 See `docs/TESTING.md` for the full matrix.
 
@@ -137,6 +140,7 @@ Never rewrite the history of an accepted ADR to make a new decision appear old. 
 - Do not merge, tag, publish, or create a release unless explicitly instructed.
 - Do not force-push shared branches unless explicitly instructed.
 - PR descriptions must include scope, architecture impact, security/privacy impact, verification, platform matrix, and rollback notes.
+- Published tags and release assets are immutable. Remediation uses a new version rather than moving a tag or replacing public bytes.
 
 ## 10. Prohibited shortcuts
 
@@ -149,7 +153,8 @@ Agents must not:
 - swallow injection errors and report success;
 - persist clipboard content for debugging;
 - copy source from reference projects without license review and attribution handling;
-- claim completion when required gates remain unverified.
+- claim completion when required gates remain unverified;
+- use a stale PR/commit/release artifact as evidence for a newer candidate without an exact identity check.
 
 ## 11. Definition of done
 

@@ -2,115 +2,114 @@
 
 ## Primary language: Rust
 
-ClipType's core, orchestration, system adapters, and shared settings presentation are implemented primarily in **Rust**.
+ClipType's core, orchestration, and system adapters are implemented primarily in **Rust**.
 
 Reasons:
 
 - strong FFI and low-level OS API access;
 - memory safety for a long-running process handling sensitive text;
-- predictable footprint without a managed runtime requirement;
-- good support for Windows bindings, Unix APIs, DBus/Wayland/X11 ecosystems, and C/Objective-C interop;
-- ability to localize `unsafe` around native APIs while presenting safe internal contracts.
+- predictable footprint without a managed runtime requirement in the core/runtime;
+- good support for Windows bindings and C/Objective-C/Swift interop;
+- ability to localize `unsafe` around native APIs while exposing safe internal contracts.
 
-The project does not select Go or C++ as the primary implementation language. Platform-specific auxiliary code MAY use another language only where native platform quality materially benefits and the boundary is small and documented.
+Platform-specific auxiliary code may use another language/runtime where native platform quality materially benefits and the boundary is small and documented. The current macOS shell uses Swift/AppKit and Flutter only at the presentation/native-shell boundary.
 
 ## Native integration policy
 
-'Native' means:
+“Native” means:
 
 - native OS clipboard/input/focus/permission APIs;
 - compiled desktop binaries, not Electron or an embedded WebView;
 - no browser automation as the injection mechanism;
 - platform-appropriate tray/menu-bar/settings/onboarding surfaces;
-- installation, permission, login-item, signing, and notarization behavior that follows OS conventions.
+- installation, permission, startup, signing, and distribution behavior that follows OS conventions.
 
-A native-compiled cross-platform settings toolkit does not imply that every control is an operating-system-native widget. ClipType states that distinction explicitly.
+A compiled cross-platform UI toolkit does not imply every control is an operating-system-native widget. ClipType states that distinction explicitly.
 
-## P3 UI strategy
+## Windows UI strategy
 
-ADR-0009 established a shared `cliptype-ui` crate using **Slint `=1.17.1`**.
-ADR-0012 removes its macOS composition root; the crate remains a Windows-only
-presentation dependency until a separate Windows UI decision.
+ADR-0009 established `cliptype-ui` using Slint `=1.17.1`. ADR-0010/0012 superseded that decision **for macOS only**; the Slint crate remains a Windows presentation dependency until a separate Windows UI decision.
 
-- Slint markup and Rust callbacks compile to native machine code.
-- No HTML, JavaScript, Electron, Chromium, or system WebView is part of the settings window.
-- Product policy remains in `cliptype-core` and `cliptype-app`; UI callbacks invoke typed application services.
-- Windows keeps its native Win32 notification-area shell.
-- macOS uses the Flutter settings window plus an AppKit `NSStatusItem`/`NSMenu` shell and platform Accessibility/login-item adapters.
-- The settings UI is required to support keyboard navigation, accessibility metadata, focus indicators, dark/light themes, DPI/Retina scaling, and content-free diagnostics.
+- Slint markup/Rust callbacks compile to native machine code.
+- No HTML, JavaScript, Electron, Chromium, or system WebView is part of the Windows settings UI.
+- Product policy remains in `cliptype-core` / `cliptype-app`; UI callbacks invoke typed application services.
+- Win32 retains notification-area/message-loop/startup ownership.
+- The Windows distributed binary carries the required Slint attribution/license inventory.
 
-The Windows distributed desktop binary uses the Slint Royalty-free Desktop,
-Mobile, and Web Applications License 2.0. Its About screen includes the
-required `AboutSlint` attribution widget, and release dependency inventories
-record the selected Slint version/license. The macOS Flutter candidate does not
-use Slint. The project does not distribute the complete application under
-GPLv3 merely to consume the UI dependency.
+A future Windows UI replacement requires a superseding ADR and evidence that the maintenance/quality trade-off is worthwhile.
 
-A future move to separate WinUI and another Windows settings implementation
-requires a superseding ADR and evidence that the maintenance cost is justified
-by measured platform-quality gaps. The Flutter macOS runner is the sole macOS
-front end and is documented by ADR-0010 and ADR-0012.
+## macOS Apple Silicon Flutter strategy
 
-## P4 macOS Flutter runner
+ADR-0010 and ADR-0012 define the current macOS product line:
 
-The P4 local Apple Silicon candidate uses Flutter macOS desktop for the
-settings presentation only. It is pinned to Flutter `3.47.2` / Dart `3.13.2`
-for the local gate and is built for `aarch64-apple-darwin` only.
+- `apps/cliptype-flutter` is the sole macOS settings/front-end composition root;
+- Flutter 3.47.2 / Dart 3.13.2 are pinned in the authoritative P4 gate;
+- target is `aarch64-apple-darwin` only;
+- one process and one Flutter engine;
+- Swift/AppKit retains the status item, native menu, Accessibility remediation, `SMAppService`, global shortcut ownership, application lifecycle, and fixed Flutter channels;
+- `cliptype-flutter-bridge` exposes a narrow C ABI carrying bounded settings/commands/content-free states only;
+- Rust owns validation, settings semantics, one-session coordination, backend selection, target/modifier/revision safety, pacing, cancellation, and terminal outcomes.
 
-The Swift/AppKit shell registers `io.cliptype/native` and
-`io.cliptype/events`, retains the status item and Settings window, and owns
-Carbon global hot-key registration, Accessibility onboarding, and
-`SMAppService`. A small `cliptype-flutter-bridge` Rust `staticlib` exposes
-bounded integers, enums, counters, and settings operations through a fixed C
-ABI. No clipboard or focused content crosses the boundary.
+No clipboard text, injected text, target content, user identity, or recorded-key history crosses the Flutter/Swift status boundary.
 
-This composition root is not a claim that Flutter controls are native AppKit
-widgets, nor is it a public Universal 2 or signed/notarized release path.
+Flutter controls are not represented as native AppKit widgets. The current public artifact is an **Apple Silicon arm64 testing preview**, not Intel/Rosetta/Universal 2 or a trusted Apple distribution.
 
-## Settings surface
+## macOS native mechanisms
 
-The Windows Slint settings window provides:
+Current mechanisms are:
 
-- General — enabled, notifications, start at login;
-- Shortcuts — local Trigger/Cancel recorders, static validation, platform registration probe, Apply/Reset, and rollback status;
-- Typing — Keyboard/Clipboard/Code/Auto, exact characters per second, jitter, corrected typo probability, and Auto threshold;
-- Permissions — macOS Accessibility status and fixed remediation;
-- About & Updates — version/channel, release notes, licenses, dependency notices, and Slint attribution on Windows.
+- `NSPasteboard.general` + content-blind `changeCount` for current text/revision evidence;
+- Core Graphics `CGEvent` for bounded Unicode/key input and balanced Command+V;
+- frontmost-process plus Accessibility focused-element/window identity without reading field values/titles;
+- explicit `AXIsProcessTrustedWithOptions` onboarding/remediation only;
+- OS global-shortcut registration with candidate probing and transactional replacement/rollback;
+- AppKit `NSStatusItem` / `NSMenu` lifecycle;
+- `SMAppService.mainApp` for supported start-at-login behavior.
 
-The recorder receives key events only while its control has local focus. It is not a global keylogger and does not install a broad low-level keyboard hook.
+Synthetic event state is kept separate from physical modifier evidence. Current Code-mode navigation and focus policies are documented in the accepted/superseding ADR chain and native contract tests.
+
+## Current macOS distribution boundary
+
+`v0.2.0-beta.8` publishes an additive arm64 testing preview built from the exact release commit. The P4 workflow:
+
+- runs native Code/Swift contracts, full Rust quality gates, Flutter format/analyze/test/build;
+- verifies arm64-only Mach-O slices;
+- ad-hoc signs, installs, and launch-smokes `/Applications/ClipType.app`;
+- produces ZIP/DMG plus checksum/build metadata;
+- after the Windows prerelease/tag exists at the same exact SHA, uploads assets additively;
+- re-downloads published files and verifies bytes/checksums.
+
+Developer ID, Hardened Runtime promotion policy, notarization, stapling, and clean-machine Gatekeeper verification are not configured/proven by this testing-preview path. Those remain #61 if a normal trusted macOS beta is pursued.
+
+No Intel/Rosetta/Universal 2 artifact is planned or claimed for the current P4 line.
+
+## Settings surfaces
+
+### Windows
+
+The Windows product exposes enabled state, notifications, start at login, mode, exact characters-per-second, jitter, corrected-typo probability, Auto threshold, and validated Trigger/Cancel shortcuts through its native-compiled settings/tray surfaces.
+
+### macOS
+
+The Flutter shell uses task-oriented Overview, Input, Shortcuts, System, and About surfaces. Shortcut candidates are local UI state until native validation/probing/replacement succeeds. Accessibility remediation is explicit. Runtime build identity is content-free.
 
 ## OS binding policy
 
 Prefer official APIs and maintained bindings:
 
-- Windows: `windows-sys`/windows-rs style bindings to Win32 APIs.
-- macOS: maintained Rust Objective-C bindings where mature; otherwise narrow Objective-C/CoreFoundation/CoreGraphics/ApplicationServices FFI wrappers with explicit ownership and thread invariants.
-- Linux: maintained X11/Wayland/DBus/libevdev bindings as appropriate.
+- Windows: `windows-sys`/windows-rs style bindings to Win32 APIs;
+- macOS: Swift/AppKit/Foundation/CoreGraphics/Accessibility/ServiceManagement plus narrow Rust FFI where needed;
+- Linux (future): maintained X11/Wayland/DBus/libevdev bindings appropriate to actual capability decisions.
 
-Direct shelling out to `xdotool`, `wtype`, `wl-paste`, `ydotool`, PowerShell, AppleScript, etc. is useful for research and diagnostics but is not the default production architecture.
-
-## macOS technology boundary
-
-The production mechanism is validated by P3-S01 before adapter freeze:
-
-- `NSPasteboard.general` and content-blind `changeCount` for current text/revision evidence;
-- Core Graphics `CGEvent` for bounded Unicode/key input and a balanced Command+V chord;
-- frontmost-process and Accessibility focused-element identity without reading field contents;
-- `AXIsProcessTrustedWithOptions` for explicit permission onboarding only;
-- an OS global-hotkey registration mechanism that can probe and atomically replace a Trigger/Cancel pair without unrelated-key capture;
-- AppKit status-item/menu lifecycle;
-- `SMAppService.mainApp` for supported start-at-login behavior;
-- Universal 2 `.app` packaging, hardened runtime, Developer ID Application signing, notarization, and stapling for public distribution.
-
-Unsigned CI candidates remain clearly separated from signed/notarized public artifacts. Apple credentials are never committed to the repository.
+Shelling out to `xdotool`, `wtype`, `wl-paste`, `ydotool`, PowerShell, AppleScript, etc. may be useful for research/packaging diagnostics but is not the default production input architecture.
 
 ## Async/runtime policy
 
-Do not introduce a full async runtime until a concrete need exists. Native desktop event loops and bounded channels are the current design. Slint/AppKit/Win32 main-thread and message-loop constraints remain explicit, while bounded clipboard/input work stays off presentation loops.
+Do not introduce a full async runtime until a concrete need exists. Native event loops, bounded workers, atomics/channels/condition variables, and explicit main-thread ownership are the current design. Clipboard/input work remains off UI/message-loop owners.
 
 ## Configuration format
 
-Human-editable configuration uses TOML. Configuration has a versioned semantic model; unknown/invalid security-sensitive values fail explicitly. P3 migrates preset-only shortcuts to native-neutral canonical Trigger/Cancel specifications.
+Human-editable product configuration uses a strict versioned semantic model. Unknown/invalid security-sensitive values fail explicitly without echoing plaintext. Shortcut settings use native-neutral canonical Trigger/Cancel specifications.
 
 ## Logging
 
@@ -118,9 +117,9 @@ Use structured, content-free logging with strict field allowlists. No log API ma
 
 ## Packaging direction
 
-- Windows: versioned ZIP/portable executable now; trusted Authenticode signing remains a separate credential boundary.
-- macOS: Universal 2 signed/notarized `.app` plus ZIP and/or DMG after macOS adapters and physical evidence stabilize.
-- Linux: distro-neutral archive first; native packages/AppImage/Flatpak are evaluated after backend support is stable. Packaging must not imply unsupported Wayland capabilities.
+- Windows: versioned ZIP + portable EXE; SHA-256, Sigstore keyless signatures, GitHub attestations; trusted Authenticode remains a separate credential boundary.
+- macOS: arm64-only ad-hoc-signed testing-preview ZIP/DMG today; any trusted public promotion requires separate Developer ID/notarization evidence in #61.
+- Linux: no shipped backend yet; packaging must follow actual capability evidence and must not imply unsupported Wayland behavior.
 
 ## Dependency evaluation checklist
 
